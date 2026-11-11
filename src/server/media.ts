@@ -242,6 +242,16 @@ export class Jobs {
         ]);
         await this.blobs.putFile(`${base}/proxy.mp4`, proxy);
         assets.proxy = `${base}/proxy.mp4`;
+      } else if (item.kind === 'audio') {
+        // MM-15: a waveform picture as the thumbnail, and an AAC copy every browser can play.
+        const thumb = path.join(tmp, 'thumb.jpg');
+        await ff(['-i', src, '-filter_complex', "aformat=channel_layouts=mono,showwavespic=s=480x160:colors=0x4f9cf7:scale=sqrt,format=yuvj420p", '-frames:v', '1', '-q:v', '4', thumb]);
+        await this.blobs.putFile(`${base}/thumb.jpg`, thumb);
+        assets.thumb = `${base}/thumb.jpg`;
+        const proxy = path.join(tmp, 'proxy.m4a');
+        await ff(['-i', src, '-vn', '-c:a', 'aac', '-b:a', '128k', '-movflags', '+faststart', proxy]);
+        await this.blobs.putFile(`${base}/proxy.m4a`, proxy);
+        assets.proxy = `${base}/proxy.m4a`;
       }
     } finally {
       await fs.rm(tmp, { recursive: true, force: true });

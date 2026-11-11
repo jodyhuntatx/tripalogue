@@ -177,6 +177,8 @@ describe('projects, operation log and edit lock (F-1, F-8, F-9)', () => {
       assert.equal((await owner.req('POST', `/api/projects/${pid}/invites`, { email, role })).status, 201);
       const mail = await outbox().latestFor(email);
       assert.match(mail!.subject, /invited you/);
+      // Anyone who may add media gets the one-page guide to sharing originals (MM-18); viewers do not.
+      assert.equal(/guide-contributors\.html/.test(mail!.text), role === 'editor', `${role}: guide link`);
       const link = new URL(/https?:\/\/\S+/.exec(mail!.text)![0]);
       const acc = await c.req('GET', link.pathname + link.search);
       assert.equal(acc.headers.get('location'), `/#/p/${pid}`);
@@ -472,6 +474,23 @@ describe('uploads, processing and media links (F-4, F-7)', () => {
     assert.equal(item.capturedAt, '2026-05-09T09:30:00Z');
     assert.equal(item.chapterId, 'ch-douro');
     assert.deepEqual(item.location, { lat: 41.1906, lng: -7.5458 });
+  });
+
+  it('imports a voice memo: duration, recording time, waveform thumbnail, playable copy, and its chapter (MM-15)', async () => {
+    const file = path.join(tmp, 'Memo 2026-05-06.m4a');
+    await ff(['-f', 'lavfi', '-i', 'sine=frequency=330:duration=4', '-c:a', 'aac', '-metadata', 'creation_time=2026-05-06T19:15:00Z', file]);
+    const { mediaId } = await upload(owner, file, {});
+    await app.jobs.idle();
+    const item = await itemOf(mediaId);
+    assert.equal(item.kind, 'audio');
+    assert.equal(item.status, 'ready', item.error);
+    assert.ok(Math.abs(item.durationSec - 4) < 0.2, String(item.durationSec));
+    assert.equal(item.capturedAt, '2026-05-06T19:15:00Z');
+    assert.equal(item.chapterId, 'ch-porto');
+    assert.match(item.assets.thumb, /thumb\.jpg$/);
+    assert.match(item.assets.proxy, /proxy\.m4a$/);
+    const wave = await look(await app.blobs.localPath(item.assets.thumb), 2, 2);
+    assert.deepEqual([wave.w, wave.h], [480, 160], 'a waveform picture');
   });
 
   it('leaves an item with no time at all in Unassigned', async () => {

@@ -259,6 +259,7 @@ async function renderProject(id: string, initialView?: View) {
   const inset = mountInset(s, stageWrap, cfg.map);
   const media = mountMedia(s, {
     projectId: id,
+    map: cfg.map,
     play: (itemId) => {
       location.hash = `#/p/${encodeURIComponent(id)}/play`;
       const seg = player.timeline.segments.find((x) => x.kind !== 'title' && x.item.id === itemId);
@@ -504,7 +505,8 @@ async function renderProject(id: string, initialView?: View) {
         ? h('div', {},
           h('p', { class: 'muted' }, pending.length
             ? `${pending.length} item(s) are waiting for their original. Choose the matching files to finish the upload, or add new photos and videos (they go to Unassigned).`
-            : 'Add photos and videos. Originals upload unaltered, so capture time and location are kept. New items go to Unassigned.'),
+            : 'Add photos and videos. Originals upload unaltered, so capture time and location are kept. Each item goes to the chapter its time falls in.'),
+          h('p', { class: 'small' }, h('a', { href: '/guide-contributors.html', target: '_blank', rel: 'noopener', id: 'guide-link' }, 'How to share originals from a phone or camera')),
           input,
           h('button', { class: 'primary', id: 'upload-start', onclick: () => void start() }, 'Upload'),
           uploadProgress,

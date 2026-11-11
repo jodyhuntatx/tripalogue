@@ -11,16 +11,24 @@
  * - MM-4: each source's clock offset, with a live preview of how many items
  *   would change chapter before applying it.
  * - MM-8: likely duplicates are badged and can be filtered.
+ * - MM-9 / MV-2: a media map with each item's location around its chapter's
+ *   pin, items far from their chapter flagged; set a location from the
+ *   chapter, by clicking the map, or by copying it from another item.
+ * - MM-16 / MM-17: who sent what (contributor chips and filters), and a check
+ *   per contributor for items without a time or place or that look like
+ *   messaging-app copies, with a ready-to-send note asking for originals.
  *
  * Every change goes through the project session, so it is undoable, saved and
  * followed by automatic reassignment.
  */
 import {
-  duplicateGroups, dropIntoChapter, itemInstant, localToUtc, overlapItems, previewClockOffset, setClockOffset, setUserTime, shiftUserTime,
-  type Id, type MediaItem, type Travelogue,
+  contributorOf, contributorReports, duplicateGroups, dropIntoChapter, farFromChapter, itemInstant, localToUtc, messagingApp,
+  originalsRequest, overlapItems, previewClockOffset, renameSource, setClockOffset, setItemLocation, setSourceContributor, setUserTime, shiftUserTime,
+  strippedSigns, type ContributorReport, type Id, type LatLng, type MediaItem, type Travelogue,
 } from '../core/index.js';
 import { Api } from './api.js';
 import { fill, h } from './dom.js';
+import { RouteMap } from './map.js';
 import type { ProjectSession } from './session.js';
 
 export interface MediaView {
@@ -32,16 +40,25 @@ export interface MediaView {
   dispose(): void;
 }
 
-type Filter = 'all' | 'unassigned' | 'uncertain' | 'overlap' | 'duplicate';
-const FILTERS: [Filter, string][] = [['all', 'All'], ['unassigned', 'Unassigned'], ['uncertain', 'Time uncertain'], ['overlap', 'Overlaps'], ['duplicate', 'Duplicates']];
+type Filter = 'all' | 'unassigned' | 'uncertain' | 'overlap' | 'duplicate' | 'far';
+const FILTERS: [Filter, string][] = [['all', 'All'], ['unassigned', 'Unassigned'], ['uncertain', 'Time uncertain'], ['overlap', 'Overlaps'], ['duplicate', 'Duplicates'], ['far', 'Far from chapter']];
+
+interface Member { userId: string; name: string; email: string }
 
 const deviceZone = () => Intl.DateTimeFormat().resolvedOptions().timeZone;
 
-export function mountMedia(s: ProjectSession, ctx: { projectId: string; play: (itemId: Id) => void }): MediaView {
+export function mountMedia(s: ProjectSession, ctx: { projectId: string; play: (itemId: Id) => void; map: { tiles: boolean; attribution: string } }): MediaView {
   let selection = new Set<Id>();
   let anchor: Id | null = null;
   let filter: Filter = 'all';
-  let derived = { dupes: new Map<Id, number>(), overlaps: new Set<Id>(), state: null as Travelogue | null };
+  let derived = { dupes: new Map<Id, number>(), overlaps: new Set<Id>(), far: new Map<Id, number>(), state: null as Travelogue | null };
+  /** A focused subset from the contributor check ("Ana · no location"), shown on top of the filter. */
+  let focus: { label: string; ids: Set<Id> } | null = null;
+  let members: Member[] = [];
+  let copiedPlace: LatLng | null = null;
+  let picking = false;
+  void Api.members(ctx.projectId).then((r) => { members = r.members; render(); }).catch(() => {});
+  const memberName = (id: Id | null) => (id === null ? 'No traveler named' : members.find((m) => m.userId === id)?.name ?? 'A traveler');
   const tiles = new Map<Id, { el: HTMLElement; key: string }>();
 
   const summary = h('div', { class: 'media-summary', id: 'media-summary', role: 'status' });
@@ -49,9 +66,25 @@ export function mountMedia(s: ProjectSession, ctx: { projectId: string; play: (i
   const grid = h('div', { class: 'media-grid', id: 'media-grid' });
   const inspector = h('aside', { class: 'media-inspector card', id: 'media-inspector' });
   const sourcesBox = h('section', { class: 'media-sources', id: 'media-sources' });
+  const contribBox = h('section', { class: 'media-contributors', id: 'media-contributors' });
+  const focusBar = h('div', { class: 'media-focus', id: 'media-focus' });
+  const mapHint = h('p', { class: 'muted small', id: 'media-map-hint' });
+  const map = new RouteMap({
+    tileUrl: ctx.map.tiles ? (z, x, y) => `/api/tiles/${z}/${x}/${y}` : undefined,
+    attribution: ctx.map.attribution,
+    onDot: (id) => { anchor = id; setSelection([id]); tiles.get(id)?.el.scrollIntoView({ block: 'nearest' }); },
+    onPick: (lat, lng) => {
+      const ids = [...selection];
+      setPicking(false);
+      if (ids.length) s.edit(ids.length === 1 ? 'Set location' : `Set location of ${ids.length} items`, (p) => setItemLocation(p, ids, { lat, lng }), { structural: true });
+    },
+  });
+  map.el.classList.add('media-map');
+  map.el.id = 'media-map';
+  const mapBox = h('section', { class: 'media-map-box card' }, h('h3', {}, 'Where'), map.el, mapHint);
   const el = h('main', { class: 'media', id: 'media' },
-    h('section', { class: 'media-main' }, h('div', { class: 'media-toolbar' }, summary, filterBar), grid),
-    h('div', { class: 'media-side' }, inspector, sourcesBox));
+    h('section', { class: 'media-main' }, h('div', { class: 'media-toolbar' }, summary, filterBar), focusBar, grid),
+    h('div', { class: 'media-side' }, inspector, mapBox, contribBox, sourcesBox));
 
   const zoneFor = (p: Travelogue, m?: MediaItem) => (p.chapters.find((c) => c.id === m?.chapterId) ?? p.chapters[0])?.timeZone ?? deviceZone();
   const fmt = (t: number, tz: string, withYear = false) => Number.isNaN(t) ? '' : new Intl.DateTimeFormat(undefined, {
@@ -73,6 +106,7 @@ export function mountMedia(s: ProjectSession, ctx: { projectId: string; play: (i
       case 'uncertain': return m.timestampConfidence === 'low' && !m.userTimestamp;
       case 'overlap': return derived.overlaps.has(m.id);
       case 'duplicate': return derived.dupes.has(m.id);
+      case 'far': return derived.far.has(m.id);
       default: return true;
     }
   }
@@ -82,7 +116,11 @@ export function mountMedia(s: ProjectSession, ctx: { projectId: string; play: (i
     const tz = zoneFor(p, m);
     const ready = !m.status || m.status === 'ready';
     const dupe = derived.dupes.get(m.id);
-    const key = JSON.stringify([m.status, m.assets?.thumb, t, tz, m.timestampConfidence, !!m.userTimestamp, dupe, derived.overlaps.has(m.id), m.kind, m.durationSec, m.uri]);
+    const far = derived.far.get(m.id);
+    const who = contributorOf(p, m);
+    const multi = new Set(p.sources.map((x) => x.contributorId ?? null)).size > 1;
+    const copy = strippedSigns(m);
+    const key = JSON.stringify([m.status, m.assets?.thumb, t, tz, m.timestampConfidence, !!m.userTimestamp, dupe, derived.overlaps.has(m.id), m.kind, m.durationSec, m.uri, far, multi && who, memberName(who), copy, !!m.location]);
     const have = tiles.get(m.id);
     if (have && have.key === key) return have.el;
     const name = m.uri.split('/').pop() ?? m.uri;
@@ -92,12 +130,15 @@ export function mountMedia(s: ProjectSession, ctx: { projectId: string; play: (i
       Number.isNaN(t) && h('span', { class: 'badge low', title: 'No capture time: set one, or drag it into a chapter' }, 'no time'),
       derived.overlaps.has(m.id) && h('span', { class: 'badge warn', title: 'Taken while two chapters overlap: placed in the earlier one' }, 'overlap'),
       dupe !== undefined && h('span', { class: 'badge warn', title: `Likely duplicate (group ${dupe})` }, `dup ${dupe}`),
+      far !== undefined && h('span', { class: 'badge warn', title: `Taken ${far} km from this chapter’s place: is it in the right chapter?` }, `${far} km`),
+      ready && copy.length > 0 && h('span', { class: 'badge low', title: copyReason(m) }, 'copy?'),
       !ready && h('span', { class: `badge ${m.status}`, title: m.error ?? '' }, m.status ?? ''),
     ];
     const tileEl = h('figure', { class: 'tile', 'data-id': m.id, draggable: 'true', tabindex: '0', title: name },
       ready && m.assets?.thumb ? h('img', { src: Api.mediaUrl(ctx.projectId, m.id, 'thumb'), alt: '', loading: 'lazy', draggable: false })
         : h('div', { class: 'tile-placeholder' }, m.kind === 'audio' ? '♪' : m.kind === 'video' ? '▶' : ''),
       m.kind !== 'image' && h('span', { class: 'kind' }, m.kind === 'video' ? `▶ ${dur(m.durationSec)}` : `♪ ${dur(m.durationSec)}`),
+      multi && h('span', { class: 'who', title: memberName(who) }, initials(memberName(who))),
       h('figcaption', {}, h('span', { class: 'when' }, Number.isNaN(t) ? name : fmt(t, tz)), h('span', { class: 'badges' }, ...badges)));
     tiles.set(m.id, { el: tileEl, key });
     return tileEl;
@@ -105,7 +146,9 @@ export function mountMedia(s: ProjectSession, ctx: { projectId: string; play: (i
 
   function render() {
     const p = s.state;
-    if (derived.state !== p) derived = { dupes: duplicateGroups(p), overlaps: overlapItems(p), state: p };
+    if (derived.state !== p) derived = { dupes: duplicateGroups(p), overlaps: overlapItems(p), far: farFromChapter(p), state: p };
+    if (focus) focus.ids = new Set([...focus.ids].filter((id) => p.media.some((m) => m.id === id)));
+    fill(focusBar, focus && h('span', { class: 'chip' }, `Showing: ${focus.label} (${focus.ids.size})`, h('button', { class: 'icon', 'aria-label': 'Show everything', id: 'clear-focus', onclick: () => { focus = null; render(); } }, '×')));
     const byChapter = new Map<Id | null, MediaItem[]>([[null, []], ...p.chapters.map((c) => [c.id, []] as [Id, MediaItem[]])]);
     const order = new Map(p.cues.map((c) => [c.itemId, c.order]));
     for (const m of p.media) byChapter.get(m.chapterId)?.push(m) ?? byChapter.set(m.chapterId, [m]);
@@ -122,8 +165,8 @@ export function mountMedia(s: ProjectSession, ctx: { projectId: string; play: (i
     for (const [cid, title, sub] of groups) {
       const all = (byChapter.get(cid) ?? []).slice().sort((a, b) => ((order.get(a.id) ?? '~') < (order.get(b.id) ?? '~') ? -1 : 1));
       if (cid === null && !all.length && filter === 'all') continue;
-      const shown = all.filter((m) => visible(p, m));
-      if (filter !== 'all' && !shown.length) continue;
+      const shown = all.filter((m) => visible(p, m) && (!focus || focus.ids.has(m.id)));
+      if ((filter !== 'all' || focus) && !shown.length) continue;
       const body = h('div', { class: 'tiles' }, ...shown.map((m) => tileFor(p, m)));
       if (!shown.length) body.append(h('p', { class: 'muted empty' }, cid === null ? '' : 'No media yet. Drag items here to put them in this chapter.'));
       const sec = h('section', { class: `media-chapter${cid === null ? ' unassigned' : ''}`, 'data-chapter': cid ?? '' },
@@ -141,6 +184,8 @@ export function mountMedia(s: ProjectSession, ctx: { projectId: string; play: (i
     selection = new Set([...selection].filter((id) => p.media.some((m) => m.id === id)));
     renderInspector();
     renderSources();
+    renderContributors();
+    renderMap();
   }
 
   // ---------------------------------------------------------------- selection
@@ -182,7 +227,9 @@ export function mountMedia(s: ProjectSession, ctx: { projectId: string; play: (i
   function setSelection(ids: Id[]) {
     selection = new Set(ids);
     for (const [id, t] of tiles) t.el.classList.toggle('selected', selection.has(id));
+    if (!selection.size && picking) setPicking(false);
     renderInspector();
+    renderMap();
   }
 
   // ---------------------------------------------------------------- drag into a chapter (MM-5)
@@ -275,12 +322,102 @@ export function mountMedia(s: ProjectSession, ctx: { projectId: string; play: (i
             if (ms) s.edit(`Shift ${items.length === 1 ? 'item' : `${items.length} items`}`, (q) => shiftUserTime(q, ids, ms), { structural: true });
           },
         }, 'Shift'))),
+      locationField(p, items),
       p.chapters.length > 0 && h('div', { class: 'field' },
         h('label', { for: 'move-chapter' }, 'Move to chapter'),
         h('div', { class: 'row' }, chapterSel, h('button', { id: 'apply-move', disabled: !editable, onclick: () => moveTo(ids, chapterSel.value) }, 'Move'))),
       anyUser && h('button', { id: 'clear-time', disabled: !editable, onclick: () => s.edit('Use camera time', (q) => setUserTime(q, ids, null), { structural: true }) }, 'Use the camera’s time again'),
       first.chapterId && items.length === 1 && h('button', { class: 'linkish', onclick: () => ctx.play(first.id) }, 'Play from here'),
     );
+  }
+
+  // ---------------------------------------------------------------- location (MM-9) and the media map (MV-2)
+
+  function locationField(p: Travelogue, items: MediaItem[]): HTMLElement {
+    const ids = items.map((m) => m.id);
+    const located = items.filter((m) => m.location);
+    const one = items.length === 1 ? items[0] : null;
+    const ch = p.chapters.find((c) => c.id === (one ?? items[0]).chapterId);
+    const set = (label: string, loc: LatLng | null) => s.edit(label, (q) => setItemLocation(q, ids, loc), { structural: true });
+    const editable = s.canEdit;
+    const status = one
+      ? (one.location ? `${one.location.lat.toFixed(4)}, ${one.location.lng.toFixed(4)}` : 'No location')
+      : `${located.length} of ${items.length} have a location`;
+    return h('div', { class: 'field', id: 'location-field' },
+      h('label', {}, 'Location ', h('span', { class: 'muted', id: 'location-status' }, status)),
+      h('div', { class: 'row' },
+        ch?.coordinates && h('button', { id: 'loc-chapter', disabled: !editable, title: `Use ${ch.locationName || ch.title}`, onclick: () => set('Set location from chapter', ch.coordinates!) }, 'Chapter’s place'),
+        h('button', { id: 'loc-pick', disabled: !editable, 'aria-pressed': String(picking), onclick: () => setPicking(!picking) }, picking ? 'Cancel pick' : 'Pick on map'),
+        one?.location && h('button', { id: 'loc-copy', onclick: () => { copiedPlace = one.location!; renderInspector(); } }, 'Copy'),
+        copiedPlace && h('button', { id: 'loc-paste', disabled: !editable, title: `${copiedPlace.lat.toFixed(4)}, ${copiedPlace.lng.toFixed(4)}`, onclick: () => set('Paste location', copiedPlace) }, 'Paste'),
+        located.length > 0 && h('button', { id: 'loc-clear', disabled: !editable, onclick: () => set('Clear location', null) }, 'Clear')));
+  }
+
+  function setPicking(on: boolean) {
+    picking = on && selection.size > 0;
+    map.setPickMode(picking, `Click the map to place ${selection.size === 1 ? 'this item' : `${selection.size} items`}`);
+    renderInspector();
+  }
+
+  function renderMap() {
+    const p = s.state;
+    map.setPins(p.chapters.flatMap((c, i) => (c.coordinates ? [{ id: c.id, index: i, lat: c.coordinates.lat, lng: c.coordinates.lng, title: c.title }] : [])));
+    map.setDots(p.media.filter((m) => m.location).map((m) => ({
+      id: m.id, lat: m.location!.lat, lng: m.location!.lng,
+      state: selection.has(m.id) ? 'selected' as const : derived.far.has(m.id) ? 'far' as const : m.chapterId === null ? 'unassigned' as const : undefined,
+    })));
+    const located = p.media.filter((m) => m.location).length;
+    mapHint.textContent = picking ? 'Click the map to set the location.'
+      : `${located} of ${p.media.length} items have a location${derived.far.size ? ` · ${derived.far.size} far from their chapter (amber)` : ''}. Click a dot to select its item.`;
+  }
+
+  // ---------------------------------------------------------------- contributors (MM-16, MM-17)
+
+  function renderContributors() {
+    const p = s.state;
+    const reports = contributorReports(p);
+    if (!reports.length) {
+      fill(contribBox);
+      return;
+    }
+    const show = (label: string, ids: Id[]) => { focus = { label, ids: new Set(ids) }; filter = 'all'; render(); grid.scrollIntoView({ block: 'start' }); };
+    fill(contribBox, h('h3', {}, 'Contributors'),
+      h('p', { class: 'muted small' }, 'Who sent what, and what is missing. Copies from chat apps lose the time and place: ask for the originals.'),
+      ...reports.map((r) => {
+        const name = memberName(r.contributorId);
+        const mine = p.media.filter((m) => contributorOf(p, m) === r.contributorId).map((m) => m.id);
+        const issue = (ids: Id[], text: string, id: string) => ids.length > 0 && h('li', {}, h('button', { class: 'linkish', 'data-check': id, onclick: () => show(`${name} · ${text}`, ids) }, `${ids.length} ${text}`));
+        const clean = !r.noTime.length && !r.noPlace.length && !r.stripped.length;
+        return h('div', { class: 'contributor', 'data-contributor': r.contributorId ?? '' },
+          h('div', { class: 'row' }, h('span', { class: 'who' }, initials(name)), h('button', { class: 'linkish strong', onclick: () => show(name, mine) }, name), h('span', { class: 'muted' }, ` ${r.total} item${r.total === 1 ? '' : 's'}`)),
+          clean ? h('p', { class: 'ok small' }, 'Everything has a time and a place.')
+            : h('ul', { class: 'checks' },
+              issue(r.noTime, 'without a capture time', 'noTime'),
+              issue(r.noPlace, 'without a location', 'noPlace'),
+              issue(r.stripped, `look like copies${r.apps.length ? ` (${r.apps.join(', ')})` : ''}`, 'stripped')),
+          !clean && r.contributorId !== null && h('button', { class: 'ask', 'data-ask': r.contributorId, onclick: () => askFor(r) }, `Ask ${name.split(' ')[0]} for originals`));
+      }));
+  }
+
+  function askFor(r: ContributorReport) {
+    const p = s.state;
+    const who = members.find((m) => m.userId === r.contributorId);
+    const meName = s.me.name;
+    const text = originalsRequest(r, { name: (who?.name ?? 'there').split(' ')[0], trip: p.title, from: meName });
+    const area = h('textarea', { id: 'ask-text', rows: '14', 'aria-label': 'Message' });
+    area.value = text;
+    const dialog = h('dialog', { class: 'card ask-dialog', id: 'ask-dialog' },
+      h('h3', {}, `Ask ${who?.name ?? 'them'} for the originals`),
+      h('p', { class: 'muted small' }, 'Edit as you like, then copy it into a message or open it in your email.'),
+      area,
+      h('div', { class: 'row' },
+        h('button', { class: 'primary', id: 'ask-copy', onclick: async () => {
+          try { await navigator.clipboard.writeText(area.value); (document.getElementById('ask-copy') as HTMLButtonElement).textContent = 'Copied'; } catch { area.select(); }
+        } }, 'Copy'),
+        who?.email && h('a', { class: 'button', id: 'ask-email', href: `mailto:${encodeURIComponent(who.email)}?subject=${encodeURIComponent(`Originals for "${p.title}"`)}&body=${encodeURIComponent(area.value)}` }, 'Open in email'),
+        h('button', { id: 'ask-close', onclick: () => { dialog.close(); dialog.remove(); } }, 'Close')));
+    document.body.append(dialog);
+    dialog.showModal();
   }
 
   function itemDetail(p: Travelogue, m: MediaItem): HTMLElement {
@@ -341,8 +478,15 @@ export function mountMedia(s: ProjectSession, ctx: { projectId: string; play: (i
           s.edit(`Clock offset for ${src.displayName}`, (q) => setClockOffset(q, src.id, sec), { structural: true });
         });
         refresh();
+        const traveler = h('select', { 'aria-label': `${src.displayName}: traveler`, class: 'traveler', disabled: !s.canEdit,
+          onchange: (e: Event) => { const v = (e.target as HTMLSelectElement).value; s.edit('Set traveler', (q) => setSourceContributor(q, src.id, v || null)); } },
+          h('option', { value: '' }, 'No traveler named'),
+          ...members.map((m) => h('option', { value: m.userId, selected: m.userId === src.contributorId }, m.name)));
+        const nameInput = h('input', { value: src.displayName, class: 'source-name', 'aria-label': 'Source name', readOnly: !s.canEdit,
+          onchange: (e: Event) => s.edit('Rename source', (q) => renameSource(q, src.id, (e.target as HTMLInputElement).value)) });
         return h('div', { class: 'source', 'data-source': src.id },
-          h('div', { class: 'row' }, h('strong', {}, src.displayName), h('span', { class: 'muted' }, ` ${count} item${count === 1 ? '' : 's'}`)),
+          h('div', { class: 'row' }, nameInput, h('span', { class: 'muted' }, ` ${count} item${count === 1 ? '' : 's'}`)),
+          h('div', { class: 'row' }, h('span', { class: 'muted' }, 'Traveler'), traveler),
           h('div', { class: 'row offset' }, h('span', { class: 'muted' }, 'Clock'), sign, hours, h('span', {}, 'h'), mins, h('span', {}, 'min'), apply),
           preview);
       }));
@@ -354,7 +498,7 @@ export function mountMedia(s: ProjectSession, ctx: { projectId: string; play: (i
     update: render,
     selected: () => [...selection],
     select: (ids) => setSelection(ids),
-    dispose: () => tiles.clear(),
+    dispose: () => { tiles.clear(); map.destroy(); },
   };
 }
 
@@ -370,3 +514,14 @@ export function offsetLabel(sec: number): string {
   const text = [hh && `${hh} h`, mm && `${mm} min`].filter(Boolean).join(' ') || '0 min';
   return sec === 0 ? 'not at all' : `${sec > 0 ? 'later' : 'earlier'} by ${text}`;
 }
+
+function initials(name: string): string {
+  const parts = name.replace(/[^\p{L}\p{N} ]/gu, ' ').trim().split(/\s+/).filter(Boolean);
+  return ((parts[0]?.[0] ?? '?') + (parts.length > 1 ? parts[parts.length - 1][0] : '')).toUpperCase();
+}
+
+function copyReason(m: MediaItem): string {
+  const why = strippedSigns(m).map((x) => (x === 'small' ? `only ${Math.max(m.width ?? 0, m.height ?? 0)} px` : x === 'lowVideo' ? '720p or less' : `named like a ${messagingApp(m.uri)} copy`));
+  return `Looks like a reduced copy (${why.join(', ')}): the original may have more detail and keep the time and place.`;
+}
+

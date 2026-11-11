@@ -206,3 +206,22 @@ button.linkish { background: none; border: 0; color: var(--accent); padding: 4px
 .media-sources .row.offset input.num { width: 48px; padding: 4px 6px; }
 .media-sources .row.offset select { padding: 4px; }
 .media-sources .row.offset button { margin-left: auto; }
+.media-map-box h3, .media-contributors h3 { margin: 0 0 8px; font-size: 15px; }
+.route-map.media-map { height: 240px; }
+.media-map-box p { margin: 6px 0 0; }
+.tile .who, .media-contributors .who { display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: #2c3f5c; color: #dce7f7; font-size: 10px; font-weight: 700; letter-spacing: .02em; }
+.tile .who { position: absolute; top: 6px; right: 6px; box-shadow: 0 0 0 2px rgba(0,0,0,.4); }
+.media-contributors { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 16px; }
+.media-contributors .contributor { border-top: 1px solid var(--line); padding: 10px 0 6px; display: grid; gap: 4px; }
+.media-contributors .checks { margin: 0; padding-left: 30px; }
+.media-contributors .checks li { color: var(--warn); }
+.media-contributors .ok { color: var(--ok); margin: 0 0 0 30px; }
+.media-contributors .ask { justify-self: start; margin-left: 30px; }
+button.linkish.strong { font-weight: 600; color: var(--text); }
+.media-focus .chip { display: inline-flex; align-items: center; gap: 6px; margin: 0 0 10px; padding: 3px 4px 3px 10px; border: 1px solid #2c64a8; border-radius: 999px; background: #13233a; }
+.media-sources .source-name { flex: 1; min-width: 0; font-weight: 600; padding: 4px 8px; }
+.media-sources select.traveler { flex: 1; min-width: 0; padding: 4px 6px; }
+.ask-dialog { width: min(640px, 92vw); color: var(--text); }
+.ask-dialog::backdrop { background: rgba(0,0,0,.6); }
+.ask-dialog textarea { width: 100%; background: #0f1217; color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 8px; font: inherit; margin: 8px 0; }
+#location-field .row button { padding: 4px 9px; }

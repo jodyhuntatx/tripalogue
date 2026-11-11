@@ -279,7 +279,10 @@ export class Projects {
     await this.mailer.send({
       to: email,
       subject: `${by.name} invited you to "${doc.title}" on TripAlogue`,
-      text: `${by.name} invited you to join the travelogue "${doc.title}" as ${role === 'contributor' ? 'a contributor' : `an ${role}`}.\n\nOpen the invitation:\n\n${this.cfg.baseUrl}/api/invites/accept?token=${t}\n\nThe invitation expires in 14 days.`,
+      text: `${by.name} invited you to join the travelogue "${doc.title}" as ${role === 'contributor' ? 'a contributor' : `an ${role}`}.\n\nOpen the invitation:\n\n${this.cfg.baseUrl}/api/invites/accept?token=${t}\n\nThe invitation expires in 14 days.`
+        + (role === 'contributor' || role === 'editor' || role === 'owner'
+          ? `\n\nAdding your photos and videos? Please upload the originals, not copies from a chat app, so they land in the right part of the trip and on the map. A one-page guide:\n\n${this.cfg.baseUrl}/guide-contributors.html`
+          : ''),
     });
   }
 

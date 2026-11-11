@@ -45,9 +45,9 @@ const files = path.join(dataDir, 'phone');
 mkdirSync(files);
 
 // ---- the traveler's extra files ----
-async function photo(name: string, color: string, exif?: Parameters<typeof exifTiff>) {
+async function photo(name: string, color: string, exif?: Parameters<typeof exifTiff>, size = '4032x3024') {
   const plain = path.join(files, `plain-${name}`);
-  await run('ffmpeg', ['-v', 'error', '-y', '-f', 'lavfi', '-i', `color=c=${color}:s=320x240`, '-frames:v', '1', plain]);
+  await run('ffmpeg', ['-v', 'error', '-y', '-f', 'lavfi', '-i', `color=c=${color}:s=${size}`, '-frames:v', '1', plain]);
   const out = path.join(files, name);
   await fs.writeFile(out, exif ? withExif(await fs.readFile(plain), exifTiff(...exif)) : await fs.readFile(plain));
   await fs.rm(plain);
@@ -64,8 +64,52 @@ const slow = [
   await photo('DSC_0102.jpg', 'navy', ['2026:05:03 23:40:00', 1, canon]),
   await photo('DSC_0103.jpg', 'teal', ['2026:05:04 10:00:00', 1, canon]),
 ];
+// Ana, a second traveler, sends originals from her phone (time, offset, GPS). One was taken in Porto on a Lisbon day.
+const anaPhone = { make: 'Apple', model: 'iPhone 14', offset: '+01:00' };
+const ana = [
+  await photo('IMG_7001.jpg', 'pink', ['2026:05:02 12:00:00', 1, { ...anaPhone, gps: { lat: 38.7139, lng: -9.1394 } }]),
+  await photo('IMG_7002.jpg', 'olive', ['2026:05:02 18:00:00', 1, { ...anaPhone, gps: { lat: 41.1496, lng: -8.6109 } }]),
+];
+// Ben, a third, forwards WhatsApp copies: small, no camera time or place.
+const ben = [
+  await photo('IMG-20260504-WA0007.jpg', 'maroon', undefined, '1600x1200'),
+  await photo('IMG-20260504-WA0008.jpg', 'silver', undefined, '1600x1200'),
+];
+// A voice memo recorded in Porto.
+const memo = path.join(files, 'Memo Porto.m4a');
+await run('ffmpeg', ['-v', 'error', '-y', '-f', 'lavfi', '-i', 'sine=frequency=330:duration=3', '-c:a', 'aac', '-metadata', 'creation_time=2026-05-06T19:15:00Z', memo]);
 // The same traveler's phone keeps network time: its late-night Lisbon photo must not move when the Canon is fixed.
 const phone = await photo('IMG_3002.jpg', 'yellow', ['2026:05:03 23:30:00', 1, { make: 'Apple', model: 'iPhone 15 Pro', offset: '+01:00' }]);
+
+/** Another traveler, uploading through the API from their own device. */
+class Traveler {
+  cookie = '';
+  constructor(readonly email: string) {}
+  async req(method: string, p: string, body?: unknown, raw?: Buffer) {
+    const headers: Record<string, string> = { 'x-tripalogue-client': '1' };
+    if (this.cookie) headers.cookie = this.cookie;
+    if (body !== undefined) headers['content-type'] = 'application/json';
+    const res = await fetch(new URL(p, app.url), { method, headers, body: (raw ?? (body !== undefined ? JSON.stringify(body) : undefined)) as BodyInit | undefined, redirect: 'manual' });
+    const set = res.headers.get('set-cookie');
+    if (set) this.cookie = set.split(';')[0];
+    const text = await res.text();
+    return { status: res.status, json: text.startsWith('{') ? JSON.parse(text) : {}, headers: res.headers };
+  }
+  async signInFromLink(link: string) {
+    await this.req('POST', '/api/auth/email', { email: this.email });
+    const v = new URL(/https?:\/\/\S+/.exec((await (app.mailer as OutboxMailer).latestFor(this.email))!.text)![0]);
+    await this.req('GET', v.pathname + v.search);
+    const inv = new URL(link);
+    await this.req('GET', inv.pathname + inv.search);
+  }
+  async upload(pid: string, file: string) {
+    const data = await fs.readFile(file);
+    const st = await fs.stat(file);
+    const c = await this.req('POST', `/api/projects/${pid}/uploads`, { fileName: path.basename(file), size: data.length, lastModified: st.mtimeMs });
+    let offset = c.json.offset as number;
+    while (offset < data.length) offset = (await this.req('PUT', `/api/uploads/${c.json.uploadId}?offset=${offset}`, undefined, data.subarray(offset, offset + c.json.chunkBytes))).json.offset;
+  }
+}
 
 const app = await startApp({ dataDir, port: 0, log: () => {}, geo: geoConfigFromEnv(dataDir, { tileUrl: '', geocoderUrl: '' }) });
 const browser = await chromium.launch();
@@ -107,6 +151,20 @@ try {
   check('uploads are grouped by camera, so one camera’s clock can be fixed alone', (await byName('DSC_0101.jpg')).sourceId !== (await byName('IMG_3002.jpg')).sourceId && srcs.some((n) => /Canon EOS R6/.test(n)) && srcs.some((n) => /iPhone 15 Pro/.test(n)),
     srcs.join(' | '));
 
+  // Two more travelers join as contributors and upload from their own devices.
+  for (const [who, list] of [['ana@example.com', ana], ['ben@example.com', ben]] as const) {
+    await page.evaluate(async ([p, email]) => fetch(`/api/projects/${p}/invites`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-tripalogue-client': '1' }, body: JSON.stringify({ email, role: 'contributor' }) }), [pid, who]);
+    const invite = /https?:\/\/\S+accept\S+/.exec((await (app.mailer as OutboxMailer).latestFor(who))!.text)![0];
+    const t = new Traveler(who);
+    await t.signInFromLink(invite);
+    for (const f of list) await t.upload(pid, f);
+  }
+  await page.click('.tabs button[data-tab="Upload"]');
+  await page.setInputFiles('#upload-input', [memo]);
+  await page.click('#upload-start');
+  await app.jobs.idle();
+  await page.waitForFunction(() => window.tripalogue!.session!.state.media.length === 32, null, { timeout: 30_000 });
+
   // Opening the project (a link with no view in it) goes to the Media view, since items are unassigned.
   await page.goto('about:blank');
   await page.goto(new URL(`/#/p/${pid}`, app.url).href);
@@ -119,7 +177,7 @@ try {
   check('with unassigned items, the project opens in the Media view', page.url().endsWith('/media'));
   const unassigned = await page.locator('.media-chapter.unassigned .tile').count();
   const summary = await page.textContent('#media-summary');
-  check('the Unassigned bin is listed first with its count', unassigned === 3 && /3 unassigned/.test(summary ?? ''), summary ?? '');
+  check('the Unassigned bin is listed first with its count', unassigned === 5 && /5 unassigned/.test(summary ?? ''), summary ?? '');
   check('a file with no camera time is badged as uncertain', (await tile('Screenshot 2026-05-20.jpg').textContent())!.includes('time?'));
   await shot('01-media-view');
 
@@ -176,13 +234,76 @@ try {
   const shifted = await byName('DSC_0101.jpg');
   check('Shift-click selects a range, and Shift moves all of them', sel >= 3 && shifted.userTimestamp === '2026-05-03T23:50:00Z', `${sel} selected; DSC_0101 now ${shifted.userTimestamp}`);
 
+  // ---- slice C: contributors, the metadata check, locations, audio ----
+  await page.waitForSelector('.media-contributors .contributor');
+  const reportText = async (email: string) => {
+    const uid = (await app.auth.upsertUser(email)).id;
+    return page.locator(`.media-contributors .contributor[data-contributor="${uid}"]`).textContent();
+  };
+  const anaReport = await reportText('ana@example.com');
+  const benReport = await reportText('ben@example.com');
+  check('the contributor check finds who sent copies stripped of time and place (G2)', /Everything has a time and a place/.test(anaReport ?? '') && /2 without a capture time/.test(benReport ?? '') && /2 without a location/.test(benReport ?? '') && /2 look like copies \(WhatsApp\)/.test(benReport ?? ''),
+    `Ana: ${anaReport?.replace(/\s+/g, ' ').trim()} | Ben: ${benReport?.replace(/\s+/g, ' ').trim()}`);
+  const benId = (await app.auth.upsertUser('ben@example.com')).id;
+  await page.click(`.media-contributors button[data-ask="${benId}"]`);
+  const note = await page.inputValue('#ask-text');
+  check('a ready-to-send note asks Ben for the originals', /^Hi ben,/i.test(note) && /WhatsApp/.test(note) && /Options/.test(note), note.split('\n')[2]?.slice(0, 120));
+  await page.locator('#ask-dialog').screenshot({ path: path.join(outDir, '03-ask-for-originals.png') });
+  await page.click('#ask-close');
+  await page.click('.media-contributors .contributor[data-contributor="' + benId + '"] button[data-check="noPlace"]');
+  await settle();
+  check('a contributor’s problem items can be shown on their own', await page.locator('#media-grid .tile').count() === 2 && /Showing: .*without a location \(2\)/.test(await page.textContent('#media-focus') ?? ''));
+  await page.click('#clear-focus');
+
+  const far = await byName('IMG_7002.jpg');
+  await page.click('.media-filters button[data-filter="far"]');
+  await settle();
+  check('a photo taken far from its chapter is flagged (likely misassigned)', far.chapterId === 'ch-lisbon' && await page.locator('#media-grid .tile').count() === 1 && /km/.test((await tile('IMG_7002.jpg').textContent()) ?? ''),
+    `${(await tile('IMG_7002.jpg').textContent())?.replace(/\s+/g, ' ')}`);
+  await page.click('.media-filters button[data-filter="all"]');
+
+  // Locations: from the chapter, by clicking the map, and copy/paste.
+  await tile('DSC_0101.jpg').click();
+  await page.click('#loc-chapter');
+  await saved(page);
+  const fromChapter = (await byName('DSC_0101.jpg')).location;
+  await page.click('#loc-copy');
+  await tile('DSC_0103.jpg').click();
+  await page.click('#loc-paste');
+  await saved(page);
+  const pasted = (await byName('DSC_0103.jpg')).location;
+  await tile('DSC_0102.jpg').click();
+  await page.click('#loc-pick');
+  const mapBox = (await page.locator('#media-map canvas').boundingBox())!;
+  await page.mouse.click(mapBox.x + mapBox.width / 2, mapBox.y + mapBox.height / 2);
+  await saved(page);
+  const picked = (await byName('DSC_0102.jpg')).location;
+  check('a location can be set from the chapter, pasted from another item, or picked on the map (MM-9)', !!fromChapter && JSON.stringify(pasted) === JSON.stringify(fromChapter) && !!picked && JSON.stringify(picked) !== JSON.stringify(fromChapter),
+    `${JSON.stringify(fromChapter)} / picked ${JSON.stringify(picked)}`);
+  const dots = await page.evaluate(() => window.tripalogue!.session!.state.media.filter((m) => m.location).length);
+  await page.locator('.media-map-box').screenshot({ path: path.join(outDir, '04-media-map.png') });
+  check('the media map shows a dot for every located item', /\d+ of 32 items have a location/.test(await page.textContent('#media-map-hint') ?? '') && dots >= 5, await page.textContent('#media-map-hint') ?? '');
+
+  const memoItem = await byName('Memo Porto.m4a');
+  check('a voice memo is filed by its recording time, with a waveform thumbnail (MM-15)', memoItem.kind === 'audio' && memoItem.chapterId === 'ch-porto' && !!memoItem.assets?.thumb && Math.round(memoItem.durationSec ?? 0) === 3);
+
+  // MM-16: name the traveler behind the imported sample source.
+  const anaId = (await app.auth.upsertUser('ana@example.com')).id;
+  await page.selectOption('.media-sources .source[data-source="src-camera"] select.traveler', anaId);
+  await saved(page);
+  await settle();
+  check('a source can be credited to a traveler, and items show who sent them (MM-16)', (await page.evaluate(() => window.tripalogue!.session!.state.sources.find((x) => x.id === 'src-camera')!.contributorId)) === anaId
+    && await page.locator('#media-grid .tile .who').count() === 32);
+  const guide = await page.evaluate(async () => (await fetch('/guide-contributors.html')).status);
+  check('the contributor guide is linked from the Upload tab and served (MM-18)', guide === 200);
+
   // Everything is saved on the server and survives a reload.
   await page.reload();
   await page.waitForSelector('#media-grid .tile');
   const doc = app.projects.load(pid).doc;
   const where = (n: string) => doc.media.find((m) => m.uri.endsWith(n))!.chapterId;
   check('all fixes are saved and survive a reload', where('IMG_3001.jpg') === 'ch-porto' && where('Screenshot 2026-05-20.jpg') === 'ch-douro' && where('DSC_0102.jpg') === 'ch-sintra'
-    && doc.sources.find((s) => s.id === src)!.clockOffsetSec === 3600);
+    && doc.sources.find((s) => s.id === src)!.clockOffsetSec === 3600 && !!doc.media.find((m) => m.uri === 'DSC_0102.jpg')!.location);
 
   check('no errors in the browser console', consoleErrors.length === 0, consoleErrors.slice(0, 3).join(' | '));
   writeFileSync(path.join(outDir, 'report.json'), JSON.stringify({ date: new Date().toISOString(), browser: browser.version(), checks }, null, 2));

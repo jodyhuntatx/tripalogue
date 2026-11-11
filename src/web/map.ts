@@ -18,11 +18,22 @@ export interface MapPin {
   title: string;
 }
 
+/** A small marker for one media item's location (media map, MV-2). */
+export interface MapDot {
+  id: string;
+  lat: number;
+  lng: number;
+  /** selected: highlighted; far: taken far from its chapter (likely misassigned); unassigned: in no chapter. */
+  state?: 'selected' | 'far' | 'unassigned';
+}
+
 export interface RouteMapOptions {
   tileUrl?: (z: number, x: number, y: number) => string;
   attribution?: string;
   onSelect?: (id: string) => void;
   onPick?: (lat: number, lng: number) => void;
+  /** A click on an item dot (media map). */
+  onDot?: (id: string) => void;
   /** Playback inset: no controls or input, compact pins, progress styling. */
   inset?: boolean;
 }
@@ -53,6 +64,7 @@ export class RouteMap {
   private canvas: HTMLCanvasElement;
   private ctx: CanvasRenderingContext2D;
   private pins: MapPin[] = [];
+  private dots: MapDot[] = [];
   private selected: string | null = null;
   private picking = false;
   private z = 2;
@@ -192,6 +204,14 @@ export class RouteMap {
     return { z, nx: c0.x, ny: c0.y };
   }
 
+  /** Item markers drawn under the chapter pins; the view fits pins and dots together. */
+  setDots(dots: MapDot[]) {
+    const changed = JSON.stringify(dots.map((d) => [d.id, d.lat, d.lng])) !== JSON.stringify(this.dots.map((d) => [d.id, d.lat, d.lng]));
+    this.dots = dots;
+    if (changed && !this.userMoved && !this.o.inset) this.fit();
+    else this.redraw();
+  }
+
   setSelected(id: string | null) {
     this.selected = id;
     this.redraw();
@@ -216,13 +236,22 @@ export class RouteMap {
     return { x: w.x - this.cx + this.w / 2, y: w.y - this.cy + this.h / 2 };
   }
 
+  /** Screen position of an item dot (tests). */
+  dotPos(id: string): { x: number; y: number } | undefined {
+    const d = this.dots.find((q) => q.id === id);
+    if (!d) return undefined;
+    const w = project(d.lat, d.lng, this.z);
+    return { x: w.x - this.cx + this.w / 2, y: w.y - this.cy + this.h / 2 };
+  }
+
   get view() {
     return { zoom: this.z, center: unproject(this.cx, this.cy, this.z) };
   }
 
   fit() {
     if (!this.w || !this.h) return;
-    if (!this.pins.length) {
+    const all: { lat: number; lng: number }[] = [...this.pins, ...this.dots];
+    if (!all.length) {
       this.z = this.w > 700 ? 2 : 1;
       const c = project(25, 0, this.z);
       [this.cx, this.cy] = [c.x, c.y];
@@ -230,14 +259,14 @@ export class RouteMap {
     }
     let z = 13;
     for (; z > 1; z--) {
-      const pts = this.pins.map((p) => project(p.lat, p.lng, z));
+      const pts = all.map((p) => project(p.lat, p.lng, z));
       const xs = pts.map((p) => p.x);
       const ys = pts.map((p) => p.y);
       if (Math.max(...xs) - Math.min(...xs) <= this.w - 80 && Math.max(...ys) - Math.min(...ys) <= this.h - 80) break;
     }
-    if (this.pins.length === 1) z = Math.min(z, 10);
+    if (all.length === 1) z = Math.min(z, 10);
     this.z = z;
-    const pts = this.pins.map((p) => project(p.lat, p.lng, z));
+    const pts = all.map((p) => project(p.lat, p.lng, z));
     this.cx = (Math.min(...pts.map((p) => p.x)) + Math.max(...pts.map((p) => p.x))) / 2;
     this.cy = (Math.min(...pts.map((p) => p.y)) + Math.max(...pts.map((p) => p.y))) / 2;
     this.redraw();
@@ -303,7 +332,10 @@ export class RouteMap {
         return;
       }
       const hit = this.pins.map((p) => ({ p, s: this.screenPos(p.id)! })).filter(({ s }) => Math.hypot(s.x - x, s.y - y) <= 14).pop();
-      if (hit) this.o.onSelect?.(hit.p.id);
+      if (hit) return this.o.onSelect?.(hit.p.id);
+      const dot = this.dots.map((d) => ({ d, s: this.dotPos(d.id)! })).filter(({ s }) => Math.hypot(s.x - x, s.y - y) <= 8)
+        .sort((a, b) => Math.hypot(a.s.x - x, a.s.y - y) - Math.hypot(b.s.x - x, b.s.y - y))[0];
+      if (dot) this.o.onDot?.(dot.d.id);
     });
     this.canvas.addEventListener('wheel', (e) => {
       e.preventDefault();
@@ -369,6 +401,20 @@ export class RouteMap {
       ctx.strokeStyle = 'rgba(255,255,255,0.05)';
       for (let gx = -((left % 64) + 64) % 64; gx < w; gx += 64) { ctx.beginPath(); ctx.moveTo(gx, 0); ctx.lineTo(gx, h); ctx.stroke(); }
       for (let gy = -((top % 64) + 64) % 64; gy < h; gy += 64) { ctx.beginPath(); ctx.moveTo(0, gy); ctx.lineTo(w, gy); ctx.stroke(); }
+    }
+    // Item dots (media map) under the route and pins: far-from-chapter in amber, unassigned hollow, selected large.
+    for (const d of this.dots) {
+      const w = project(d.lat, d.lng, this.z);
+      const x = w.x - this.cx + this.w / 2, y = w.y - this.cy + this.h / 2;
+      if (x < -10 || y < -10 || x > this.w + 10 || y > this.h + 10) continue;
+      const sel = d.state === 'selected';
+      ctx.beginPath();
+      ctx.arc(x, y, sel ? 6 : 4, 0, Math.PI * 2);
+      ctx.fillStyle = sel ? '#ffffff' : d.state === 'far' ? '#f2c46d' : d.state === 'unassigned' ? 'rgba(0,0,0,0)' : 'rgba(155,200,255,0.85)';
+      ctx.fill();
+      ctx.lineWidth = sel ? 2 : 1.5;
+      ctx.strokeStyle = sel ? '#4f9cf7' : d.state === 'unassigned' ? '#f2c46d' : '#0d0f13';
+      ctx.stroke();
     }
     const pts = this.pins.map((p) => ({ p, s: this.screenPos(p.id)! }));
     const inset = !!this.o.inset;

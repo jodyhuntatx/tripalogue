@@ -1,5 +1,5 @@
 {
-  "date": "2026-11-11T20:10:24.527Z",
+  "date": "2026-11-11T20:20:08.037Z",
   "browser": "153.0.8010.12",
   "checks": [
     {
@@ -25,7 +25,7 @@
     {
       "name": "the Unassigned bin is listed first with its count",
       "pass": true,
-      "detail": "27 items · 3 unassigned · 3 with uncertain times · 2 possible duplicates"
+      "detail": "32 items · 5 unassigned · 5 with uncertain times · 2 possible duplicates"
     },
     {
       "name": "a file with no camera time is badged as uncertain",
@@ -60,12 +60,57 @@
     {
       "name": "applying it moves the slow camera’s photos to the right chapter, and nothing else",
       "pass": true,
-      "detail": "saved in 349 ms; the iPhone photo stays in Lisbon"
+      "detail": "saved in 374 ms; the iPhone photo stays in Lisbon"
     },
     {
       "name": "Shift-click selects a range, and Shift moves all of them",
       "pass": true,
       "detail": "4 selected; DSC_0101 now 2026-05-03T23:50:00Z"
+    },
+    {
+      "name": "the contributor check finds who sent copies stripped of time and place (G2)",
+      "pass": true,
+      "detail": "Ana: Aana 2 itemsEverything has a time and a place. | Ben: Bben 2 items2 without a capture time2 without a location2 look like copies (WhatsApp)Ask ben for originals"
+    },
+    {
+      "name": "a ready-to-send note asks Ben for the originals",
+      "pass": true,
+      "detail": "Thanks for adding your photos and videos to \"Portugal in Ten Days\". Of the 2 photos and videos you shared, 2 look like s"
+    },
+    {
+      "name": "a contributor’s problem items can be shown on their own",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "a photo taken far from its chapter is flagged (likely misassigned)",
+      "pass": true,
+      "detail": "AMay 2, 6:00 PM274 km"
+    },
+    {
+      "name": "a location can be set from the chapter, pasted from another item, or picked on the map (MM-9)",
+      "pass": true,
+      "detail": "{\"lat\":38.8029,\"lng\":-9.3817} / picked {\"lat\":39.96243,\"lng\":-8.46375}"
+    },
+    {
+      "name": "the media map shows a dot for every located item",
+      "pass": true,
+      "detail": "6 of 32 items have a location · 2 far from their chapter (amber). Click a dot to select its item."
+    },
+    {
+      "name": "a voice memo is filed by its recording time, with a waveform thumbnail (MM-15)",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "a source can be credited to a traveler, and items show who sent them (MM-16)",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "the contributor guide is linked from the Upload tab and served (MM-18)",
+      "pass": true,
+      "detail": ""
     },
     {
       "name": "all fixes are saved and survive a reload",
