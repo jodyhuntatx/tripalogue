@@ -150,3 +150,7 @@ input.tz { width: 220px; }
 .inset-panel p { margin: 0; font-size: 12px; }
 .items .badge.jpg { text-decoration: none; color: var(--muted); border: 1px solid var(--line); }
 .items .badge.jpg:hover { color: var(--text); border-color: var(--accent); }
+.items .retry { padding: 2px 8px; font-size: 12px; }
+.failed-processing { margin-top: 16px; display: grid; gap: 8px; }
+.failed-processing p { margin: 0; }
+#media-problems ul { margin: 6px 0; padding-left: 18px; }

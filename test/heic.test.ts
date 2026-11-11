@@ -114,3 +114,17 @@ describe('JPEG orientation', () => {
     assert.equal(swapsSides(3), false);
   });
 });
+
+describe('media tool check', () => {
+  it('passes with a full ffmpeg and explains what is missing otherwise', async () => {
+    const { checkMediaTools } = await import('../src/server/toolcheck.js');
+    const ok = await checkMediaTools();
+    assert.equal(ok.ok, true, ok.problems.join('; '));
+    assert.ok(ok.ffmpeg);
+    const bad = await checkMediaTools('/nope/ffmpeg', '/nope/ffprobe');
+    assert.equal(bad.ok, false);
+    assert.equal(bad.problems.length, 2);
+    assert.match(bad.problems[0], /ffprobe was not found/);
+    assert.match(bad.problems[1], /ffmpeg was not found .* README/);
+  });
+});

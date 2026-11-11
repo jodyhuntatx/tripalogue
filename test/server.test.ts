@@ -377,6 +377,41 @@ describe('uploads, processing and media links (F-4, F-7)', () => {
     assert.ok(isRed((await look(proxy, 237, 2)).rgb), 'turned a quarter clockwise: the red block is top-right');
   });
 
+  it('reports a broken ffmpeg install, and retries failed items from their stored originals once it is fixed', async () => {
+    const good = app.cfg.ffprobe;
+    app.cfg.ffprobe = '/nonexistent/ffprobe';
+    try {
+      const tools = (await owner.req('GET', '/api/media-tools?recheck=1')).json;
+      assert.equal(tools.ok, false);
+      assert.match(tools.problems.join(' '), /ffprobe was not found/);
+      const { mediaId } = await upload(owner, path.join(SAMPLE_DIR, 'media/ch3-01-ribeira.jpg'), { mediaId: 'm11' });
+      await app.jobs.idle();
+      let item = (await owner.req('GET', `/api/projects/${pid}`)).json.project.media.find((m: { id: string }) => m.id === mediaId);
+      assert.equal(item.status, 'failed');
+      assert.ok(item.storageKey, 'the original is stored even though processing failed');
+      assert.equal((await outsider.req('POST', `/api/projects/${pid}/media/retry`, {})).status, 404);
+      // Still broken: the retry runs, fails again, and the answer says why.
+      const stillBroken = await owner.req('POST', `/api/projects/${pid}/media/retry`, { mediaIds: [mediaId] });
+      assert.deepEqual(stillBroken.json.queued, [mediaId]);
+      assert.equal(stillBroken.json.media.ok, false);
+      await app.jobs.idle();
+      // "Install" ffprobe, then retry everything that failed: no re-upload needed.
+      app.cfg.ffprobe = good;
+      const fixed = await contributor.req('POST', `/api/projects/${pid}/media/retry`, {});
+      assert.equal(fixed.status, 200, fixed.text);
+      assert.ok(fixed.json.queued.includes(mediaId));
+      assert.equal(fixed.json.media.ok, true);
+      await app.jobs.idle();
+      item = (await owner.req('GET', `/api/projects/${pid}`)).json.project.media.find((m: { id: string }) => m.id === mediaId);
+      assert.equal(item.status, 'ready');
+      assert.equal(item.error, undefined);
+      assert.deepEqual((await owner.req('POST', `/api/projects/${pid}/media/retry`, {})).json.queued, [], 'nothing left to retry');
+    } finally {
+      app.cfg.ffprobe = good;
+      await owner.req('GET', '/api/media-tools?recheck=1');
+    }
+  });
+
   it('lets a contributor add new media (to Unassigned), but not edit the travelogue', async () => {
     const { mediaId } = await upload(contributor, path.join(SAMPLE_DIR, 'media/ch2-01-pena.jpg'), {});
     await app.jobs.idle();

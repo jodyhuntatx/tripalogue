@@ -18,6 +18,7 @@ import { HttpError, readBody, readJson, requireString, Router, sendJson, type Ct
 import { OutboxMailer, type Mailer } from './mailer.js';
 import { Geo } from './geo.js';
 import { Jobs } from './media.js';
+import { MediaTools } from './toolcheck.js';
 import { LOCK_TTL_MS, Projects, type Role } from './projects.js';
 import { Uploads } from './uploads.js';
 
@@ -56,6 +57,7 @@ export async function startApp(overrides: Partial<ServerConfig> = {}, deps: { ma
   const auth = new Auth(db, cfg, mailer);
   const projects = new Projects(db, cfg, mailer, auth);
   const jobs = new Jobs(db, cfg, blobs, projects);
+  const tools = new MediaTools(cfg); // reads cfg.ffmpeg / cfg.ffprobe / cfg.log at each check
   const uploads = new Uploads(db, cfg, blobs, projects, jobs);
   const geo = new Geo(cfg.geo);
   const webDir = cfg.webDir ?? defaultWebDir();
@@ -93,10 +95,20 @@ export async function startApp(overrides: Partial<ServerConfig> = {}, deps: { ma
     sendJson(c.res, 200, { ok: true });
   });
   r.on('GET', '/api/me', (c) => sendJson(c.res, 200, { user: auth.userFor(c.req) ?? null, google: auth.googleEnabled }));
-  r.on('GET', '/api/config', (c) => sendJson(c.res, 200, {
+  r.on('GET', '/api/config', async (c) => sendJson(c.res, 200, {
     google: auth.googleEnabled, telemetryEndpoint: cfg.telemetryDir ? '/api/telemetry' : null, chunkBytes: cfg.chunkBytes, maxUploadBytes: cfg.maxUploadBytes,
     map: { tiles: !!cfg.geo.tileUrl, search: !!cfg.geo.geocoderUrl, attribution: cfg.geo.attribution },
+    media: await mediaStatus(),
   }));
+  // The media tools' state, checked again on request (after installing ffmpeg, say) and before every retry.
+  const mediaStatus = async (fresh = false) => {
+    const t = await (fresh ? tools.recheck() : tools.status());
+    return { ok: t.ok, problems: t.problems, heic: await jobs.heic.available() };
+  };
+  r.on('GET', '/api/media-tools', async (c) => {
+    me(c);
+    sendJson(c.res, 200, await mediaStatus(c.url.searchParams.get('recheck') === '1'));
+  });
 
   // ---- places and map tiles (signed-in users only, so the proxy is not open to the world) ----
   r.on('GET', '/api/geo/search', async (c) => {
@@ -218,6 +230,15 @@ export async function startApp(overrides: Partial<ServerConfig> = {}, deps: { ma
     sendJson(c.res, 200, await uploads.putChunk(c.params.uid, user, Number(c.url.searchParams.get('offset')), c.req));
   });
 
+  // ---- processing again after a failure (the stored original is reused) ----
+  r.on('POST', '/api/projects/:id/media/retry', async (c) => {
+    const { user } = member(c, 'contributor');
+    const body = (await readJson(c.req)) as { mediaIds?: unknown };
+    const ids = Array.isArray(body.mediaIds) ? body.mediaIds.filter((x): x is string => typeof x === 'string') : undefined;
+    const status = await mediaStatus(true);
+    sendJson(c.res, 200, { queued: jobs.retry(c.params.id, user.id, ids), media: status });
+  });
+
   // ---- media: member-only, answered with a short-lived signed link ----
   r.on('GET', '/api/projects/:id/media/:mid/:variant', (c) => {
     member(c, 'viewer');
@@ -314,6 +335,7 @@ export async function startApp(overrides: Partial<ServerConfig> = {}, deps: { ma
   const addr = server.address();
   const port = typeof addr === 'object' && addr ? addr.port : cfg.port;
   if (!overrides.baseUrl && !process.env.TRIPALOGUE_BASE_URL) cfg.baseUrl = `http://${cfg.host}:${port}`;
+  void tools.status(); // check ffmpeg now, so problems are in the log at startup
   if (cfg.runWorker) jobs.start();
 
   return {

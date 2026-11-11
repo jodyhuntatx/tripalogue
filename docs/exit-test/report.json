@@ -1,11 +1,11 @@
 {
-  "date": "2026-11-11T19:00:24.418Z",
+  "date": "2026-11-11T19:35:55.715Z",
   "rate": 1,
   "browser": "153.0.8010.12",
   "timelineSec": 111,
-  "wallSec": 111.211,
-  "uploadSec": 0.521,
-  "readySec": 15.711,
+  "wallSec": 111.013,
+  "uploadSec": 0.446,
+  "readySec": 15.965,
   "framesDrawn": 6669,
   "placeholderFrames": 0,
   "checks": [
@@ -17,7 +17,7 @@
     {
       "name": "imports and uploads all 20 originals through the browser",
       "pass": true,
-      "detail": "10.1 MB uploaded in 0.5 s; all processed after 15.7 s"
+      "detail": "10.1 MB uploaded in 0.4 s; all processed after 16.0 s"
     },
     {
       "name": "originals are stored byte for byte",
@@ -27,7 +27,7 @@
     {
       "name": "plays to the end",
       "pass": true,
-      "detail": "111 s of timeline in 111.2 s at 1x"
+      "detail": "111 s of timeline in 111.0 s at 1x"
     },
     {
       "name": "enters all 23 segments (4 title cards + 19 items) in order",
@@ -113,6 +113,11 @@
       "name": "a HEIC photo uploads, is converted to a full-size JPG, and shows upright",
       "pass": true,
       "detail": "thumbnail 240×320, download \"IMG_0420.jpg\", item 240×320"
+    },
+    {
+      "name": "a broken ffmpeg is reported, and Retry processes failed uploads once it is fixed",
+      "pass": true,
+      "detail": "Media processing is not working on this server.ffprobe was not found (looked for \"/tmp/tri"
     },
     {
       "name": "no errors in the browser console",

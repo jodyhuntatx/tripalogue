@@ -31,6 +31,9 @@ export interface OpRecord {
   ops: Operation[];
 }
 
+/** Whether the server's ffmpeg can process media, and which HEIC converters work. */
+export interface MediaToolStatus { ok: boolean; problems: string[]; heic: string[] }
+
 export async function api<T = unknown>(method: string, path: string, body?: unknown, opts: { raw?: BodyInit; keepalive?: boolean } = {}): Promise<T> {
   let res: Response;
   try {
@@ -55,7 +58,9 @@ export async function api<T = unknown>(method: string, path: string, body?: unkn
 }
 
 export const Api = {
-  config: () => api<{ google: boolean; telemetryEndpoint: string | null; chunkBytes: number; maxUploadBytes: number; map: { tiles: boolean; search: boolean; attribution: string } }>('GET', '/api/config'),
+  config: () => api<{ google: boolean; telemetryEndpoint: string | null; chunkBytes: number; maxUploadBytes: number; map: { tiles: boolean; search: boolean; attribution: string }; media?: MediaToolStatus }>('GET', '/api/config'),
+  mediaTools: (recheck = false) => api<MediaToolStatus>('GET', `/api/media-tools${recheck ? '?recheck=1' : ''}`),
+  retryMedia: (id: string, mediaIds?: string[]) => api<{ queued: string[]; media: MediaToolStatus }>('POST', `/api/projects/${encodeURIComponent(id)}/media/retry`, mediaIds ? { mediaIds } : {}),
   geoSearch: (q: string, lang?: string) => api<{ places: { name: string; displayName: string; lat: number; lng: number; kind?: string }[] }>('GET', `/api/geo/search?q=${encodeURIComponent(q)}${lang ? `&lang=${encodeURIComponent(lang)}` : ''}`),
   me: () => api<{ user: User | null }>('GET', '/api/me'),
   requestLink: (email: string, next?: string) => api('POST', '/api/auth/email', { email, next }),
