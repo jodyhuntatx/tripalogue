@@ -162,6 +162,41 @@ try {
   check('undo reverts the change on the server too', undone);
   const log = app.projects.opsSince(pid, 0);
   check('every change is in the operation log with its author', log.length > 0 && log.every((o) => o.author), `${log.length} revisions`);
+  // 6. The side panel folds away so playback can use the whole width, and the choice is remembered.
+  const layout = () => page.evaluate(() => ({
+    stage: document.getElementById('stage-wrap')!.getBoundingClientRect().width,
+    side: !!document.getElementById('side-panel')!.getClientRects().length,
+    btn: document.getElementById('toggle-panel')!.textContent,
+  }));
+  const open = await layout();
+  await page.click('#toggle-panel');
+  await page.waitForTimeout(300);
+  const folded = await layout();
+  await page.reload();
+  await page.waitForSelector('#toggle-panel');
+  await page.waitForTimeout(300);
+  const remembered = await layout();
+  await page.locator('#stage').focus().catch(() => {});
+  await page.keyboard.press('p');
+  await page.waitForTimeout(300);
+  const back = await layout();
+  check('the side panel hides so the player fills the width, is remembered, and P brings it back',
+    open.side && !folded.side && folded.stage > open.stage + 200 && !remembered.side && back.side && Math.abs(back.stage - open.stage) < 2,
+    `player ${Math.round(open.stage)} px wide with the panel, ${Math.round(folded.stage)} px without`);
+  await page.click('#toggle-panel');
+  await page.evaluate(() => window.tripalogue!.player!.seek(1.5)); // t = 0 is the title card's fade from black
+  await page.waitForTimeout(1800);
+  const lit = await page.evaluate(() => {
+    const c = document.getElementById('stage') as HTMLCanvasElement;
+    const d = c.getContext('2d')!.getImageData(0, 0, c.width, c.height).data;
+    let on = 0, n = 0;
+    for (let i = 0; i < d.length; i += 4 * 97) { n++; if (d[i] + d[i + 1] + d[i + 2] > 30) on++; }
+    return on / n;
+  });
+  check('the wider player redraws its frame', lit > 0.5, `${Math.round(lit * 100)}% of the frame lit`);
+  await page.screenshot({ path: path.join(outDir, '10-panel-hidden.png') });
+  await page.click('#toggle-panel');
+
   check('no errors in the browser console', consoleErrors.length === 0, consoleErrors.slice(0, 3).join(' | '));
   await page.waitForTimeout(400); // let the status label catch up before the screenshot
   await shot('09-after-edits');

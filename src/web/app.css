@@ -43,6 +43,9 @@ input, select { background: #0f1217; color: var(--text); border: 1px solid var(-
 
 .project { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 16px; padding: 16px 20px; }
 @media (max-width: 960px) { .project { grid-template-columns: 1fr; } }
+.project.panel-collapsed { grid-template-columns: minmax(0, 1fr); }
+.project.panel-collapsed > .side { display: none; }
+#toggle-panel { white-space: nowrap; }
 #stage-wrap { position: relative; width: 100%; max-height: calc(100vh - 190px); margin: 0 auto; background: #000; border-radius: 8px; overflow: hidden; }
 #stage { display: block; width: 100%; height: 100%; cursor: pointer; }
 .controls { display: flex; align-items: center; gap: 8px; margin-top: 10px; }

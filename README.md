@@ -152,7 +152,8 @@ survives a reload and can be undone. Report and screenshots: `docs/exit-test/`.
 | Frame checks (title, fit, custom rectangle, fill, trimmed clip, 2x clip) | 6 of 6 |
 | Edit → autosave → reload → undo, every change in the operation log | pass |
 | Map inset: whole trip on a title card, then the chapter being played | pass |
-| Total | 19 of 19 checks |
+| Hide the side panel: the player fills the width, the choice is remembered, P toggles it | pass |
+| Total | 21 of 21 checks |
 
 ## Phase 1: Itinerary editor
 
@@ -175,6 +176,9 @@ keeps the same session.
 Moving a start past its end (or an end before its start) keeps the chapter's length, so an edit never leaves an
 invalid chapter. Numeric dates in pasted text are read month/day/year.
 
+In Play, **Hide panel** (or the P key) folds away the Items, Upload, Members and Versions panel so the player
+uses the whole width; the browser remembers the choice.
+
 The inset is on for new travelogues. For a travelogue made before it existed, open **Map** next to Mute in the
 Play view and tick **Show map inset**. It is preview only: per-photo locations, the animated travel
 transition, per-chapter settings and drawing it into exported video come with the full map view in Phase 5.
@@ -184,7 +188,7 @@ create a travelogue, paste six lines (one bad) and add five chapters from the pr
 with place search, drop a pin on the map, split a three-day chapter, find and fix a planted overlap, undo and
 redo, reload, play the nine title cards, and check the map inset (trip view on title cards, chapter view,
 moving, hiding and undo). Report and screenshots: `docs/phase1-test/`. Result: 20 of 20 checks, with no
-browser console errors. The Phase 0 exit test, now 19 checks, adds the inset following the sample's chapters.
+browser console errors. The Phase 0 exit test, now 21 checks, adds the inset following the sample's chapters and the hideable side panel.
 
 ## Layout
 

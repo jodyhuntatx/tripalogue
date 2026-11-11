@@ -262,7 +262,23 @@ async function renderProject(id: string, initialView?: View) {
           h('div', { class: 'scrub-wrap' }, scrub, marks),
           time, muteBtn, inset.settings),
         chapterLabel, meta),
-      h('aside', { class: 'side card' }, tabBar, side));
+      h('aside', { class: 'side card', id: 'side-panel' }, tabBar, side));
+
+  // The side panel (Items, Upload, Members, Versions) folds away so playback can use the whole width.
+  // Remembered per browser; storage can be unavailable, so it is best effort.
+  const PANEL_KEY = 'tripalogue.panelCollapsed';
+  const panelBtn = h('button', { id: 'toggle-panel', 'aria-controls': 'side-panel', title: 'Show or hide the side panel (P)' });
+  const setPanel = (collapsed: boolean, remember = true) => {
+    playMain.classList.toggle('panel-collapsed', collapsed);
+    panelBtn.setAttribute('aria-expanded', String(!collapsed));
+    panelBtn.textContent = collapsed ? 'Show panel' : 'Hide panel';
+    if (remember) try { localStorage.setItem(PANEL_KEY, collapsed ? '1' : '0'); } catch { /* not remembered */ }
+  };
+  panelBtn.addEventListener('click', () => setPanel(!playMain.classList.contains('panel-collapsed')));
+  let startCollapsed = false;
+  try { startCollapsed = localStorage.getItem(PANEL_KEY) === '1'; } catch { /* default: shown */ }
+  setPanel(startCollapsed, false);
+  playMain.querySelector('.controls')!.append(panelBtn);
   app.replaceChildren(topbar(viewTabs, titleInput, statusChip, undoBtn, redoBtn, s.mayEdit && exportLink), itinerary.el, playMain);
 
   function setView(v: View) {
@@ -295,6 +311,8 @@ async function renderProject(id: string, initialView?: View) {
   });
   document.body.dataset.state = player.state;
   stageWrap.style.aspectRatio = `${s.state.output.width} / ${s.state.output.height}`;
+  // Keep the frame's shape when the window is wider than the available height allows.
+  stageWrap.style.maxWidth = `calc((100vh - 190px) * ${s.state.output.width / s.state.output.height})`;
   const fit = () => {
     const r = canvas.getBoundingClientRect();
     const dpr = Math.min(2, devicePixelRatio || 1);
@@ -330,6 +348,7 @@ async function renderProject(id: string, initialView?: View) {
     else if (e.key === 'End') player.seek(player.duration);
     else if (e.key === '[') player.seekChapter(-1);
     else if (e.key === ']') player.seekChapter(1);
+    else if (e.key.toLowerCase() === 'p' && !e.metaKey && !e.ctrlKey && !e.altKey) panelBtn.click();
   };
   addEventListener('keydown', onKey);
   const onHide = () => {

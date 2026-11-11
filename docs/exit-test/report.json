@@ -1,12 +1,12 @@
 {
-  "date": "2026-11-11T16:54:08.816Z",
+  "date": "2026-11-11T17:04:07.801Z",
   "rate": 1,
   "browser": "153.0.8010.12",
   "timelineSec": 111,
-  "wallSec": 111.129,
-  "uploadSec": 0.501,
-  "readySec": 16.022,
-  "framesDrawn": 6660,
+  "wallSec": 111.234,
+  "uploadSec": 0.576,
+  "readySec": 16.186,
+  "framesDrawn": 6669,
   "placeholderFrames": 0,
   "checks": [
     {
@@ -17,7 +17,7 @@
     {
       "name": "imports and uploads all 20 originals through the browser",
       "pass": true,
-      "detail": "10.1 MB uploaded in 0.5 s; all processed after 16.0 s"
+      "detail": "10.1 MB uploaded in 0.6 s; all processed after 16.2 s"
     },
     {
       "name": "originals are stored byte for byte",
@@ -27,7 +27,7 @@
     {
       "name": "plays to the end",
       "pass": true,
-      "detail": "111 s of timeline in 111.1 s at 1x"
+      "detail": "111 s of timeline in 111.2 s at 1x"
     },
     {
       "name": "enters all 23 segments (4 title cards + 19 items) in order",
@@ -42,7 +42,7 @@
     {
       "name": "media ready in time (under 2% of frames waited on loading)",
       "pass": true,
-      "detail": "0 of 6660 frames"
+      "detail": "0 of 6669 frames"
     },
     {
       "name": "draws smoothly (30 fps or better)",
@@ -98,6 +98,16 @@
       "name": "every change is in the operation log with its author",
       "pass": true,
       "detail": "63 revisions"
+    },
+    {
+      "name": "the side panel hides so the player fills the width, is remembered, and P brings it back",
+      "pass": true,
+      "detail": "player 1044 px wide with the panel, 1262 px without"
+    },
+    {
+      "name": "the wider player redraws its frame",
+      "pass": true,
+      "detail": "100% of the frame lit"
     },
     {
       "name": "no errors in the browser console",
