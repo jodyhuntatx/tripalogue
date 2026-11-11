@@ -55,7 +55,8 @@ export async function api<T = unknown>(method: string, path: string, body?: unkn
 }
 
 export const Api = {
-  config: () => api<{ google: boolean; telemetryEndpoint: string | null; chunkBytes: number; maxUploadBytes: number }>('GET', '/api/config'),
+  config: () => api<{ google: boolean; telemetryEndpoint: string | null; chunkBytes: number; maxUploadBytes: number; map: { tiles: boolean; search: boolean; attribution: string } }>('GET', '/api/config'),
+  geoSearch: (q: string, lang?: string) => api<{ places: { name: string; displayName: string; lat: number; lng: number; kind?: string }[] }>('GET', `/api/geo/search?q=${encodeURIComponent(q)}${lang ? `&lang=${encodeURIComponent(lang)}` : ''}`),
   me: () => api<{ user: User | null }>('GET', '/api/me'),
   requestLink: (email: string, next?: string) => api('POST', '/api/auth/email', { email, next }),
   logout: () => api('POST', '/api/auth/logout', {}),

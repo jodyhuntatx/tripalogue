@@ -74,7 +74,7 @@ try {
   const readySec = (Date.now() - t0) / 1000;
   const totalBytes = (await Promise.all(media.map((f) => fs.stat(f)))).reduce((a, s) => a + s.size, 0);
   check('imports and uploads all 20 originals through the browser', true, `${(totalBytes / 1e6).toFixed(1)} MB uploaded in ${uploadSec.toFixed(1)} s; all processed after ${readySec.toFixed(1)} s`);
-  const pid = page.url().split('#/p/')[1];
+  const pid = page.url().split('#/p/')[1].split('/')[0];
   const stored = app.projects.load(pid).doc;
   check('originals are stored byte for byte', stored.media.every((m) => m.contentHash && m.status === 'ready'), `${stored.media.filter((m) => m.contentHash).length} of 20 hashed`);
   await shot('02-project');

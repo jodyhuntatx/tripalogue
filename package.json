@@ -17,7 +17,8 @@
     "test:e2e": "npm run build && node --no-warnings --import tsx scripts/exit-test.ts",
     "sample": "tsx scripts/make-sample-media.ts",
     "start": "node --no-warnings dist/node/cli.js serve",
-    "dev": "npm run build && node --no-warnings --import tsx src/node/cli.ts serve --data data"
+    "dev": "npm run build && node --no-warnings --import tsx src/node/cli.ts serve --data data",
+    "test:phase1": "npm run build && node --no-warnings --import tsx scripts/phase1-test.ts"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

@@ -1,0 +1,87 @@
+{
+  "date": "2026-11-11T12:49:14.316Z",
+  "browser": "153.0.8010.12",
+  "enterTripSec": 2.366,
+  "checks": [
+    {
+      "name": "a new travelogue opens in the Itinerary view",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "the paste preview shows 5 chapters, folds two Lisbon days, and flags the bad line",
+      "pass": true,
+      "detail": "6 lines read as 5 chapters"
+    },
+    {
+      "name": "importing adds the chapters to the project on the server",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "three chapters added by hand, titled and pinned from place search",
+      "pass": true,
+      "detail": "Évora 38.57, Lagos 37.10, Nazaré 39.60"
+    },
+    {
+      "name": "the 8-chapter trip has no overlaps or gaps",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "place search pins every chapter it is used on",
+      "pass": true,
+      "detail": "7 of 8 pinned; Pinhão left for a dropped pin"
+    },
+    {
+      "name": "dropping a pin on the map sets the chapter location",
+      "pass": true,
+      "detail": "41.158, -7.750"
+    },
+    {
+      "name": "the route map shows a numbered pin for every located chapter",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "splitting a chapter makes two back-to-back chapters",
+      "pass": true,
+      "detail": "Porto | Porto (2)"
+    },
+    {
+      "name": "an overlap is flagged in plain words, on the list and on the card",
+      "pass": true,
+      "detail": "2. Sintra and 3. Coimbra overlap by 12 hours"
+    },
+    {
+      "name": "fixing the date clears the warning",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "the timeline shows a block for every chapter",
+      "pass": true,
+      "detail": "9 blocks"
+    },
+    {
+      "name": "undo and redo work on itinerary edits and are saved",
+      "pass": true,
+      "detail": "title still \"Douro river cruise\""
+    },
+    {
+      "name": "the itinerary survives a reload",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "Play runs all 9 chapter title cards in order",
+      "pass": true,
+      "detail": "27 s"
+    },
+    {
+      "name": "no errors in the browser console",
+      "pass": true,
+      "detail": ""
+    }
+  ]
+}

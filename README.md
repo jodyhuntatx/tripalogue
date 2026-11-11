@@ -1,8 +1,9 @@
-# TripAlogue — Phase 0: Foundations (web)
+# TripAlogue — Phase 1: Itinerary editor (web)
 
 TripAlogue is a web application for building travelogues from a trip's itinerary, photos and videos, and
 (from Phase 7) for building them together with the people who were on the trip. This is Phase 0 of the PRD:
-the foundations every later phase plugs into.
+the foundations every later phase plugs into, plus Phase 1: the itinerary editor
+(see [Phase 1](#phase-1-itinerary-editor)).
 
 **Exit criterion met:** a hand-written project with 20 media items is imported into an account, its originals
 are uploaded through the browser, and it plays end to end in the browser from cloud storage
@@ -78,6 +79,15 @@ Install ffmpeg as above, restart the server, then upload those files again from 
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | unset | Turn on "Sign in with Google" (redirect URI: `<base>/api/auth/google/callback`) |
 | `TRIPALOGUE_MAX_UPLOAD_BYTES` | 10 GB | Per-file upload limit |
 | `TRIPALOGUE_TELEMETRY_DIR` | unset | Turn on the opt-in telemetry endpoint |
+| `TRIPALOGUE_GEOCODER_URL` | Nominatim (`https://nominatim.openstreetmap.org/search`) | Place search; empty turns it off |
+| `TRIPALOGUE_TILE_URL` | `https://tile.openstreetmap.org/{z}/{x}/{y}.png` | Map tiles; empty shows a plain grid |
+| `TRIPALOGUE_TILE_ATTRIBUTION` | `© OpenStreetMap contributors` | Credit shown on the map |
+| `TRIPALOGUE_CONTACT_EMAIL` | unset | Added to the User-Agent sent to the geocoder, as Nominatim's policy asks |
+
+Place search and tiles go through the server, which caches them (searches for a week, tiles under
+`<data>/tiles`) and spaces searches at least a second apart. The OpenStreetMap defaults are for local testing
+only; their public servers are not meant for production traffic. The production provider is an open PRD
+question.
 
 `tripalogue serve --no-worker` plus a separate `tripalogue worker` runs media processing in its own process.
 
@@ -85,8 +95,9 @@ Install ffmpeg as above, restart the server, then upload those files again from 
 
 ```sh
 npm run typecheck
-npm test            # 61 tests: model, order keys, operations, history, server API, uploads, processing, auth
-npm run test:e2e    # browser exit test (needs Playwright's Chromium: npx playwright install chromium)
+npm test            # 84 tests: model, order keys, operations, history, itinerary, geo proxy, server API, uploads, processing, auth
+npm run test:e2e    # Phase 0 browser exit test (needs Playwright's Chromium: npx playwright install chromium)
+npm run test:phase1 # Phase 1 browser test of the G1 tasks (no internet needed: it uses a stand-in map provider)
 ```
 
 ## How it works
@@ -142,23 +153,50 @@ survives a reload and can be undone. Report and screenshots: `docs/exit-test/`.
 | Edit → autosave → reload → undo, every change in the operation log | pass |
 | Total | 18 of 18 checks |
 
+## Phase 1: Itinerary editor
+
+A travelogue opens in the **Itinerary** view until it has chapters and media; **Play** is one click away and
+keeps the same session.
+
+| PRD | Requirement | Where |
+| --- | --- | --- |
+| IT-1 | Chapters with title, place, start and end in the chapter's own time zone, description | `src/core/itinerary.ts`, `src/web/itinerary.ts` |
+| IT-2 | Add, insert, reorder, sort by date, delete (media moves to Unassigned) | same |
+| IT-3 | Timeline of chapters in lanes, linked to the cards and the map | `src/web/itinerary.ts` |
+| IT-4 | Overlap, gap and order checks in plain words; back-to-back chapters are not flagged | `analyzeItinerary` |
+| IT-5 | Chapter title cards (on or off, seconds) and a Play button that runs them | `src/web/main.ts` |
+| IT-6 | Paste lines or choose a CSV, preview, then add (undoable); consecutive days in one place fold into one chapter | `parseItinerary` |
+| IT-7 | Split a chapter at a time (media moves by timestamp) and merge with the next | `splitChapter`, `mergeChapters` |
+| IT-8 | Place search, or drop a pin by clicking the map | `src/server/geo.ts`, `src/web/map.ts` |
+| MV-1 | Route map: numbered pins joined in order; selecting a pin selects its chapter and the reverse | `src/web/map.ts` |
+
+Moving a start past its end (or an end before its start) keeps the chapter's length, so an edit never leaves an
+invalid chapter. Numeric dates in pasted text are read month/day/year.
+
+`scripts/phase1-test.ts` scripts the G1 usability tasks in headless Chromium against a stand-in map provider:
+create a travelogue, paste six lines (one bad) and add five chapters from the preview, add three more by hand
+with place search, drop a pin on the map, split a three-day chapter, find and fix a planted overlap, undo and
+redo, reload, and play the nine title cards. Report and screenshots: `docs/phase1-test/`. Result: 16 of 16
+checks, with no browser console errors; the Phase 0 exit test still passes 18 of 18.
+
 ## Layout
 
 ```text
 src/core/     platform-neutral model: schema, validation, migrations, order keys, operations, history, autosave, timeline, render model, telemetry
-src/server/   web server: config, database, object storage, auth, projects and operation log, uploads, media jobs, mailer
-src/web/      browser app: API client, project session (sync, autosave, lock), resumable uploader, UI
+src/server/   web server: config, database, object storage, auth, projects and operation log, uploads, media jobs, mailer, geo proxy
+src/web/      browser app: API client, project session (sync, autosave, lock), resumable uploader, itinerary view, route map, UI
 src/player/   canvas player and media pool
 src/node/     command line (serve, worker, import, validate, info, new) and file helpers
 samples/      hand-written 20-item project (schema v1) and its synthetic media generator
 test/         unit and API tests (node:test)
-scripts/      build, sample media, exit test
+scripts/      build, sample media, exit test, Phase 1 test
 ```
 
-## Not yet in Phase 0
+## Not built yet
 
 - An email provider (links go to the console and `data/outbox/`), and an S3-compatible storage driver (the
   interface is ready; the file-system driver ships).
 - Exporting an archive of originals alongside the JSON file.
-- The editors themselves (itinerary, media manager, presentation editor), timestamp assignment, export to MP4,
-  map view, audio lanes, and live co-editing are later phases; their data already has a place in the schema.
+- A production map provider (see Configuration), and a hosted test site.
+- The media manager, timestamp assignment, presentation editor, export to MP4, the inset map, audio lanes, and
+  live co-editing are later phases; their data already has a place in the schema.

@@ -1,4 +1,5 @@
 import { isOrderKey } from './fractional.js';
+import { isValidTimeZone } from './itinerary.js';
 import { SCHEMA_VERSION } from './schema.js';
 
 export interface ValidationIssue {
@@ -101,6 +102,7 @@ export function validate(raw: unknown): ValidationIssue[] {
     str(c, 'locationName', path);
     str(c, 'description', path);
     str(c, 'timeZone', path);
+    if (typeof c.timeZone === 'string' && !isValidTimeZone(c.timeZone)) err(`${path}.timeZone`, `unknown time zone "${c.timeZone}"`);
     for (const k of ['start', 'end']) {
       if (typeof c[k] !== 'string' || !LOCAL_DT.test(c[k] as string)) err(`${path}.${k}`, 'must be a local date-time like 2026-05-03T09:00');
     }
