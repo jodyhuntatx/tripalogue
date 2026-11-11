@@ -32,6 +32,8 @@ export type MapFocus = { kind: 'trip' } | { kind: 'chapter'; id: string };
 
 const TILE = 256;
 const MAX_LAT = 85.05112878;
+/** CSS pixels; keeps the canvas well inside every browser's size limit. */
+const MAX_CANVAS_PX = 2048;
 
 export function project(lat: number, lng: number, z: number): { x: number; y: number } {
   const s = TILE * 2 ** z;
@@ -256,10 +258,11 @@ export class RouteMap {
   }
 
   private resize() {
-    const r = this.el.getBoundingClientRect();
+    // Size from the content box (inside the border). The canvas is positioned absolutely, so it can never stretch
+    // its container: sizing it from the outer box made the inset grow without limit in some browsers.
     this.dpr = Math.min(2, devicePixelRatio || 1);
-    this.w = Math.max(1, Math.round(r.width));
-    this.h = Math.max(1, Math.round(r.height));
+    this.w = Math.max(1, Math.min(MAX_CANVAS_PX, this.el.clientWidth));
+    this.h = Math.max(1, Math.min(MAX_CANVAS_PX, this.el.clientHeight));
     this.canvas.width = Math.round(this.w * this.dpr);
     this.canvas.height = Math.round(this.h * this.dpr);
     this.canvas.style.width = `${this.w}px`;
