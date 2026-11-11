@@ -22,8 +22,8 @@ are uploaded through the browser, and it plays end to end in the browser from cl
 
 ## Quick start
 
-Requires Node 22.13 or later (it uses the built-in `node:sqlite`) and `ffmpeg`/`ffprobe` on the PATH.
-There are no runtime npm dependencies.
+Requires Node 22.13 or later (it uses the built-in `node:sqlite`) and `ffmpeg`/`ffprobe` on the PATH
+(see [Installing ffmpeg](#installing-ffmpeg)). There are no runtime npm dependencies.
 
 ```sh
 npm install
@@ -42,6 +42,30 @@ node --no-warnings dist/node/cli.js import samples/hand-written-20/trip.travelog
 
 Or use **Import a project file** on the home page and choose `samples/hand-written-20/trip.travelogue.json`
 plus the files in `samples/hand-written-20/media/` (run `npm run sample` first if that folder is empty).
+
+### Installing ffmpeg
+
+TripAlogue uses the `ffmpeg` and `ffprobe` command-line tools to read each uploaded photo and video and to
+make thumbnails and preview copies. Install them before starting the server:
+
+| System | Command |
+| --- | --- |
+| macOS (Homebrew) | `brew install ffmpeg` |
+| macOS (MacPorts) | `sudo port install ffmpeg` |
+| Ubuntu / Debian | `sudo apt install ffmpeg` |
+| Fedora | `sudo dnf install ffmpeg` (from RPM Fusion) |
+| Windows | `winget install Gyan.FFmpeg` |
+
+Check that both tools are on your PATH, then start (or restart) the server from a new terminal window so it
+picks up the updated PATH:
+
+```sh
+ffmpeg -version
+ffprobe -version
+```
+
+If uploads finish but items show **failed · spawn ffprobe ENOENT**, the server could not find `ffprobe`.
+Install ffmpeg as above, restart the server, then upload those files again from the project's **Upload** tab.
 
 ### Configuration
 
