@@ -71,6 +71,27 @@ export class MediaPool {
     return entry;
   }
 
+  /** Drop an entry so the next use loads it again (its file changed). */
+  forget(itemId: string): void {
+    const e = this.entries.get(itemId);
+    if (!e) return;
+    this.entries.delete(itemId);
+    if (e.el instanceof HTMLVideoElement) {
+      e.el.pause();
+      e.el.removeAttribute('src');
+      e.el.load();
+    } else {
+      e.el.onload = null;
+      e.el.onerror = null;
+      e.el.removeAttribute('src');
+    }
+  }
+
+  /** Retry an item that failed to load earlier (for example before its upload finished). */
+  forgetIfFailed(itemId: string): void {
+    if (this.entries.get(itemId)?.failed) this.forget(itemId);
+  }
+
   /** Pause every video except the one playing now. */
   pauseAllExcept(itemId?: string): void {
     for (const [id, e] of this.entries) {

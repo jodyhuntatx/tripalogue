@@ -37,7 +37,7 @@ const PRELOAD_AHEAD = 3;
 const PRELOAD_SECONDS = 10;
 
 export class Player {
-  readonly timeline: Timeline;
+  timeline: Timeline;
   readonly stats: PlayerStats = { framesDrawn: 0, segmentsEntered: [], mediaErrors: [], placeholderFrames: 0, placeholderBySegment: {}, videoSeeks: 0 };
   private readonly ctx: CanvasRenderingContext2D;
   private readonly pool: MediaPool;
@@ -124,6 +124,26 @@ export class Player {
 
   setRate(r: number): void {
     this.rate = r;
+  }
+
+  /**
+   * Swap in an updated project (an edit, an upload finishing). Playback keeps
+   * its position; media whose files changed are reloaded.
+   */
+  setProject(project: Travelogue): void {
+    const before = new Map(this.timeline.segments.flatMap((s) => (s.kind === 'title' ? [] : [[s.item.id, s.item] as const])));
+    this.timeline = buildTimeline(project);
+    for (const s of this.timeline.segments) {
+      if (s.kind === 'title') continue;
+      const old = before.get(s.item.id);
+      if (old && (old.storageKey !== s.item.storageKey || old.assets?.proxy !== s.item.assets?.proxy)) this.pool.forget(s.item.id);
+    }
+    for (const m of project.media) if (m.status === 'ready') this.pool.forgetIfFailed(m.id);
+    this.t = Math.min(this.t, this.timeline.duration);
+    if (this.stateValue === 'ended' && this.t < this.timeline.duration) this.setState('paused');
+    this.lastSegment = -1;
+    this.needsDraw = true;
+    this.preload(this.t);
   }
 
   /** Re-render the current frame now (after a canvas resize). */

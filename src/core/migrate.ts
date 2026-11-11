@@ -1,3 +1,4 @@
+import { spreadKeys } from './fractional.js';
 import { SCHEMA_VERSION } from './schema.js';
 
 /**
@@ -34,6 +35,36 @@ export const MIGRATIONS: Migration[] = [
           tripOverview: true, transitionAnimation: true, hidePreciseLocations: false,
         },
         schemaVersion: 1,
+      };
+    },
+  },
+  {
+    from: 1,
+    describe: 'v1 to v2 (web): local-folder sources become upload sources; numeric cue order becomes fractional keys',
+    up(raw) {
+      const sources = Array.isArray(raw.sources)
+        ? raw.sources.map((s) => (s && typeof s === 'object' && (s as Record<string, unknown>).type === 'localFolder' ? { ...(s as object), type: 'upload' } : s))
+        : raw.sources;
+      const media = Array.isArray(raw.media) ? (raw.media as Record<string, unknown>[]) : [];
+      const chapterOf = new Map(media.map((m) => [m?.id, m?.chapterId ?? null]));
+      const cues = Array.isArray(raw.cues) ? (raw.cues as Record<string, unknown>[]) : [];
+      // Re-key order per chapter, preserving the existing numeric order (ties keep file order).
+      const groups = new Map<unknown, number[]>();
+      cues.forEach((c, i) => {
+        const ch = chapterOf.get(c?.itemId) ?? null;
+        groups.set(ch, [...(groups.get(ch) ?? []), i]);
+      });
+      const newOrder = new Map<number, string>();
+      for (const idxs of groups.values()) {
+        const sorted = idxs.slice().sort((a, b) => Number(cues[a]?.order ?? 0) - Number(cues[b]?.order ?? 0) || a - b);
+        const keys = spreadKeys(sorted.length);
+        sorted.forEach((ci, n) => newOrder.set(ci, keys[n]));
+      }
+      return {
+        ...raw,
+        sources,
+        cues: cues.map((c, i) => (c && typeof c === 'object' && typeof c.order === 'number' ? { ...c, order: newOrder.get(i) } : c)),
+        schemaVersion: 2,
       };
     },
   },

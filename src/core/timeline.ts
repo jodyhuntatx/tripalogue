@@ -88,10 +88,15 @@ export function buildTimeline(p: Travelogue): Timeline {
       }
     }
     const items = p.media.filter((m) => m.chapterId === ch.id && (m.kind === 'image' || m.kind === 'video'));
-    const withCues = items.map((item, i) => ({ item, cue: cueByItem.get(item.id) ?? defaultCue(item, p.cueProfile, 1e6 + i) }));
-    withCues.sort((a, b) => a.cue.order - b.cue.order);
+    // Items without a cue play last in their chapter, in file order ('~' sorts after every order key).
+    const withCues = items.map((item, i) => ({ item, cue: cueByItem.get(item.id) ?? defaultCue(item, p.cueProfile, `~${String(i).padStart(6, '0')}`) }));
+    withCues.sort((a, b) => (a.cue.order < b.cue.order ? -1 : a.cue.order > b.cue.order ? 1 : 0));
     for (const { item, cue } of withCues) {
       if (!cue.included) continue;
+      if (item.status !== undefined && item.status !== 'ready') {
+        skipped.push({ itemId: item.id, reason: item.status === 'failed' ? `processing failed${item.error ? `: ${item.error}` : ''}` : `not ready yet (${item.status})` });
+        continue;
+      }
       const duration = cueDuration(item, cue, p.cueProfile.videoMaxSec);
       if (duration === undefined || !(duration > 0)) {
         skipped.push({ itemId: item.id, reason: item.kind === 'video' ? 'video length unknown and no out-point set' : 'no duration' });

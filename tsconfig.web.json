@@ -3,12 +3,20 @@
     "target": "ES2022",
     "module": "ESNext",
     "moduleResolution": "Bundler",
-    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "lib": [
+      "ES2023",
+      "DOM",
+      "DOM.Iterable"
+    ],
     "types": [],
     "strict": true,
     "noUnusedLocals": true,
     "skipLibCheck": true,
     "noEmit": true
   },
-  "include": ["src/core/**/*.ts", "src/player/**/*.ts"]
+  "include": [
+    "src/core/**/*.ts",
+    "src/player/**/*.ts",
+    "src/web/**/*.ts"
+  ]
 }

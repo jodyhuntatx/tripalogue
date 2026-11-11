@@ -43,7 +43,7 @@ export function createProject(opts: { title: string; aspect?: AspectRatio; now?:
 }
 
 /** The default cue for a media item, from the project's cue profile (PE-7 "reset to default"). */
-export function defaultCue(item: MediaItem, profile: CueProfile, order: number): Cue {
+export function defaultCue(item: MediaItem, profile: CueProfile, order: string): Cue {
   const isVideo = item.kind === 'video';
   return {
     itemId: item.id,
