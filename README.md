@@ -79,6 +79,7 @@ Install ffmpeg as above, restart the server, then upload those files again from 
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | unset | Turn on "Sign in with Google" (redirect URI: `<base>/api/auth/google/callback`) |
 | `TRIPALOGUE_MAX_UPLOAD_BYTES` | 10 GB | Per-file upload limit |
 | `TRIPALOGUE_TELEMETRY_DIR` | unset | Turn on the opt-in telemetry endpoint |
+| `TRIPALOGUE_HEIC_CONVERTER` | `auto` | HEIC photo converter: `auto`, `off`, or one of `ffmpeg`, `heif-dec`, `heif-convert`, `sips`, `magick`, `convert` |
 | `TRIPALOGUE_GEOCODER_URL` | Nominatim (`https://nominatim.openstreetmap.org/search`) | Place search; empty turns it off |
 | `TRIPALOGUE_TILE_URL` | `https://tile.openstreetmap.org/{z}/{x}/{y}.png` | Map tiles; empty shows a plain grid |
 | `TRIPALOGUE_TILE_ATTRIBUTION` | `© OpenStreetMap contributors` | Credit shown on the map |
@@ -91,11 +92,24 @@ question.
 
 `tripalogue serve --no-worker` plus a separate `tripalogue worker` runs media processing in its own process.
 
+### HEIC photos
+
+iPhones and many Android phones save photos as HEIC, which most browsers can't show. TripAlogue keeps the
+uploaded HEIC unaltered and makes a full-resolution JPG from it (rotation applied, capture time and location
+kept); the thumbnail and playback proxy come from that JPG, and a **JPG** link next to the item in the Items list
+downloads it. No extra install is needed: the built-in converter reads the HEIC itself and decodes its HEVC
+picture tiles with ffmpeg. libheif (`heif-dec`), macOS `sips` and ImageMagick are used as fallbacks for layouts
+the built-in reader doesn't cover. Each converter must turn a small sample HEIC into a correct JPG at startup
+before it's used, and the log says which ones are in use.
+
+Ordinary JPEGs that phones save sideways with an orientation tag are turned upright the same way on every ffmpeg
+version (ffmpeg's own automatic rotation is switched off and the tag is applied explicitly).
+
 ### Tests
 
 ```sh
 npm run typecheck
-npm test            # 84 tests: model, order keys, operations, history, itinerary, geo proxy, server API, uploads, processing, auth
+npm test            # 95 tests: model, order keys, operations, history, itinerary, geo proxy, server API, uploads, processing, auth
 npm run test:e2e    # Phase 0 browser exit test (needs Playwright's Chromium: npx playwright install chromium)
 npm run test:phase1 # Phase 1 browser test of the G1 tasks (no internet needed: it uses a stand-in map provider)
 ```
@@ -153,7 +167,8 @@ survives a reload and can be undone. Report and screenshots: `docs/exit-test/`.
 | Edit → autosave → reload → undo, every change in the operation log | pass |
 | Map inset: whole trip on a title card, then the chapter being played | pass |
 | Hide the side panel: the player fills the width, the choice is remembered, P toggles it | pass |
-| Total | 21 of 21 checks |
+| A HEIC photo uploads through the browser, gets a full-size JPG, and shows upright | pass |
+| Total | 22 of 22 checks |
 
 ## Phase 1: Itinerary editor
 
@@ -188,13 +203,13 @@ create a travelogue, paste six lines (one bad) and add five chapters from the pr
 with place search, drop a pin on the map, split a three-day chapter, find and fix a planted overlap, undo and
 redo, reload, play the nine title cards, and check the map inset (trip view on title cards, chapter view,
 moving, hiding and undo). Report and screenshots: `docs/phase1-test/`. Result: 20 of 20 checks, with no
-browser console errors. The Phase 0 exit test, now 21 checks, adds the inset following the sample's chapters and the hideable side panel.
+browser console errors. The Phase 0 exit test, now 22 checks, adds the inset following the sample's chapters, the hideable side panel and a HEIC upload.
 
 ## Layout
 
 ```text
 src/core/     platform-neutral model: schema, validation, migrations, order keys, operations, history, autosave, timeline, render model, telemetry
-src/server/   web server: config, database, object storage, auth, projects and operation log, uploads, media jobs, mailer, geo proxy
+src/server/   web server: config, database, object storage, auth, projects and operation log, uploads, media jobs (with HEIC conversion and photo orientation), mailer, geo proxy
 src/web/      browser app: API client, project session (sync, autosave, lock), resumable uploader, itinerary view, route map, UI
 src/player/   canvas player and media pool
 src/node/     command line (serve, worker, import, validate, info, new) and file helpers
