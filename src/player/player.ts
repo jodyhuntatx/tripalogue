@@ -166,6 +166,7 @@ export class Player {
     const segs = this.timeline.segments;
     let i = segs.findIndex((s) => s.start + s.duration > t);
     if (i < 0) i = segs.length - 1;
+    if (i < 0) return; // empty timeline (a project with no chapters yet)
     // Look ahead at least PRELOAD_AHEAD segments, or 10 s of playback at the current rate, capped at 8 items.
     const horizon = t + PRELOAD_SECONDS * this.rate;
     for (let k = i, n = 0; k < segs.length && n < 8 && (k <= i + PRELOAD_AHEAD || segs[k].start < horizon); k++) {

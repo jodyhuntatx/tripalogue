@@ -8,12 +8,13 @@
 import { moveItem, parseProject, setIncluded, setTitle, Telemetry, type TelemetryEvent, type Travelogue } from '../core/index.js';
 import { Player, type PlayerState } from '../player/player.js';
 import { Api, ApiError, type Role, type User } from './api.js';
+import { mountItinerary, type ItineraryView } from './itinerary.js';
 import { ProjectSession } from './session.js';
 import { uploadAll, type UploadProgress } from './uploader.js';
 
 declare global {
   interface Window {
-    tripalogue?: { player?: Player; session?: ProjectSession; state?: () => PlayerState | undefined; telemetry: Telemetry };
+    tripalogue?: { player?: Player; session?: ProjectSession; itinerary?: ItineraryView; state?: () => PlayerState | undefined; telemetry: Telemetry };
   }
 }
 
@@ -43,7 +44,8 @@ const ago = (t: number) => {
 const telemetry = new Telemetry();
 window.tripalogue = { telemetry };
 let me: User | undefined;
-let current: { session: ProjectSession; player: Player; dispose: () => void } | undefined;
+type View = 'itinerary' | 'play';
+let current: { id: string; session: ProjectSession; player: Player; setView: (v: View) => void; dispose: () => void } | undefined;
 
 function setTelemetry(endpoint: string | null) {
   if (params.get('telemetry') !== '1' || !endpoint) return;
@@ -63,11 +65,14 @@ function banner(text: string, kind: 'info' | 'error' = 'info') {
 }
 
 async function route() {
+  const hash = location.hash || '#/projects';
+  const pm = /^#\/p\/([^/?]+)(?:\/(itinerary|play))?/.exec(hash);
+  // Switching views inside the open project keeps the session (and its edit lock) alive.
+  if (current && pm && decodeURIComponent(pm[1]) === current.id) return current.setView((pm[2] as View) ?? 'play');
   if (current) {
     current.dispose();
     current = undefined;
   }
-  const hash = location.hash || '#/projects';
   if (!me) {
     try {
       me = (await Api.me()).user ?? undefined;
@@ -76,8 +81,7 @@ async function route() {
     }
   }
   if (!me || hash.startsWith('#/signin')) return renderSignIn();
-  const m = /^#\/p\/([^/?]+)/.exec(hash);
-  if (m) return renderProject(decodeURIComponent(m[1]));
+  if (pm) return renderProject(decodeURIComponent(pm[1]), pm[2] as View | undefined);
   return renderProjects();
 }
 
@@ -202,7 +206,7 @@ function renderProgress(el: HTMLElement, all: UploadProgress[]) {
 
 // ---------------- project ----------------
 
-async function renderProject(id: string) {
+async function renderProject(id: string, initialView?: View) {
   let session: ProjectSession;
   try {
     session = await ProjectSession.open(id);
@@ -232,9 +236,21 @@ async function renderProject(id: string) {
   titleInput.addEventListener('input', () => s.edit('Rename travelogue', (p) => setTitle(p, titleInput.value), { coalesceKey: 'title' }));
   const exportLink = h('a', { class: 'button', href: `/api/projects/${encodeURIComponent(id)}/export`, download: '' }, 'Export file');
 
-  app.replaceChildren(
-    topbar(titleInput, statusChip, undoBtn, redoBtn, s.mayEdit && exportLink),
-    h('main', { class: 'project' },
+  let view: View = initialView ?? (s.state.chapters.length === 0 || s.state.media.length === 0 ? 'itinerary' : 'play');
+  const viewTabs = h('nav', { class: 'view-tabs', 'aria-label': 'Views' },
+    h('a', { href: `#/p/${encodeURIComponent(id)}/itinerary`, 'data-view': 'itinerary', id: 'view-itinerary' }, 'Itinerary'),
+    h('a', { href: `#/p/${encodeURIComponent(id)}/play`, 'data-view': 'play', id: 'view-play' }, 'Play'));
+  const cfg = await Api.config().catch(() => ({ map: { tiles: false, search: false, attribution: '' } }));
+  const itinerary = mountItinerary(s, {
+    map: cfg.map,
+    preview: (chapterId) => {
+      location.hash = `#/p/${encodeURIComponent(id)}/play`;
+      const ch = player.timeline.chapters.find((c) => c.chapterId === chapterId);
+      player.seek(ch?.start ?? 0);
+      player.play();
+    },
+  });
+  const playMain = h('main', { class: 'project' },
       h('section', {},
         stageWrap,
         h('div', { class: 'controls' },
@@ -244,7 +260,19 @@ async function renderProject(id: string) {
           h('div', { class: 'scrub-wrap' }, scrub, marks),
           time, muteBtn),
         chapterLabel, meta),
-      h('aside', { class: 'side card' }, tabBar, side)));
+      h('aside', { class: 'side card' }, tabBar, side));
+  app.replaceChildren(topbar(viewTabs, titleInput, statusChip, undoBtn, redoBtn, s.mayEdit && exportLink), itinerary.el, playMain);
+
+  function setView(v: View) {
+    view = v;
+    itinerary.el.hidden = v !== 'itinerary';
+    playMain.hidden = v !== 'play';
+    viewTabs.querySelectorAll<HTMLElement>('a').forEach((a) => (a.dataset.view === v ? a.setAttribute('aria-current', 'page') : a.removeAttribute('aria-current')));
+    if (v !== 'play') player.pause();
+    else player.redraw();
+    const want = `#/p/${encodeURIComponent(id)}/${v}`;
+    if (location.hash !== want) history.replaceState(null, '', want);
+  }
 
   const urlFor = (itemId: string) => Api.mediaUrl(id, itemId, 'proxy');
   const player = new Player({
@@ -291,7 +319,7 @@ async function renderProject(id: string) {
       if (e.shiftKey) s.redo(); else s.undo();
       return;
     }
-    if (typing) return;
+    if (typing || view !== 'play') return;
     if (e.key === ' ' || e.key === 'k') { e.preventDefault(); player.toggle(); }
     else if (e.key === 'ArrowLeft') player.seek(player.time - 5);
     else if (e.key === 'ArrowRight') player.seek(player.time + 5);
@@ -349,6 +377,7 @@ async function renderProject(id: string) {
     meta.dataset.total = String(p.media.length);
     renderMarks();
     if (tab === 'Items' || tab === 'Upload') renderSide();
+    itinerary.update();
   }
 
   // ---- side panel ----
@@ -469,15 +498,17 @@ async function renderProject(id: string) {
 
   renderSide();
   update();
-  window.tripalogue = { telemetry, player, session: s, state: () => player.state };
+  setView(view);
+  window.tripalogue = { telemetry, player, session: s, itinerary, state: () => player.state };
   if (params.get('autoplay') === '1') {
     player.setMuted(true);
     player.play();
   }
   current = {
-    session: s, player,
+    id, session: s, player, setView,
     dispose: () => {
       unsub();
+      itinerary.dispose();
       ro.disconnect();
       removeEventListener('keydown', onKey);
       removeEventListener('pagehide', onHide);

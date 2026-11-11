@@ -10,3 +10,4 @@ export * from './render-model.js';
 export * from './telemetry.js';
 export * from './fractional.js';
 export * from './ops.js';
+export * from './itinerary.js';

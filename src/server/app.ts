@@ -16,6 +16,7 @@ import { loadConfig, type ServerConfig } from './config.js';
 import { Db } from './db.js';
 import { HttpError, readBody, readJson, requireString, Router, sendJson, type Ctx, type Req, type Res } from './http.js';
 import { OutboxMailer, type Mailer } from './mailer.js';
+import { Geo } from './geo.js';
 import { Jobs } from './media.js';
 import { LOCK_TTL_MS, Projects, type Role } from './projects.js';
 import { Uploads } from './uploads.js';
@@ -56,6 +57,7 @@ export async function startApp(overrides: Partial<ServerConfig> = {}, deps: { ma
   const projects = new Projects(db, cfg, mailer, auth);
   const jobs = new Jobs(db, cfg, blobs, projects);
   const uploads = new Uploads(db, cfg, blobs, projects, jobs);
+  const geo = new Geo(cfg.geo);
   const webDir = cfg.webDir ?? defaultWebDir();
   const r = new Router();
 
@@ -91,7 +93,22 @@ export async function startApp(overrides: Partial<ServerConfig> = {}, deps: { ma
     sendJson(c.res, 200, { ok: true });
   });
   r.on('GET', '/api/me', (c) => sendJson(c.res, 200, { user: auth.userFor(c.req) ?? null, google: auth.googleEnabled }));
-  r.on('GET', '/api/config', (c) => sendJson(c.res, 200, { google: auth.googleEnabled, telemetryEndpoint: cfg.telemetryDir ? '/api/telemetry' : null, chunkBytes: cfg.chunkBytes, maxUploadBytes: cfg.maxUploadBytes }));
+  r.on('GET', '/api/config', (c) => sendJson(c.res, 200, {
+    google: auth.googleEnabled, telemetryEndpoint: cfg.telemetryDir ? '/api/telemetry' : null, chunkBytes: cfg.chunkBytes, maxUploadBytes: cfg.maxUploadBytes,
+    map: { tiles: !!cfg.geo.tileUrl, search: !!cfg.geo.geocoderUrl, attribution: cfg.geo.attribution },
+  }));
+
+  // ---- places and map tiles (signed-in users only, so the proxy is not open to the world) ----
+  r.on('GET', '/api/geo/search', async (c) => {
+    me(c);
+    sendJson(c.res, 200, { places: await geo.search(c.url.searchParams.get('q') ?? '', c.url.searchParams.get('lang') ?? undefined) });
+  });
+  r.on('GET', '/api/tiles/:z/:x/:y', async (c) => {
+    me(c);
+    const buf = await geo.tile(c.params.z, c.params.x, c.params.y);
+    c.res.writeHead(200, { 'Content-Type': 'image/png', 'Content-Length': buf.length, 'Cache-Control': 'private, max-age=86400' });
+    c.res.end(buf);
+  });
 
   // ---- projects ----
   r.on('GET', '/api/projects', (c) => sendJson(c.res, 200, { projects: projects.list(me(c)) }));

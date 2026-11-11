@@ -8,10 +8,13 @@
  *   GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET   enable "Sign in with Google"
  *   TRIPALOGUE_MAX_UPLOAD_BYTES  per-file limit (default 10 GB)
  *   TRIPALOGUE_TELEMETRY_DIR     enable the opt-in telemetry endpoint, writing JSON lines here
+ *   TRIPALOGUE_GEOCODER_URL / TRIPALOGUE_TILE_URL / TRIPALOGUE_TILE_ATTRIBUTION   place search and map tiles (default OpenStreetMap)
+ *   TRIPALOGUE_CONTACT_EMAIL     contact address sent to the map providers in the User-Agent, as their policies ask
  */
 import { randomBytes } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
+import { geoConfigFromEnv, type GeoConfig } from './geo.js';
 
 export interface GoogleConfig {
   clientId: string;
@@ -40,6 +43,7 @@ export interface ServerConfig {
   ffmpeg: string;
   ffprobe: string;
   sessionDays: number;
+  geo: GeoConfig;
   log: (msg: string) => void;
 }
 
@@ -71,6 +75,7 @@ export function loadConfig(overrides: Partial<ServerConfig> = {}): ServerConfig 
     ffmpeg: overrides.ffmpeg ?? 'ffmpeg',
     ffprobe: overrides.ffprobe ?? 'ffprobe',
     sessionDays: overrides.sessionDays ?? 30,
+    geo: overrides.geo ?? geoConfigFromEnv(dataDir),
     log: overrides.log ?? ((m) => console.error(m)),
   };
 }
