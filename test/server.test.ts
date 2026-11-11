@@ -9,6 +9,8 @@ import { fileURLToPath } from 'node:url';
 import type { Operation, Travelogue } from '../src/core/index.js';
 import { startApp, type App } from '../src/server/app.js';
 import type { OutboxMailer } from '../src/server/mailer.js';
+import { withExif } from '../src/server/heif.js';
+import { exifTiff, isBlue, isRed, look, writeHeic } from './helpers/heic.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const SAMPLE_DIR = path.resolve(here, '../samples/hand-written-20');
@@ -329,6 +331,50 @@ describe('uploads, processing and media links (F-4, F-7)', () => {
     const item = (await owner.req('GET', `/api/projects/${pid}`)).json.project.media.find((m: { id: string }) => m.id === mediaId);
     assert.equal(item.status, 'ready');
     assert.match(item.assets.proxy, /proxy\.mp4$/);
+  });
+
+  it('turns a HEIC photo into a full-size JPEG, keeps the original, and makes an upright thumbnail and proxy', async () => {
+    const file = path.join(tmp, 'IMG_0420.HEIC');
+    await writeHeic(file, { width: 320, height: 240, tile: 128, rotateCcw: 90, capturedAt: '2026:05:03 14:22:10', exifOrientation: 6 });
+    const { mediaId, data } = await upload(owner, file, {});
+    await app.jobs.idle();
+    const item = (await owner.req('GET', `/api/projects/${pid}`)).json.project.media.find((m: { id: string }) => m.id === mediaId);
+    assert.equal(item.status, 'ready', item.error);
+    assert.equal(item.kind, 'image');
+    assert.deepEqual([item.width, item.height], [240, 320], 'the upright size');
+    assert.equal(item.contentHash, createHash('sha256').update(data).digest('hex'), 'the HEIC original is stored byte for byte');
+    assert.match(item.assets.jpeg, /full\.jpg$/);
+    const full = await app.blobs.localPath(item.assets.jpeg);
+    const fullTop = await look(full, 5, 5);
+    assert.deepEqual([fullTop.w, fullTop.h], [240, 320]);
+    assert.ok(isRed((await look(full, 5, 314)).rgb) && isBlue(fullTop.rgb), 'turned as the HEIC says');
+    assert.ok((await fs.readFile(full)).includes('2026:05:03 14:22:10'), 'capture time kept in the JPEG');
+    for (const k of ['proxy', 'thumb'] as const) {
+      const f = await app.blobs.localPath(item.assets[k]);
+      const p = await look(f, 2, 2);
+      assert.ok(p.h > p.w, `${k} is portrait`);
+      assert.ok(isBlue(p.rgb) && isRed((await look(f, 2, p.h - 3)).rgb), `${k} is upright`);
+    }
+    const link = await owner.req('GET', `/api/projects/${pid}/media/${mediaId}/jpeg`);
+    assert.equal(link.status, 302, 'the JPEG can be downloaded');
+  });
+
+  it('stands a sideways phone JPEG upright using its orientation tag', async () => {
+    const plain = path.join(tmp, 'side.jpg');
+    await new Promise<void>((resolve, reject) => import('node:child_process').then(({ execFile }) => execFile('ffmpeg',
+      ['-v', 'error', '-y', '-f', 'lavfi', '-i', 'color=c=blue:s=320x240,drawbox=x=0:y=0:w=80:h=60:c=red:t=fill', '-frames:v', '1', plain], (e) => (e ? reject(e) : resolve()))));
+    const tagged = path.join(tmp, 'IMG_0421.jpg');
+    await fs.writeFile(tagged, withExif(await fs.readFile(plain), exifTiff('2026:05:04 09:00:00', 6)));
+    const { mediaId } = await upload(owner, tagged, {});
+    await app.jobs.idle();
+    const item = (await owner.req('GET', `/api/projects/${pid}`)).json.project.media.find((m: { id: string }) => m.id === mediaId);
+    assert.equal(item.status, 'ready', item.error);
+    assert.deepEqual([item.width, item.height], [240, 320]);
+    assert.equal(item.assets.jpeg, undefined, 'JPEGs need no conversion');
+    const proxy = await app.blobs.localPath(item.assets.proxy);
+    const p = await look(proxy, 2, 2);
+    assert.deepEqual([p.w, p.h], [240, 320]);
+    assert.ok(isRed((await look(proxy, 237, 2)).rgb), 'turned a quarter clockwise: the red block is top-right');
   });
 
   it('lets a contributor add new media (to Unassigned), but not edit the travelogue', async () => {

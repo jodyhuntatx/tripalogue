@@ -6,6 +6,11 @@
  * Jobs live in the database, so they survive restarts; a worker loop (inside
  * the web process by default, or a separate `tripalogue worker`) runs them.
  * Uses the ffmpeg and ffprobe command-line tools.
+ *
+ * HEIC/HEIF photos get a full-resolution JPEG first (heic.ts), kept beside the
+ * original as the "jpeg" asset; the thumbnail and proxy are made from it. JPEG
+ * orientation tags are applied explicitly (orientation.ts), so phone photos
+ * stand upright whatever ffmpeg version is installed.
  */
 import { execFile } from 'node:child_process';
 import { promises as fs } from 'node:fs';
@@ -16,6 +21,8 @@ import type { MediaItem } from '../core/index.js';
 import type { BlobStore } from './blobstore.js';
 import type { ServerConfig } from './config.js';
 import type { Db } from './db.js';
+import { HeicConverter, isHeif } from './heic.js';
+import { jpegOrientation, orientationFilters, swapsSides } from './orientation.js';
 import { SYSTEM_USER, type Projects } from './projects.js';
 
 const run = promisify(execFile);
@@ -27,6 +34,9 @@ export interface ProbeResult {
   durationSec?: number;
   hasAudio?: boolean;
   createdAt?: string;
+  /** Size as stored, before any rotation the container asks for (photos use this with their EXIF orientation). */
+  storedWidth?: number;
+  storedHeight?: number;
 }
 
 export async function probe(file: string, ffprobe = 'ffprobe'): Promise<ProbeResult> {
@@ -46,6 +56,8 @@ export async function probe(file: string, ffprobe = 'ffprobe'): Promise<ProbeRes
     durationSec: !isStill && Number.isFinite(dur) ? Math.round(dur * 1000) / 1000 : undefined,
     hasAudio: !!a,
     createdAt: j.format?.tags?.creation_time,
+    storedWidth: v?.width,
+    storedHeight: v?.height,
   };
 }
 
@@ -56,7 +68,11 @@ export class Jobs {
   private running = false;
   private idleWaiters: (() => void)[] = [];
 
-  constructor(private readonly db: Db, private readonly cfg: ServerConfig, private readonly blobs: BlobStore, private readonly projects: Projects) {}
+  readonly heic: HeicConverter;
+
+  constructor(private readonly db: Db, private readonly cfg: ServerConfig, private readonly blobs: BlobStore, private readonly projects: Projects) {
+    this.heic = new HeicConverter({ setting: cfg.heicConverter, ffmpeg: cfg.ffmpeg, ffprobe: cfg.ffprobe, log: cfg.log });
+  }
 
   enqueue(projectId: string, mediaId: string): void {
     const now = Date.now();
@@ -66,6 +82,7 @@ export class Jobs {
 
   /** Start polling for jobs. Jobs left "running" by a crash are re-queued. */
   start(intervalMs = 500): void {
+    void this.heic.available(); // find the HEIC converter now, so the log says which one is in use
     this.db.run("UPDATE jobs SET status = 'queued' WHERE status = 'running'");
     this.timer = setInterval(() => this.kick(), intervalMs);
     this.kick();
@@ -133,23 +150,43 @@ export class Jobs {
   async process(projectId: string, mediaId: string): Promise<void> {
     const item = this.projects.load(projectId).doc.media.find((m) => m.id === mediaId);
     if (!item?.storageKey) throw new Error('media item has no stored original');
-    const src = await this.blobs.localPath(item.storageKey);
-    const pr = await probe(src, this.cfg.ffprobe);
+    let src = await this.blobs.localPath(item.storageKey);
     const assets: MediaItem['assets'] = {};
     const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'tl-job-'));
+    let pr: ProbeResult;
     try {
       const ff = (args: string[]) => run(this.cfg.ffmpeg, ['-hide_banner', '-loglevel', 'error', '-y', ...args], { maxBuffer: 8 << 20 });
       const base = `derived/${projectId}/${mediaId}`;
+      // HEIC/HEIF: make the full-resolution JPEG, then treat it as the picture for everything below.
+      if (item.kind === 'image' && (await isHeif(src))) {
+        const full = path.join(tmp, 'full.jpg');
+        await this.heic.toJpeg(src, full);
+        await this.blobs.putFile(`${base}/full.jpg`, full); // moves the file into storage
+        assets.jpeg = `${base}/full.jpg`;
+        src = await this.blobs.localPath(assets.jpeg);
+      }
+      pr = await probe(src, this.cfg.ffprobe);
+      // Photos: apply the EXIF orientation ourselves (and report the upright size).
+      const orientation = item.kind === 'image' ? await jpegOrientation(src) : 1;
+      const turn = orientationFilters(orientation);
+      const still = item.kind === 'image' ? ['-noautorotate'] : [];
+      if (item.kind === 'image') {
+        // Stored size turned by the EXIF orientation, whatever this ffprobe version reports on its own.
+        const turned = swapsSides(orientation);
+        pr.width = turned ? pr.storedHeight : pr.storedWidth;
+        pr.height = turned ? pr.storedWidth : pr.storedHeight;
+      }
+      const vf = (max: number) => [...turn, fitScale(max)].join(',');
       if (item.kind === 'image' || item.kind === 'video') {
         const at = item.kind === 'video' ? ['-ss', String(Math.min(1, (pr.durationSec ?? 0) / 10))] : [];
         const thumb = path.join(tmp, 'thumb.jpg');
-        await ff([...at, '-i', src, '-vf', fitScale(320), '-frames:v', '1', '-q:v', '4', thumb]);
+        await ff([...still, ...at, '-i', src, '-vf', vf(320), '-frames:v', '1', '-q:v', '4', thumb]);
         await this.blobs.putFile(`${base}/thumb.jpg`, thumb);
         assets.thumb = `${base}/thumb.jpg`;
       }
       if (item.kind === 'image') {
         const proxy = path.join(tmp, 'proxy.jpg');
-        await ff(['-i', src, '-vf', fitScale(1920), '-frames:v', '1', '-q:v', '3', proxy]);
+        await ff([...still, '-i', src, '-vf', vf(1920), '-frames:v', '1', '-q:v', '3', proxy]);
         await this.blobs.putFile(`${base}/proxy.jpg`, proxy);
         assets.proxy = `${base}/proxy.jpg`;
       } else if (item.kind === 'video') {

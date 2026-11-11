@@ -1,11 +1,11 @@
 {
-  "date": "2026-11-11T17:04:07.801Z",
+  "date": "2026-11-11T19:00:24.418Z",
   "rate": 1,
   "browser": "153.0.8010.12",
   "timelineSec": 111,
-  "wallSec": 111.234,
-  "uploadSec": 0.576,
-  "readySec": 16.186,
+  "wallSec": 111.211,
+  "uploadSec": 0.521,
+  "readySec": 15.711,
   "framesDrawn": 6669,
   "placeholderFrames": 0,
   "checks": [
@@ -17,7 +17,7 @@
     {
       "name": "imports and uploads all 20 originals through the browser",
       "pass": true,
-      "detail": "10.1 MB uploaded in 0.6 s; all processed after 16.2 s"
+      "detail": "10.1 MB uploaded in 0.5 s; all processed after 15.7 s"
     },
     {
       "name": "originals are stored byte for byte",
@@ -108,6 +108,11 @@
       "name": "the wider player redraws its frame",
       "pass": true,
       "detail": "100% of the frame lit"
+    },
+    {
+      "name": "a HEIC photo uploads, is converted to a full-size JPG, and shows upright",
+      "pass": true,
+      "detail": "thumbnail 240×320, download \"IMG_0420.jpg\", item 240×320"
     },
     {
       "name": "no errors in the browser console",

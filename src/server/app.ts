@@ -224,7 +224,8 @@ export async function startApp(overrides: Partial<ServerConfig> = {}, deps: { ma
     const item = projects.load(c.params.id).doc.media.find((m) => m.id === c.params.mid);
     if (!item) throw new HttpError(404, 'Media not found', 'not_found');
     const v = c.params.variant;
-    const key = v === 'original' ? item.storageKey : v === 'thumb' ? item.assets?.thumb : v === 'proxy' ? item.assets?.proxy ?? item.storageKey : undefined;
+    const key = v === 'original' ? item.storageKey : v === 'thumb' ? item.assets?.thumb : v === 'proxy' ? item.assets?.proxy ?? item.storageKey
+      : v === 'jpeg' ? item.assets?.jpeg : undefined;
     if (!key) throw new HttpError(404, item.status && item.status !== 'ready' ? `Not ready yet (${item.status})` : 'No such file', 'not_ready');
     redirect(c.res, auth.signBlobUrl(key), 302, 'private, max-age=300');
   });

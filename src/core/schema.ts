@@ -101,6 +101,8 @@ export type MediaStatus = 'pending' | 'uploading' | 'processing' | 'ready' | 'fa
 export interface MediaAssets {
   thumb?: string;
   proxy?: string;
+  /** Full-resolution JPEG made from a HEIC/HEIF original (the original is kept as uploaded). */
+  jpeg?: string;
 }
 
 export interface MediaItem extends Attribution {

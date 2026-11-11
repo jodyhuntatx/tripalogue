@@ -42,6 +42,8 @@ export interface ServerConfig {
   webDir?: string;
   ffmpeg: string;
   ffprobe: string;
+  /** HEIC converter: auto (default), off, or a tool name (see heic.ts). */
+  heicConverter: string;
   sessionDays: number;
   geo: GeoConfig;
   log: (msg: string) => void;
@@ -74,6 +76,7 @@ export function loadConfig(overrides: Partial<ServerConfig> = {}): ServerConfig 
     webDir: overrides.webDir,
     ffmpeg: overrides.ffmpeg ?? 'ffmpeg',
     ffprobe: overrides.ffprobe ?? 'ffprobe',
+    heicConverter: overrides.heicConverter ?? env.TRIPALOGUE_HEIC_CONVERTER ?? 'auto',
     sessionDays: overrides.sessionDays ?? 30,
     geo: overrides.geo ?? geoConfigFromEnv(dataDir),
     log: overrides.log ?? ((m) => console.error(m)),

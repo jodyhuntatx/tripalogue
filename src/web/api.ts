@@ -75,5 +75,5 @@ export const Api = {
   invite: (id: string, email: string, role: Role) => api('POST', `/api/projects/${id}/invites`, { email, role }),
   setRole: (id: string, uid: string, role: Role) => api('PATCH', `/api/projects/${id}/members/${uid}`, { role }),
   removeMember: (id: string, uid: string) => api('DELETE', `/api/projects/${id}/members/${uid}`),
-  mediaUrl: (id: string, mediaId: string, variant: 'proxy' | 'thumb' | 'original') => `/api/projects/${encodeURIComponent(id)}/media/${encodeURIComponent(mediaId)}/${variant}`,
+  mediaUrl: (id: string, mediaId: string, variant: 'proxy' | 'thumb' | 'original' | 'jpeg') => `/api/projects/${encodeURIComponent(id)}/media/${encodeURIComponent(mediaId)}/${variant}`,
 };

@@ -23,6 +23,7 @@ import { startApp } from '../src/server/app.js';
 import { geoConfigFromEnv } from '../src/server/geo.js';
 import type { OutboxMailer } from '../src/server/mailer.js';
 import type {} from '../src/web/main.js'; // window.tripalogue typings
+import { writeHeic } from '../test/helpers/heic.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const sampleDir = path.join(root, 'samples/hand-written-20');
@@ -196,6 +197,26 @@ try {
   check('the wider player redraws its frame', lit > 0.5, `${Math.round(lit * 100)}% of the frame lit`);
   await page.screenshot({ path: path.join(outDir, '10-panel-hidden.png') });
   await page.click('#toggle-panel');
+
+  // 7. A phone's HEIC photo uploads, gets a full-size JPG, and shows upright.
+  const heic = path.join(dataDir, 'IMG_0420.HEIC');
+  await writeHeic(heic, { width: 320, height: 240, tile: 128, rotateCcw: 90, capturedAt: '2026:05:03 14:22:10', exifOrientation: 6 });
+  await page.click('.tabs button[data-tab="Upload"]');
+  await page.setInputFiles('#upload-input', heic);
+  await page.click('#upload-start');
+  await page.waitForFunction(() => window.tripalogue!.session!.state.media.some((m) => m.uri.endsWith('IMG_0420.HEIC') && m.status === 'ready'), null, { timeout: 60_000 });
+  await page.click('.tabs button[data-tab="Items"]');
+  const row = page.locator('li[data-item]', { hasText: 'IMG_0420.HEIC' });
+  await row.locator('img').waitFor();
+  await page.waitForFunction(() => [...document.querySelectorAll<HTMLImageElement>('li[data-item] img')].some((i) => i.closest('li')!.textContent!.includes('IMG_0420') && i.naturalWidth > 0));
+  const thumb = await row.locator('img').evaluate((i: HTMLImageElement) => ({ w: i.naturalWidth, h: i.naturalHeight }));
+  const jpg = await row.locator('a.badge.jpg').getAttribute('download');
+  const heicItem = app.projects.load(pid).doc.media.find((m) => m.uri.endsWith('IMG_0420.HEIC'))!;
+  check('a HEIC photo uploads, is converted to a full-size JPG, and shows upright', thumb.h > thumb.w && jpg === 'IMG_0420.jpg' && heicItem.width === 240 && heicItem.height === 320,
+    `thumbnail ${thumb.w}×${thumb.h}, download "${jpg}", item ${heicItem.width}×${heicItem.height}`);
+  await page.waitForTimeout(500);
+  await page.locator('li[data-item]', { hasText: 'IMG_0420.HEIC' }).scrollIntoViewIfNeeded();
+  await page.locator('#side-panel').screenshot({ path: path.join(outDir, '11-heic-item.png') });
 
   check('no errors in the browser console', consoleErrors.length === 0, consoleErrors.slice(0, 3).join(' | '));
   await page.waitForTimeout(400); // let the status label catch up before the screenshot
