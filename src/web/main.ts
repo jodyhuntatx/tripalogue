@@ -7,7 +7,7 @@
  */
 import { moveItem, parseProject, setIncluded, setTitle, Telemetry, type TelemetryEvent, type Travelogue } from '../core/index.js';
 import { Player, type PlayerState } from '../player/player.js';
-import { Api, ApiError, type Role, type User } from './api.js';
+import { Api, ApiError, type MediaToolStatus, type Role, type User } from './api.js';
 import { mountInset, type InsetView } from './inset.js';
 import { mountItinerary, type ItineraryView } from './itinerary.js';
 import { ProjectSession } from './session.js';
@@ -241,7 +241,19 @@ async function renderProject(id: string, initialView?: View) {
   const viewTabs = h('nav', { class: 'view-tabs', 'aria-label': 'Views' },
     h('a', { href: `#/p/${encodeURIComponent(id)}/itinerary`, 'data-view': 'itinerary', id: 'view-itinerary' }, 'Itinerary'),
     h('a', { href: `#/p/${encodeURIComponent(id)}/play`, 'data-view': 'play', id: 'view-play' }, 'Play'));
-  const cfg = await Api.config().catch(() => ({ map: { tiles: false, search: false, attribution: '' } }));
+  const cfg = await Api.config().catch(() => ({ map: { tiles: false, search: false, attribution: '' }, media: undefined as MediaToolStatus | undefined }));
+  let mediaTools: MediaToolStatus | undefined = cfg.media;
+  // Process failed items again from their stored originals (all of them, or the ids given).
+  const retry = async (ids?: string[]) => {
+    try {
+      const r = await Api.retryMedia(id, ids);
+      mediaTools = r.media;
+      void s.poll();
+    } catch (e) {
+      alert((e as ApiError).message);
+    }
+    renderSide();
+  };
   const itinerary = mountItinerary(s, {
     map: cfg.map,
     preview: (chapterId) => {
@@ -431,6 +443,7 @@ async function renderProject(id: string, initialView?: View) {
           ready && m.assets?.thumb ? h('img', { src: Api.mediaUrl(id, m.id, 'thumb'), alt: '', loading: 'lazy' }) : h('span', { class: 'thumb-placeholder' }),
           h('span', { class: 'name', title: m.uri }, m.uri.split('/').pop() ?? m.uri),
           !ready && h('span', { class: `badge ${m.status}`, title: m.status === 'failed' ? m.error ?? '' : '' }, m.status ?? ''),
+          m.status === 'failed' && m.storageKey && s.role !== 'viewer' && h('button', { class: 'retry', 'aria-label': `Retry processing ${m.uri}`, title: m.error ?? '', onclick: () => void retry([m.id]) }, 'Retry'),
           ready && m.assets?.jpeg && h('a', { class: 'badge jpg', href: Api.mediaUrl(id, m.id, 'jpeg'), download: `${(m.uri.split('/').pop() ?? 'photo').replace(/\.[^.]+$/, '')}.jpg`,
             title: 'Converted from HEIC. Download the full-size JPG (the original HEIC is kept too).' }, 'JPG'),
           cue && h('label', { class: 'inc', title: 'Include in the travelogue' },
@@ -444,7 +457,21 @@ async function renderProject(id: string, initialView?: View) {
   function renderUpload() {
     const p = s.state;
     const mayUpload = s.role !== 'viewer';
-    const pending = p.media.filter((m) => m.status === 'pending' || m.status === 'failed' || m.status === 'uploading');
+    // Waiting for an original (never uploaded, or the upload failed) vs uploaded but processing failed.
+    const pending = p.media.filter((m) => m.status === 'pending' || m.status === 'uploading' || (m.status === 'failed' && !m.storageKey));
+    const failedProcessing = p.media.filter((m) => m.status === 'failed' && m.storageKey);
+    const toolsBanner = mediaTools && !mediaTools.ok
+      ? h('div', { class: 'banner error', id: 'media-problems', role: 'alert' },
+        h('strong', {}, 'Media processing is not working on this server.'),
+        h('ul', {}, ...mediaTools.problems.map((t) => h('li', {}, t))),
+        h('button', { id: 'media-recheck', onclick: async () => { mediaTools = await Api.mediaTools(true).catch(() => mediaTools); renderSide(); } }, 'Check again'))
+      : null;
+    const failedBlock = failedProcessing.length
+      ? h('div', { class: 'failed-processing' },
+        h('p', {}, `${failedProcessing.length} uploaded item(s) could not be processed. Their originals are stored, so they can be processed again without re-uploading.`),
+        h('ul', { class: 'pending' }, ...failedProcessing.slice(0, 50).map((m) => h('li', { class: 'muted' }, `${m.uri.split('/').pop()}${m.error ? ` · ${m.error}` : ''}`))),
+        mayUpload && h('button', { class: 'primary', id: 'retry-failed', onclick: () => void retry() }, `Retry processing (${failedProcessing.length})`))
+      : null;
     const input = h('input', { type: 'file', multiple: true, accept: 'image/*,video/*,audio/*', id: 'upload-input', 'aria-label': 'Choose photos and videos' });
     const start = async () => {
       const files = [...(input.files ?? [])];
@@ -467,6 +494,8 @@ async function renderProject(id: string, initialView?: View) {
           uploadProgress,
           pending.length ? h('ul', { class: 'pending' }, ...pending.slice(0, 50).map((m) => h('li', { class: 'muted' }, `${m.uri.split('/').pop()} · ${m.status}${m.error ? ` · ${m.error}` : ''}`))) : null)
         : h('p', { class: 'muted' }, 'Viewers cannot upload media.'));
+    if (failedBlock) side.append(failedBlock);
+    if (toolsBanner) side.prepend(toolsBanner);
   }
 
   async function renderMembers() {

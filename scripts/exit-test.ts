@@ -218,6 +218,36 @@ try {
   await page.locator('li[data-item]', { hasText: 'IMG_0420.HEIC' }).scrollIntoViewIfNeeded();
   await page.locator('#side-panel').screenshot({ path: path.join(outDir, '11-heic-item.png') });
 
+  // 8. A broken ffmpeg install is reported in the Upload tab, and failed items are processed again with Retry.
+  const goodProbe = app.cfg.ffprobe;
+  app.cfg.ffprobe = path.join(dataDir, 'no-such-ffprobe');
+  const broken = path.join(dataDir, 'IMG_0500.jpg');
+  await fs.copyFile(path.join(sampleDir, 'media/ch2-01-pena.jpg'), broken);
+  await page.click('.tabs button[data-tab="Upload"]');
+  await page.setInputFiles('#upload-input', broken);
+  await page.click('#upload-start');
+  await page.waitForFunction(() => window.tripalogue!.session!.state.media.some((m) => m.uri.endsWith('IMG_0500.jpg') && m.status === 'failed'), null, { timeout: 60_000 });
+  await page.click('.tabs button[data-tab="Items"]');
+  const retryBtn = page.locator('button.retry[aria-label="Retry processing IMG_0500.jpg"]');
+  await retryBtn.waitFor();
+  await page.click('.tabs button[data-tab="Upload"]');
+  await page.waitForSelector('#retry-failed');
+  // The banner shows once the page knows about the problem (the page loaded before ffprobe broke): ask again.
+  const recheck = await page.evaluate(async () => (await fetch('/api/media-tools?recheck=1')).json());
+  await page.reload();
+  await page.waitForFunction(() => !!window.tripalogue?.session);
+  await page.click('.tabs button[data-tab="Upload"]');
+  const banner = await page.locator('#media-problems').textContent({ timeout: 10_000 }).catch(() => '');
+  await page.screenshot({ path: path.join(outDir, '12-media-problems.png') });
+  app.cfg.ffprobe = goodProbe; // "install" ffprobe
+  await page.click('#media-recheck');
+  await page.waitForSelector('#media-problems', { state: 'detached' });
+  await page.click('#retry-failed');
+  await page.waitForFunction(() => window.tripalogue!.session!.state.media.some((m) => m.uri.endsWith('IMG_0500.jpg') && m.status === 'ready'), null, { timeout: 60_000 });
+  check('a broken ffmpeg is reported, and Retry processes failed uploads once it is fixed',
+    recheck.ok === false && /ffprobe was not found/.test(banner ?? '') && (await page.locator('#retry-failed').count()) === 0,
+    (banner ?? '').slice(0, 90));
+
   check('no errors in the browser console', consoleErrors.length === 0, consoleErrors.slice(0, 3).join(' | '));
   await page.waitForTimeout(400); // let the status label catch up before the screenshot
   await shot('09-after-edits');

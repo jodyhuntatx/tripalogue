@@ -80,6 +80,23 @@ export class Jobs {
     this.kick();
   }
 
+  /**
+   * Process failed items again (all failed items with a stored original, or just the ids given). The original is
+   * kept, so nothing needs re-uploading. Returns the ids queued.
+   */
+  retry(projectId: string, userId: string, mediaIds?: string[]): string[] {
+    const doc = this.projects.load(projectId).doc;
+    const want = mediaIds ? new Set(mediaIds) : undefined;
+    const ids = doc.media.filter((m) => m.status === 'failed' && m.storageKey && (!want || want.has(m.id))).map((m) => m.id);
+    if (!ids.length) return [];
+    const set = new Set(ids);
+    this.projects.serverChange(projectId, userId, ids.length === 1 ? 'Retry processing' : `Retry processing ${ids.length} items`, (d) => ({
+      ...d, media: d.media.map((m) => (set.has(m.id) ? { ...m, status: 'processing' as const, error: undefined } : m)),
+    }));
+    for (const id of ids) this.enqueue(projectId, id);
+    return ids;
+  }
+
   /** Start polling for jobs. Jobs left "running" by a crash are re-queued. */
   start(intervalMs = 500): void {
     void this.heic.available(); // find the HEIC converter now, so the log says which one is in use

@@ -14,7 +14,7 @@ are uploaded through the browser, and it plays end to end in the browser from cl
 | F-1 | Project stored on the server, autosaved, with version history and JSON export and import | `src/server/projects.ts`, `src/web/session.ts`, `src/core/` |
 | F-2 | Undo and redo across all edits, at least 100 steps, without undoing other people's changes | `src/core/history.ts` (`rebase`) |
 | F-3 | Player at the project's aspect ratio, drawing the shared render model | `src/core/render-model.ts`, `src/player/` |
-| F-4 | Media processing jobs: probe, thumbnails, 720p proxies in object storage | `src/server/media.ts` |
+| F-4 | Media processing jobs: probe, thumbnails, 720p proxies in object storage; HEIC to JPG; startup check of ffmpeg; retry after a failure | `src/server/media.ts`, `heic.ts`, `heif.ts`, `toolcheck.ts` |
 | F-5 | Opt-in telemetry hooks for usability sessions | `src/core/telemetry.ts`, `POST /api/telemetry` |
 | F-6 | Accounts: email-link sign-in, optional Google sign-in, sessions | `src/server/auth.ts` |
 | F-7 | Resumable uploads of unaltered originals | `src/server/uploads.ts`, `src/web/uploader.ts` |
@@ -65,8 +65,11 @@ ffmpeg -version
 ffprobe -version
 ```
 
-If uploads finish but items show **failed · spawn ffprobe ENOENT**, the server could not find `ffprobe`.
-Install ffmpeg as above, restart the server, then upload those files again from the project's **Upload** tab.
+The server checks ffmpeg and ffprobe at startup, including the codecs processing needs, and logs any problem in
+plain words. The project's **Upload** tab shows the same warning. After installing or fixing ffmpeg, press
+**Check again** in that warning (restart the server if ffmpeg still isn't found, so it picks up the new PATH).
+Items that failed while ffmpeg was missing keep their uploaded originals: press **Retry processing** in the
+Upload tab, or **Retry** next to an item in the Items list, to process them again without re-uploading.
 
 ### Configuration
 
@@ -128,7 +131,7 @@ with "could not be converted", check that line, and that `ffmpeg -decoders | gre
 
 ```sh
 npm run typecheck
-npm test            # 95 tests: model, order keys, operations, history, itinerary, geo proxy, server API, uploads, processing, auth
+npm test            # 97 tests: model, order keys, operations, history, itinerary, geo proxy, HEIC, server API, uploads, processing, retry, auth
 npm run test:e2e    # Phase 0 browser exit test (needs Playwright's Chromium: npx playwright install chromium)
 npm run test:phase1 # Phase 1 browser test of the G1 tasks (no internet needed: it uses a stand-in map provider)
 ```
@@ -187,7 +190,8 @@ survives a reload and can be undone. Report and screenshots: `docs/exit-test/`.
 | Map inset: whole trip on a title card, then the chapter being played | pass |
 | Hide the side panel: the player fills the width, the choice is remembered, P toggles it | pass |
 | A HEIC photo uploads through the browser, gets a full-size JPG, and shows upright | pass |
-| Total | 22 of 22 checks |
+| A broken ffmpeg is reported in the Upload tab, and Retry processes failed uploads once fixed | pass |
+| Total | 23 of 23 checks |
 
 ## Phase 1: Itinerary editor
 
@@ -222,7 +226,7 @@ create a travelogue, paste six lines (one bad) and add five chapters from the pr
 with place search, drop a pin on the map, split a three-day chapter, find and fix a planted overlap, undo and
 redo, reload, play the nine title cards, and check the map inset (trip view on title cards, chapter view,
 moving, hiding and undo). Report and screenshots: `docs/phase1-test/`. Result: 20 of 20 checks, with no
-browser console errors. The Phase 0 exit test, now 22 checks, adds the inset following the sample's chapters, the hideable side panel and a HEIC upload.
+browser console errors. The Phase 0 exit test, now 23 checks, adds the inset following the sample's chapters, the hideable side panel, a HEIC upload, and recovery from a broken ffmpeg.
 
 ## Layout
 
@@ -239,9 +243,10 @@ scripts/      build, sample media, exit test, Phase 1 test
 
 ## Not built yet
 
-- An email provider (links go to the console and `data/outbox/`), and an S3-compatible storage driver (the
-  interface is ready; the file-system driver ships).
-- Exporting an archive of originals alongside the JSON file.
-- A production map provider (see Configuration), and a hosted test site.
+- An email provider (links go to the console and `data/outbox/`).
+- A hosted test site, with an S3-compatible storage driver for it (the storage interface is ready; the
+  file-system driver ships).
+- A production map provider (see Configuration).
+- Google sign-in is built but untested against Google: it needs a Google OAuth client (see Configuration).
 - The media manager, timestamp assignment, presentation editor, export to MP4, the full inset map, audio lanes,
   and live co-editing are later phases; their data already has a place in the schema.

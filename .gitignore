@@ -3,3 +3,6 @@ dist/
 data/
 *.autosave
 .*.tmp
+
+# Microsoft Office lock files (created while a document such as the PRD is open in Word)
+~$*
