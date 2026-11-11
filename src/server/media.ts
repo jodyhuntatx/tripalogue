@@ -17,11 +17,13 @@ import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
-import type { MediaItem } from '../core/index.js';
+import type { MediaItem, Travelogue } from '../core/index.js';
 import type { BlobStore } from './blobstore.js';
 import type { ServerConfig } from './config.js';
 import type { Db } from './db.js';
 import { HeicConverter, isHeif } from './heic.js';
+import { metaFromTags, photoMeta, type CaptureMeta } from './metadata.js';
+import { reassign } from '../core/index.js';
 import { jpegOrientation, orientationFilters, swapsSides } from './orientation.js';
 import { SYSTEM_USER, type Projects } from './projects.js';
 
@@ -33,7 +35,8 @@ export interface ProbeResult {
   height?: number;
   durationSec?: number;
   hasAudio?: boolean;
-  createdAt?: string;
+  /** Container and stream tags (creation time, location…), format tags first. */
+  tags: Record<string, string>;
   /** Size as stored, before any rotation the container asks for (photos use this with their EXIF orientation). */
   storedWidth?: number;
   storedHeight?: number;
@@ -42,8 +45,8 @@ export interface ProbeResult {
 export async function probe(file: string, ffprobe = 'ffprobe'): Promise<ProbeResult> {
   const { stdout } = await run(ffprobe, ['-v', 'error', '-print_format', 'json', '-show_streams', '-show_format', file], { maxBuffer: 8 << 20 });
   const j = JSON.parse(stdout) as {
-    streams?: { codec_type?: string; width?: number; height?: number; duration?: string; side_data_list?: { rotation?: number }[]; tags?: { rotate?: string } }[];
-    format?: { duration?: string; format_name?: string; tags?: { creation_time?: string } };
+    streams?: { codec_type?: string; width?: number; height?: number; duration?: string; side_data_list?: { rotation?: number }[]; tags?: Record<string, string> & { rotate?: string } }[];
+    format?: { duration?: string; format_name?: string; tags?: Record<string, string> };
   };
   const v = j.streams?.find((s) => s.codec_type === 'video');
   const a = j.streams?.find((s) => s.codec_type === 'audio');
@@ -55,7 +58,7 @@ export async function probe(file: string, ffprobe = 'ffprobe'): Promise<ProbeRes
     height: v ? (rot === 90 ? v.width : v.height) : undefined,
     durationSec: !isStill && Number.isFinite(dur) ? Math.round(dur * 1000) / 1000 : undefined,
     hasAudio: !!a,
-    createdAt: j.format?.tags?.creation_time,
+    tags: { ...Object.assign({}, ...(j.streams ?? []).map((s) => s.tags ?? {})), ...(j.format?.tags ?? {}) },
     storedWidth: v?.width,
     storedHeight: v?.height,
   };
@@ -168,14 +171,18 @@ export class Jobs {
     const item = this.projects.load(projectId).doc.media.find((m) => m.id === mediaId);
     if (!item?.storageKey) throw new Error('media item has no stored original');
     let src = await this.blobs.localPath(item.storageKey);
+    const original = src;
     const assets: MediaItem['assets'] = {};
+    let meta: CaptureMeta = {};
     const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'tl-job-'));
     let pr: ProbeResult;
     try {
       const ff = (args: string[]) => run(this.cfg.ffmpeg, ['-hide_banner', '-loglevel', 'error', '-y', ...args], { maxBuffer: 8 << 20 });
       const base = `derived/${projectId}/${mediaId}`;
       // HEIC/HEIF: make the full-resolution JPEG, then treat it as the picture for everything below.
-      if (item.kind === 'image' && (await isHeif(src))) {
+      const heif = item.kind === 'image' && (await isHeif(src));
+      if (item.kind === 'image') meta = await photoMeta(original, heif); // read from the original, before any conversion
+      if (heif) {
         const full = path.join(tmp, 'full.jpg');
         await this.heic.toJpeg(src, full);
         await this.blobs.putFile(`${base}/full.jpg`, full); // moves the file into storage
@@ -183,6 +190,7 @@ export class Jobs {
         src = await this.blobs.localPath(assets.jpeg);
       }
       pr = await probe(src, this.cfg.ffprobe);
+      if (item.kind !== 'image') meta = metaFromTags(pr.tags);
       // Photos: apply the EXIF orientation ourselves (and report the upright size).
       const orientation = item.kind === 'image' ? await jpegOrientation(src) : 1;
       const turn = orientationFilters(orientation);
@@ -218,19 +226,30 @@ export class Jobs {
     } finally {
       await fs.rm(tmp, { recursive: true, force: true });
     }
-    this.projects.serverChange(projectId, SYSTEM_USER, `Processed ${item.uri}`, (doc) => ({
-      ...doc,
-      media: doc.media.map((m) => (m.id !== mediaId ? m : {
-        ...m,
-        width: m.width ?? pr.width,
-        height: m.height ?? pr.height,
-        durationSec: m.durationSec ?? (m.kind !== 'image' ? pr.durationSec : undefined),
-        capturedAt: m.capturedAt ?? pr.createdAt,
-        timestampConfidence: m.timestampConfidence ?? (pr.createdAt ? 'high' : undefined),
-        assets,
-        status: 'ready' as const,
-        error: undefined,
-      })),
-    }));
+    this.projects.serverChange(projectId, SYSTEM_USER, `Processed ${item.uri}`, (doc) => {
+      const updated: Travelogue = {
+        ...doc,
+        media: doc.media.map((m) => {
+          if (m.id !== mediaId) return m;
+          // Capture time: what the project already says, else the file's metadata, else its modified time (low confidence).
+          const fromMeta = !m.capturedAt && meta.capturedAt;
+          const fromFile = !m.capturedAt && !meta.capturedAt && m.fileModifiedAt;
+          return {
+            ...m,
+            width: m.width ?? pr.width,
+            height: m.height ?? pr.height,
+            durationSec: m.durationSec ?? (m.kind !== 'image' ? pr.durationSec : undefined),
+            capturedAt: m.capturedAt ?? meta.capturedAt ?? m.fileModifiedAt,
+            timestampConfidence: m.timestampConfidence ?? (fromMeta ? 'high' : fromFile ? 'low' : m.capturedAt ? 'high' : undefined),
+            location: m.location ?? meta.location,
+            assets,
+            status: 'ready' as const,
+            error: undefined,
+          };
+        }),
+      };
+      // Put it in the chapter its time falls in (MM-3), in time order. Items already in their chapter keep their place.
+      return reassign(updated, new Set([mediaId]));
+    });
   }
 }

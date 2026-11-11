@@ -11,3 +11,4 @@ export * from './telemetry.js';
 export * from './fractional.js';
 export * from './ops.js';
 export * from './itinerary.js';
+export * from './assign.js';

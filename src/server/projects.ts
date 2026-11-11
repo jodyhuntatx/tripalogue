@@ -317,12 +317,12 @@ export class Projects {
   // ---- media items created by uploads ----
 
   /** Add a media item (and its default cue) for a new upload; it starts in the Unassigned bin. */
-  addUploadedItem(projectId: string, user: User, fileName: string, kind: MediaItem['kind']): string {
+  addUploadedItem(projectId: string, user: User, fileName: string, kind: MediaItem['kind'], fileModifiedAt?: string): string {
     const id = `m_${randomBytes(6).toString('base64url')}`;
     this.serverChange(projectId, user.id, `Upload ${fileName}`, (doc) => {
       let source = doc.sources.find((s) => s.type === 'upload' && s.contributorId === user.id);
       const sources = source ? doc.sources : [...doc.sources, (source = { id: `src_${user.id}`, type: 'upload' as const, displayName: `${user.name}'s uploads`, clockOffsetSec: 0, contributorId: user.id })];
-      const item: MediaItem = { id, sourceId: source.id, uri: fileName, kind, chapterId: null, status: 'uploading', uploadedBy: user.id };
+      const item: MediaItem = { id, sourceId: source.id, uri: fileName, kind, chapterId: null, status: 'uploading', uploadedBy: user.id, ...(fileModifiedAt ? { fileModifiedAt } : {}) };
       const unassigned = doc.cues.filter((c) => doc.media.find((m) => m.id === c.itemId)?.chapterId === null).map((c) => c.order).sort();
       const order = unassigned.length ? keyBetween(unassigned[unassigned.length - 1], null) : spreadKeys(1)[0];
       return { ...doc, sources, media: [...doc.media, item], cues: [...doc.cues, defaultCue(item, doc.cueProfile, order)] };
@@ -332,7 +332,8 @@ export class Projects {
 }
 
 function pickMediaState(m: MediaItem): Partial<MediaItem> {
-  return { storageKey: m.storageKey, contentHash: m.contentHash, sizeBytes: m.sizeBytes, status: m.status, assets: m.assets, width: m.width, height: m.height, durationSec: m.durationSec, error: undefined };
+  return { storageKey: m.storageKey, contentHash: m.contentHash, sizeBytes: m.sizeBytes, status: m.status, assets: m.assets, width: m.width, height: m.height, durationSec: m.durationSec, error: undefined,
+    capturedAt: m.capturedAt, timestampConfidence: m.timestampConfidence, fileModifiedAt: m.fileModifiedAt };
 }
 
 /** Stamp updatedBy/updatedAt on every chapter, media item and cue an operation batch touched. */

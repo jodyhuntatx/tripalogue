@@ -65,6 +65,9 @@ export class Uploads {
     if (size > this.cfg.maxUploadBytes) throw new HttpError(413, `Files may be up to ${Math.round(this.cfg.maxUploadBytes / 1024 ** 3)} GB`, 'too_large');
     const kind = kindForFile(fileName);
     if (!kind) throw new HttpError(415, `${fileName}: unsupported file type`, 'unsupported');
+    // The file's modified time on the uploader's computer: the fallback capture time when the file has none (MM-2).
+    const lm = Number(body.lastModified);
+    const fileModifiedAt = Number.isFinite(lm) && lm > 0 && lm < Date.now() + 86_400_000 ? new Date(lm).toISOString() : undefined;
 
     let mediaId: string;
     if (typeof body.mediaId === 'string') {
@@ -76,10 +79,10 @@ export class Uploads {
       const prior = this.db.get<UploadRow>('SELECT * FROM uploads WHERE project_id = ? AND media_id = ? AND completed_at IS NULL AND size = ? ORDER BY created_at DESC', projectId, mediaId, size);
       if (prior) return { uploadId: prior.id, mediaId, offset: prior.received, chunkBytes: this.cfg.chunkBytes };
       this.projects.serverChange(projectId, user.id, `Uploading ${item.uri}`, (doc) => ({
-        ...doc, media: doc.media.map((m) => (m.id === mediaId ? { ...m, status: 'uploading' as const, uploadedBy: user.id, error: undefined } : m)),
+        ...doc, media: doc.media.map((m) => (m.id === mediaId ? { ...m, status: 'uploading' as const, uploadedBy: user.id, error: undefined, ...(fileModifiedAt ? { fileModifiedAt } : {}) } : m)),
       }));
     } else {
-      mediaId = this.projects.addUploadedItem(projectId, user, fileName, kind);
+      mediaId = this.projects.addUploadedItem(projectId, user, fileName, kind, fileModifiedAt);
     }
     const uploadId = `up_${randomBytes(12).toString('base64url')}`;
     await fs.mkdir(this.tmpDir, { recursive: true });

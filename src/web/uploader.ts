@@ -53,7 +53,7 @@ export async function uploadFile(projectId: string, file: File, opts: { mediaId?
   }
   if (!uploadId) {
     const created = await api<{ uploadId: string; mediaId: string; offset: number; chunkBytes: number }>('POST', `/api/projects/${projectId}/uploads`, {
-      fileName: file.name, size: file.size, mediaId: opts.mediaId,
+      fileName: file.name, size: file.size, mediaId: opts.mediaId, lastModified: file.lastModified,
     });
     uploadId = created.uploadId;
     offset = created.offset;

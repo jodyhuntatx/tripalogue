@@ -154,3 +154,6 @@ input.tz { width: 220px; }
 .failed-processing { margin-top: 16px; display: grid; gap: 8px; }
 .failed-processing p { margin: 0; }
 #media-problems ul { margin: 6px 0; padding-left: 18px; }
+.group h3 .count { color: var(--muted); font-weight: 400; }
+.items .name .when { display: block; font-size: 11px; color: var(--muted); }
+.badge.low { color: var(--warn); }

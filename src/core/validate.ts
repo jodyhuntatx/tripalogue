@@ -153,6 +153,7 @@ export function validate(raw: unknown): ValidationIssue[] {
       err(`${path}.chapterId`, 'must reference an existing chapter, or be null (Unassigned)');
     }
     str(m, 'capturedAt', path, true);
+    str(m, 'fileModifiedAt', path, true);
     str(m, 'storageKey', path, true);
     if (m.contentHash !== undefined && (typeof m.contentHash !== 'string' || !/^[0-9a-f]{64}$/.test(m.contentHash))) err(`${path}.contentHash`, 'must be a sha256 hex string');
     oneOf(m, 'status', path, ['pending', 'uploading', 'processing', 'ready', 'failed'], true);

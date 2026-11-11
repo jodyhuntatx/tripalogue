@@ -122,6 +122,8 @@ export interface MediaItem extends Attribution {
   error?: string;
   kind: MediaKind;
   capturedAt?: string;
+  /** The file's last-modified time as the uploader's computer reported it: the fallback capture time (low confidence). */
+  fileModifiedAt?: string;
   userTimestamp?: string;
   timestampConfidence?: TimestampConfidence;
   location?: LatLng;

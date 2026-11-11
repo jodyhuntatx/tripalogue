@@ -8,7 +8,7 @@
  * edits stay queued and are sent when it returns. Changes from elsewhere are
  * folded into the undo history, so undo never reverts someone else's work.
  */
-import { applyOps, Autosaver, diff, History, type EditOptions, type Operation, type Travelogue } from '../core/index.js';
+import { applyOps, Autosaver, diff, History, type EditOptions, type Operation, type Travelogue, keepAssigned } from '../core/index.js';
 import { Api, ApiError, type LockInfo, type Role, type User } from './api.js';
 
 export type SaveStatus = 'saved' | 'saving' | 'offline' | 'readonly' | 'error';
@@ -93,7 +93,9 @@ export class ProjectSession {
 
   edit(label: string, fn: (p: Travelogue) => Travelogue, opts: EditOptions = {}): boolean {
     if (!this.canEdit) return false;
-    return this.history.edit(label, fn, opts);
+    // Every edit keeps media in the chapters their times fall in (MM-3): moving a chapter's dates, changing a
+    // camera's clock offset or an item's timestamp moves the affected items, in the same undoable step.
+    return this.history.edit(label, (p) => keepAssigned(p, fn(p)), opts);
   }
   undo(): boolean {
     return this.canEdit && this.history.undo();

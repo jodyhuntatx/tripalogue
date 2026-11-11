@@ -5,7 +5,7 @@
  *
  * Routes: #/signin · #/projects · #/p/<projectId>
  */
-import { moveItem, parseProject, setIncluded, setTitle, Telemetry, type TelemetryEvent, type Travelogue } from '../core/index.js';
+import { effectiveInstant, moveItem, parseProject, setIncluded, setTitle, Telemetry, type TelemetryEvent, type Travelogue } from '../core/index.js';
 import { Player, type PlayerState } from '../player/player.js';
 import { Api, ApiError, type MediaToolStatus, type Role, type User } from './api.js';
 import { mountInset, type InsetView } from './inset.js';
@@ -427,6 +427,15 @@ async function renderProject(id: string, initialView?: View) {
     return void renderVersions();
   }
 
+  /** An item's time as the trip saw it: local time in its chapter's zone (or the first chapter's for Unassigned). */
+  function itemTime(p: Travelogue, m: Travelogue['media'][number]): string {
+    const ch = p.chapters.find((c) => c.id === m.chapterId) ?? p.chapters[0];
+    const tz = ch?.timeZone ?? Intl.DateTimeFormat().resolvedOptions().timeZone;
+    const t = effectiveInstant(m, p.sources.find((x) => x.id === m.sourceId), tz);
+    if (Number.isNaN(t)) return '';
+    return new Intl.DateTimeFormat(undefined, { timeZone: tz, month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }).format(t);
+  }
+
   function renderItems() {
     const p = s.state;
     const cueOf = new Map(p.cues.map((c) => [c.itemId, c]));
@@ -436,12 +445,14 @@ async function renderProject(id: string, initialView?: View) {
     ].filter((g) => g.items.length);
     side.replaceChildren(...groups.map((g) => {
       const sorted = g.items.slice().sort((a, b) => ((cueOf.get(a.id)?.order ?? '~') < (cueOf.get(b.id)?.order ?? '~') ? -1 : 1));
-      return h('div', { class: 'group' }, h('h3', {}, g.title), h('ul', { class: 'items' }, ...sorted.map((m, i) => {
+      return h('div', { class: 'group' }, h('h3', {}, g.title, h('span', { class: 'count' }, ` ${g.items.length}`)), h('ul', { class: 'items' }, ...sorted.map((m, i) => {
         const cue = cueOf.get(m.id);
         const ready = !m.status || m.status === 'ready';
         return h('li', { 'data-item': m.id, class: cue?.included === false ? 'excluded' : '' },
           ready && m.assets?.thumb ? h('img', { src: Api.mediaUrl(id, m.id, 'thumb'), alt: '', loading: 'lazy' }) : h('span', { class: 'thumb-placeholder' }),
-          h('span', { class: 'name', title: m.uri }, m.uri.split('/').pop() ?? m.uri),
+          h('span', { class: 'name', title: m.uri }, m.uri.split('/').pop() ?? m.uri,
+            itemTime(p, m) && h('span', { class: 'when' }, itemTime(p, m))),
+          m.timestampConfidence === 'low' && !m.userTimestamp && h('span', { class: 'badge low', title: 'Time taken from the file date, not the camera: it may be wrong' }, 'time?'),
           !ready && h('span', { class: `badge ${m.status}`, title: m.status === 'failed' ? m.error ?? '' : '' }, m.status ?? ''),
           m.status === 'failed' && m.storageKey && s.role !== 'viewer' && h('button', { class: 'retry', 'aria-label': `Retry processing ${m.uri}`, title: m.error ?? '', onclick: () => void retry([m.id]) }, 'Retry'),
           ready && m.assets?.jpeg && h('a', { class: 'badge jpg', href: Api.mediaUrl(id, m.id, 'jpeg'), download: `${(m.uri.split('/').pop() ?? 'photo').replace(/\.[^.]+$/, '')}.jpg`,
