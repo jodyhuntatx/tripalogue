@@ -91,6 +91,8 @@ export interface MediaSource {
   contributorId?: Id;
   /** Added to captured-at to correct a wrong camera clock (MM-4). */
   clockOffsetSec: number;
+  /** Uploads are grouped per person and camera ("Canon EOS R6"), since clock errors belong to a camera, not a person. */
+  camera?: string;
 }
 
 export type MediaKind = 'image' | 'video' | 'audio';

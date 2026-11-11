@@ -13,6 +13,7 @@
  * stand upright whatever ffmpeg version is installed.
  */
 import { execFile } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -157,6 +158,25 @@ export class Jobs {
     await Promise.all(Array.from({ length: concurrency }, worker));
   }
 
+  /**
+   * Group a person's uploads by camera: an item uploaded into its uploader's general source moves to a source for
+   * that person and camera ("Jody · Canon EOS R6"), made on first use. Clock errors belong to a camera, so this is
+   * what lets one camera's clock be corrected (MM-4) without moving the same person's phone photos. Items from
+   * imported or shared sources, and files with no camera recorded, stay where they are.
+   */
+  private cameraSource(doc: Travelogue, mediaId: string, camera?: string): Travelogue {
+    const item = doc.media.find((m) => m.id === mediaId);
+    const current = doc.sources.find((x) => x.id === item?.sourceId);
+    if (!item || !camera || !current || current.type !== 'upload' || current.camera || current.rootPath || !current.contributorId) return doc;
+    const id = `${current.id}_${createHash('sha256').update(camera).digest('base64url').slice(0, 8)}`;
+    let sources = doc.sources;
+    if (!sources.some((x) => x.id === id)) {
+      const person = this.db.get<{ name: string }>('SELECT name FROM users WHERE id = ?', current.contributorId)?.name;
+      sources = [...sources, { id, type: 'upload', displayName: person ? `${person} · ${camera}` : camera, contributorId: current.contributorId, camera, clockOffsetSec: 0 }];
+    }
+    return { ...doc, sources, media: doc.media.map((m) => (m.id === mediaId ? { ...m, sourceId: id } : m)) };
+  }
+
   private markFailed(projectId: string, mediaId: string, error: string) {
     try {
       this.projects.serverChange(projectId, SYSTEM_USER, 'Media processing failed', (doc) => ({
@@ -249,7 +269,7 @@ export class Jobs {
         }),
       };
       // Put it in the chapter its time falls in (MM-3), in time order. Items already in their chapter keep their place.
-      return reassign(updated, new Set([mediaId]));
+      return reassign(this.cameraSource(updated, mediaId, meta.camera), new Set([mediaId]));
     });
   }
 }

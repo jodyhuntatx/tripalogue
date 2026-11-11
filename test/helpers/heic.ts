@@ -65,14 +65,16 @@ function hvcC(vps: Buffer, sps: Buffer, pps: Buffer): Buffer {
     u16(0xf000), u8(0xfc), u8(0xfd), u8(0xf8), u8(0xf8), u16(0), u8(0x0f), u8(arrays.length), ...arrays);
 }
 
-export function exifTiff(capturedAt: string, orientation: number, extra: { offset?: string; gps?: { lat: number; lng: number } } = {}): Buffer {
+export function exifTiff(capturedAt: string, orientation: number, extra: { offset?: string; gps?: { lat: number; lng: number }; make?: string; model?: string } = {}): Buffer {
   // Big-endian TIFF: IFD0 (Orientation, Exif pointer, GPS pointer?), the Exif IFD (DateTimeOriginal, OffsetTimeOriginal?),
   // the GPS IFD (refs and degree/minute/second rationals), then the values that do not fit in an entry.
   const entry = (tag: number, type: number, count: number, value: Buffer) => Buffer.concat([u16(tag), u16(type), u32(count), value]);
   const date = Buffer.from(`${capturedAt}\0`, 'latin1');
   const off = extra.offset ? Buffer.from(`${extra.offset}\0`, 'latin1') : undefined;
   const gps = extra.gps;
-  const ifd0Count = gps ? 3 : 2;
+  const make = extra.make ? Buffer.from(`${extra.make}\0`, 'latin1') : undefined;
+  const model = extra.model ? Buffer.from(`${extra.model}\0`, 'latin1') : undefined;
+  const ifd0Count = 2 + (gps ? 1 : 0) + (make ? 1 : 0) + (model ? 1 : 0);
   const ifd0 = 8;
   const exifIfd = ifd0 + 2 + ifd0Count * 12 + 4;
   const exifCount = off ? 2 : 1;
@@ -83,15 +85,21 @@ export function exifTiff(capturedAt: string, orientation: number, extra: { offse
   const offAt = data; data += off ? off.length : 0;
   const latAt = data; data += gps ? 24 : 0;
   const lngAt = data; data += gps ? 24 : 0;
+  const makeAt = data; data += make && make.length > 4 ? make.length : 0;
+  const modelAt = data; data += model && model.length > 4 ? model.length : 0;
   const dms = (v: number) => { const a = Math.abs(v); const d = Math.floor(a); const m = Math.floor((a - d) * 60); const sec = Math.round(((a - d) * 60 - m) * 60 * 10000); return Buffer.concat([u32(d), u32(1), u32(m), u32(1), u32(sec), u32(10000)]); };
   const ref = (c: string) => Buffer.from([c.charCodeAt(0), 0, 0, 0]);
   return Buffer.concat([
     Buffer.from('MM\0*', 'latin1'), u32(ifd0),
-    u16(ifd0Count), entry(0x0112, 3, 1, Buffer.concat([u16(orientation), u16(0)])), entry(0x8769, 4, 1, u32(exifIfd)),
+    u16(ifd0Count),
+    ...(make ? [entry(0x010f, 2, make.length, make.length <= 4 ? Buffer.concat([make, Buffer.alloc(4 - make.length)]) : u32(makeAt))] : []),
+    ...(model ? [entry(0x0110, 2, model.length, model.length <= 4 ? Buffer.concat([model, Buffer.alloc(4 - model.length)]) : u32(modelAt))] : []),
+    entry(0x0112, 3, 1, Buffer.concat([u16(orientation), u16(0)])), entry(0x8769, 4, 1, u32(exifIfd)),
     ...(gps ? [entry(0x8825, 4, 1, u32(gpsIfd))] : []), u32(0),
     u16(exifCount), entry(0x9003, 2, date.length, u32(dateAt)), ...(off ? [entry(0x9011, 2, off.length, u32(offAt))] : []), u32(0),
     ...(gps ? [u16(gpsCount), entry(1, 2, 2, ref(gps.lat < 0 ? 'S' : 'N')), entry(2, 5, 3, u32(latAt)), entry(3, 2, 2, ref(gps.lng < 0 ? 'W' : 'E')), entry(4, 5, 3, u32(lngAt)), u32(0)] : []),
     date, ...(off ? [off] : []), ...(gps ? [dms(gps.lat), dms(gps.lng)] : []),
+    ...(make && make.length > 4 ? [make] : []), ...(model && model.length > 4 ? [model] : []),
   ]);
 }
 

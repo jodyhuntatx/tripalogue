@@ -320,7 +320,8 @@ export class Projects {
   addUploadedItem(projectId: string, user: User, fileName: string, kind: MediaItem['kind'], fileModifiedAt?: string): string {
     const id = `m_${randomBytes(6).toString('base64url')}`;
     this.serverChange(projectId, user.id, `Upload ${fileName}`, (doc) => {
-      let source = doc.sources.find((s) => s.type === 'upload' && s.contributorId === user.id);
+      // The person's own uploads source (not a source they imported, and not one of their per-camera sources).
+      let source = doc.sources.find((s) => s.id === `src_${user.id}`);
       const sources = source ? doc.sources : [...doc.sources, (source = { id: `src_${user.id}`, type: 'upload' as const, displayName: `${user.name}'s uploads`, clockOffsetSec: 0, contributorId: user.id })];
       const item: MediaItem = { id, sourceId: source.id, uri: fileName, kind, chapterId: null, status: 'uploading', uploadedBy: user.id, ...(fileModifiedAt ? { fileModifiedAt } : {}) };
       const unassigned = doc.cues.filter((c) => doc.media.find((m) => m.id === c.itemId)?.chapterId === null).map((c) => c.order).sort();

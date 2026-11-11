@@ -169,5 +169,13 @@ export function keepAssigned(prev: Travelogue, next: Travelogue): Travelogue {
     const b = before.get(m.id);
     return !b || b.userTimestamp !== m.userTimestamp || b.capturedAt !== m.capturedAt;
   }).map((m) => m.id));
-  return changed.size ? reassign(next, changed) : next;
+  if (!changed.size) return next;
+  // Moved items are slotted by reassign; items whose time changed within their chapter are re-slotted here.
+  let out = reassign(next, changed);
+  for (const id of changed) {
+    const was = before.get(id);
+    const now = out.media.find((m) => m.id === id);
+    if (was && now && was.chapterId === now.chapterId && now.chapterId !== null) out = slotByTime(out, id);
+  }
+  return out;
 }

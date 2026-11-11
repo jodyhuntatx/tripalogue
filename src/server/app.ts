@@ -264,7 +264,14 @@ export async function startApp(overrides: Partial<ServerConfig> = {}, deps: { ma
 
   const server = http.createServer(async (rawReq, res) => {
     const req = rawReq as Req;
-    const url = new URL(req.url ?? '/', 'http://local');
+    // "//x" would parse as a host name (and "//" not at all): collapse leading slashes; refuse anything still unparseable.
+    let url: URL;
+    try {
+      url = new URL((req.url ?? '/').replace(/^\/{2,}/, '/'), 'http://local');
+    } catch {
+      res.writeHead(400, { 'content-type': 'text/plain' }).end('Bad request');
+      return;
+    }
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('Referrer-Policy', 'same-origin');
     try {

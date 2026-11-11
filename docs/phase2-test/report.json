@@ -1,0 +1,81 @@
+{
+  "date": "2026-11-11T20:10:24.527Z",
+  "browser": "153.0.8010.12",
+  "checks": [
+    {
+      "name": "uploaded photos are filed by their capture time with no clicks",
+      "pass": true,
+      "detail": "DSC_0103 → ch-sintra; the copied sample photo has no EXIF → null"
+    },
+    {
+      "name": "the slow camera puts its late-night photos in the wrong chapter (the planted error)",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "uploads are grouped by camera, so one camera’s clock can be fixed alone",
+      "pass": true,
+      "detail": "Sample media | jody's uploads | jody · Canon EOS R6 | jody · Apple iPhone 15 Pro"
+    },
+    {
+      "name": "with unassigned items, the project opens in the Media view",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "the Unassigned bin is listed first with its count",
+      "pass": true,
+      "detail": "27 items · 3 unassigned · 3 with uncertain times · 2 possible duplicates"
+    },
+    {
+      "name": "a file with no camera time is badged as uncertain",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "dragging an item onto a chapter gives it a time inside that chapter",
+      "pass": true,
+      "detail": "2026-05-05T17:00:00Z"
+    },
+    {
+      "name": "undo puts it back",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "setting a time by hand moves the item to its chapter",
+      "pass": true,
+      "detail": "ch-douro, 2026-05-09T09:30:00Z (10:30 Lisbon time)"
+    },
+    {
+      "name": "the copied photo and its original are flagged as duplicates",
+      "pass": true,
+      "detail": "2 tiles under Duplicates"
+    },
+    {
+      "name": "a clock offset previews how many items would change chapter before applying",
+      "pass": true,
+      "detail": "Moving times later by 1 h changes the chapter of 2 items: 2 Lisbon → Sintra."
+    },
+    {
+      "name": "applying it moves the slow camera’s photos to the right chapter, and nothing else",
+      "pass": true,
+      "detail": "saved in 349 ms; the iPhone photo stays in Lisbon"
+    },
+    {
+      "name": "Shift-click selects a range, and Shift moves all of them",
+      "pass": true,
+      "detail": "4 selected; DSC_0101 now 2026-05-03T23:50:00Z"
+    },
+    {
+      "name": "all fixes are saved and survive a reload",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "no errors in the browser console",
+      "pass": true,
+      "detail": ""
+    }
+  ]
+}

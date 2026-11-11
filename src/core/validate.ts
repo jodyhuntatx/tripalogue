@@ -132,6 +132,7 @@ export function validate(raw: unknown): ValidationIssue[] {
     str(s, 'rootPath', path, true);
     str(s, 'authRef', path, true);
     num(s, 'clockOffsetSec', path);
+    str(s, 'camera', path, true);
     for (const k of Object.keys(s)) {
       if (/token|password|secret/i.test(k)) err(`${path}.${k}`, 'credentials must not be stored in the project file');
     }

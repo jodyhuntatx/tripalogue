@@ -272,6 +272,20 @@ describe('projects, operation log and edit lock (F-1, F-8, F-9)', () => {
   });
 });
 
+describe('odd request paths', () => {
+  it('answers "//", "//x" and "///api/me" instead of crashing the server', async () => {
+    for (const p of ['//', '//evil.example/x', '///api/me']) {
+      const r = await new Promise<number>((resolve, reject) => {
+        const req = http.request({ host: '127.0.0.1', port: new URL(app.url).port, path: p }, (res) => { res.resume(); resolve(res.statusCode ?? 0); });
+        req.on('error', reject);
+        req.end();
+      });
+      assert.ok(r > 0 && r < 500, `${p} → ${r}`);
+    }
+    assert.equal((await new Client('x').req('GET', '/api/me')).status, 200, 'server still up');
+  });
+});
+
 describe('uploads, processing and media links (F-4, F-7)', () => {
   const owner = new Client('uploader');
   const contributor = new Client('contrib');
@@ -424,7 +438,7 @@ describe('uploads, processing and media links (F-4, F-7)', () => {
     const plain = path.join(tmp, 'plain-sintra.jpg');
     await ff(['-f', 'lavfi', '-i', 'color=c=green:s=64x48', '-frames:v', '1', plain]);
     const file = path.join(tmp, 'IMG_1001.jpg');
-    await fs.writeFile(file, withExif(await fs.readFile(plain), exifTiff('2026:05:04 15:10:00', 1, { offset: '+01:00', gps: { lat: 38.7876, lng: -9.3906 } })));
+    await fs.writeFile(file, withExif(await fs.readFile(plain), exifTiff('2026:05:04 15:10:00', 1, { offset: '+01:00', gps: { lat: 38.7876, lng: -9.3906 }, make: 'Apple', model: 'iPhone 15 Pro' })));
     const { mediaId } = await upload(owner, file, { lastModified: Date.UTC(2026, 9, 1) });
     await app.jobs.idle();
     const item = await itemOf(mediaId);
@@ -432,6 +446,9 @@ describe('uploads, processing and media links (F-4, F-7)', () => {
     assert.equal(item.timestampConfidence, 'high');
     assert.equal(item.chapterId, 'ch-sintra', 'Sintra is 4 May');
     assert.ok(Math.abs(item.location.lat - 38.7876) < 1e-4 && Math.abs(item.location.lng + 9.3906) < 1e-4);
+    const src = (await owner.req('GET', `/api/projects/${pid}`)).json.project.sources.find((x: { id: string }) => x.id === item.sourceId);
+    assert.equal(src.camera, 'Apple iPhone 15 Pro', 'grouped by camera');
+    assert.match(src.displayName, /Apple iPhone 15 Pro/);
   });
 
   it('falls back to the file’s modified time, marked low confidence, when a file has no capture time', async () => {

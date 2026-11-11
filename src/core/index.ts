@@ -12,3 +12,4 @@ export * from './fractional.js';
 export * from './ops.js';
 export * from './itinerary.js';
 export * from './assign.js';
+export * from './media-edits.js';

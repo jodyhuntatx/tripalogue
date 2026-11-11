@@ -19,6 +19,18 @@ export interface CaptureMeta {
   /** ISO-like time: with a UTC offset when known ("2026-05-03T14:22:10+01:00"), else local ("2026-05-03T14:22:10"). */
   capturedAt?: string;
   location?: LatLng;
+  /** Camera make and model ("Canon EOS R6", "Apple iPhone 15 Pro"), when the file records it. */
+  camera?: string;
+}
+
+/** "Canon" + "Canon EOS R6" → "Canon EOS R6"; trims and drops a repeated make. */
+export function cameraName(make?: string, model?: string): string | undefined {
+  const mk = make?.replace(/\s+/g, ' ').trim() ?? '';
+  const md = model?.replace(/\s+/g, ' ').trim() ?? '';
+  if (!mk && !md) return undefined;
+  if (!md) return mk;
+  if (!mk || md.toLowerCase().startsWith(mk.toLowerCase().split(' ')[0])) return md;
+  return `${mk} ${md}`;
 }
 
 // ---------------------------------------------------------------- EXIF
@@ -69,6 +81,8 @@ export function metaFromTiff(b: Buffer): CaptureMeta {
   const exifAt = ifd0.get(0x8769);
   const exif = exifAt ? ifd(t, r32(t, exifAt.at)) : new Map();
   const out: CaptureMeta = {};
+  const camera = cameraName(ascii(t, ifd0.get(0x010f)), ascii(t, ifd0.get(0x0110)));
+  if (camera) out.camera = camera;
 
   const raw = ascii(t, exif.get(0x9003)) ?? ascii(t, exif.get(0x9004)) ?? ascii(t, ifd0.get(0x0132));
   const m = raw && /^(\d{4}):(\d{2}):(\d{2})[ T](\d{2}):(\d{2}):(\d{2})/.exec(raw);
@@ -161,5 +175,7 @@ export function metaFromTags(tags: Record<string, string | undefined>): CaptureM
   }
   out.location = parseIso6709(get('com.apple.quicktime.location.iso6709') ?? get('location') ?? get('location-eng'));
   if (!out.location) delete out.location;
+  const camera = cameraName(get('com.apple.quicktime.make') ?? get('make'), get('com.apple.quicktime.model') ?? get('model'));
+  if (camera) out.camera = camera;
   return out;
 }

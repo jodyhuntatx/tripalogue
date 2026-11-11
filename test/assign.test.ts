@@ -4,10 +4,11 @@ import path from 'node:path';
 import { describe, it } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import {
-  chapterCounts, effectiveInstant, keepAssigned, overlapItems, parseProject, placementFor, reassign, spreadKeys, updateChapter,
+  chapterCounts, dropIntoChapter, duplicateGroups, effectiveInstant, itemInstant, keepAssigned, overlapItems, parseProject, placementFor, previewClockOffset,
+  reassign, setClockOffset, setUserTime, shiftUserTime, spreadKeys, updateChapter,
   type Chapter, type MediaItem, type Travelogue,
 } from '../src/core/index.js';
-import { metaFromTags, metaFromTiff, parseIso6709, photoMeta } from '../src/server/metadata.js';
+import { cameraName, metaFromTags, metaFromTiff, parseIso6709, photoMeta } from '../src/server/metadata.js';
 import { exifTiff, writeHeic } from './helpers/heic.js';
 import { promises as fs } from 'node:fs';
 import os from 'node:os';
@@ -156,5 +157,75 @@ describe('capture metadata (MM-2, MM-9)', () => {
     } finally {
       await fs.rm(dir, { recursive: true, force: true });
     }
+  });
+});
+
+describe('fixing times (MM-4, MM-5, MM-8)', () => {
+  const lisbon = ch('lisbon', '2026-05-01T00:00', '2026-05-03T23:59');
+  const sintra = ch('sintra', '2026-05-04T08:00', '2026-05-04T23:59');
+  const base = () => reassign(trip([lisbon, sintra], [
+    item('a', '2026-05-02T10:00:00'), item('b', '2026-05-02T10:05:00'), item('c', '2026-05-04T12:00:00'), item('u'),
+  ]));
+
+  it('sets one time for several items and keeps their spacing; clearing goes back to the camera time', () => {
+    const p = base();
+    const at = Date.parse('2026-05-04T09:00:00Z');
+    const q = keepAssigned(p, setUserTime(p, ['a', 'b'], at));
+    assert.deepEqual(q.media.filter((m) => m.id === 'a' || m.id === 'b').map((m) => m.userTimestamp), ['2026-05-04T09:00:00Z', '2026-05-04T09:05:00Z']);
+    assert.deepEqual(q.media.filter((m) => m.id === 'a' || m.id === 'b').map((m) => m.chapterId), ['sintra', 'sintra']);
+    const back = keepAssigned(q, setUserTime(q, ['a', 'b'], null));
+    assert.deepEqual(back.media.slice(0, 2).map((m) => [m.userTimestamp, m.chapterId]), [[undefined, 'lisbon'], [undefined, 'lisbon']]);
+  });
+
+  it('shifts times by a fixed amount, leaving untimed items alone', () => {
+    const p = base();
+    const q = keepAssigned(p, shiftUserTime(p, ['c', 'u'], -2 * 86_400_000));
+    assert.equal(q.media.find((m) => m.id === 'c')!.chapterId, 'lisbon');
+    assert.equal(q.media.find((m) => m.id === 'u')!.userTimestamp, undefined);
+  });
+
+  it('previews a clock offset without changing anything, then applies it', () => {
+    const p = base();
+    const pv = previewClockOffset(p, 'src', 2 * 86_400);
+    assert.deepEqual(pv.moves.map((m) => [m.id, m.from, m.to]), [['a', 'lisbon', 'sintra'], ['b', 'lisbon', 'sintra'], ['c', 'sintra', null]]);
+    assert.equal(p.sources[0].clockOffsetSec, 0, 'preview leaves the project alone');
+    const q = keepAssigned(p, setClockOffset(p, 'src', 2 * 86_400));
+    assert.deepEqual(q.media.map((m) => m.chapterId), ['sintra', 'sintra', null, null]);
+  });
+
+  it('dropping onto a chapter keeps the time of day on its first day; dropping onto an item lands just before it', () => {
+    const p = base();
+    const onChapter = dropIntoChapter(p, ['a'], 'sintra');
+    const a = onChapter.media.find((m) => m.id === 'a')!;
+    assert.equal(a.chapterId, 'sintra');
+    assert.equal(a.userTimestamp, '2026-05-04T09:00:00Z', '10:00 Lisbon time on Sintra’s first day');
+    const untimed = dropIntoChapter(p, ['u'], 'lisbon', 'b');
+    const u = untimed.media.find((m) => m.id === 'u')!;
+    assert.equal(u.chapterId, 'lisbon');
+    const tu = itemInstant(untimed, u), ta = itemInstant(untimed, untimed.media[0]), tb = itemInstant(untimed, untimed.media[1]);
+    assert.ok(ta < tu && tu < tb, 'between a and b');
+    const order = untimed.cues.filter((c) => ['a', 'b', 'u'].includes(c.itemId)).sort((x, y) => (x.order < y.order ? -1 : 1)).map((c) => c.itemId);
+    assert.deepEqual(order, ['a', 'u', 'b']);
+    const early = dropIntoChapter(p, ['u'], 'sintra');
+    assert.equal(early.media.find((m) => m.id === 'u')!.userTimestamp, '2026-05-04T11:00:00Z', 'noon when it had no time');
+  });
+
+  it('flags duplicates by content, and by time and size across sources only', () => {
+    const p = base();
+    const media: MediaItem[] = [
+      item('x1', '2026-05-02T10:00:00', { contentHash: 'h1', sourceId: 's1' }), item('x2', '2026-05-03T10:00:00', { contentHash: 'h1', sourceId: 's1' }),
+      item('y1', '2026-05-02T11:00:00', { width: 4000, height: 3000, sourceId: 's1' }), item('y2', '2026-05-02T11:00:00', { width: 4000, height: 3000, sourceId: 's2' }),
+      item('burst1', '2026-05-02T12:00:00', { width: 4000, height: 3000, sourceId: 's1' }), item('burst2', '2026-05-02T12:00:00', { width: 4000, height: 3000, sourceId: 's1' }),
+    ];
+    const g = duplicateGroups({ ...p, media });
+    assert.deepEqual([...g.keys()].sort(), ['x1', 'x2', 'y1', 'y2']);
+    assert.notEqual(g.get('x1'), g.get('y1'));
+  });
+
+  it('names cameras without repeating the make', () => {
+    assert.equal(cameraName('Canon', 'Canon EOS R6'), 'Canon EOS R6');
+    assert.equal(cameraName('Apple', 'iPhone 15 Pro'), 'Apple iPhone 15 Pro');
+    assert.equal(cameraName('  ', undefined), undefined);
+    assert.equal(cameraName('NIKON CORPORATION', 'NIKON Z 6_2'), 'NIKON Z 6_2');
   });
 });
