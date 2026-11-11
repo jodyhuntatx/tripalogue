@@ -105,6 +105,25 @@ before it's used, and the log says which ones are in use.
 Ordinary JPEGs that phones save sideways with an orientation tag are turned upright the same way on every ffmpeg
 version (ffmpeg's own automatic rotation is switched off and the tag is applied explicitly).
 
+**What each platform needs.** The built-in converter needs only ffmpeg with its HEVC decoder, which every
+standard ffmpeg build includes (the same ffmpeg as in [Installing ffmpeg](#installing-ffmpeg)). The fallbacks
+are optional; install one if you expect HEIC files the built-in reader can't handle.
+
+| Platform | Required | Optional fallback |
+| --- | --- | --- |
+| macOS | ffmpeg | none needed: `sips` is built in (or `brew install libheif`) |
+| Ubuntu 24.04 and later, Debian 13 | ffmpeg | `sudo apt install libheif-examples libheif-plugin-libde265` |
+| Ubuntu 22.04 and earlier, Debian 12 | ffmpeg | `sudo apt install libheif-examples` (provides `heif-convert`) |
+| Fedora | ffmpeg from RPM Fusion, as above | `sudo dnf install libheif-tools libheif-freeworld` (libheif-freeworld is in RPM Fusion) |
+| Windows | ffmpeg | ImageMagick from imagemagick.org (its installer includes HEIC support) |
+
+The libheif HEVC decoder is the usual trap. Newer Ubuntu and Debian releases ship libheif's decoders as separate
+plugin packages: without `libheif-plugin-libde265`, libheif (and ImageMagick, which uses it) lists HEIC as
+supported but cannot decode the picture. TripAlogue converts a small sample HEIC with each tool at startup and
+skips any that fail, so a half-installed fallback is ignored rather than producing errors. The startup log names
+the converters in use, for example `HEIC photos: converting with ffmpeg, then heif-dec`. If HEIC uploads fail
+with "could not be converted", check that line, and that `ffmpeg -decoders | grep hevc` lists a decoder.
+
 ### Tests
 
 ```sh
