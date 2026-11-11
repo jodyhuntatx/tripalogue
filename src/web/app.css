@@ -116,7 +116,7 @@ input.tz { width: 220px; }
 .import-preview table { width: 100%; border-collapse: collapse; font-size: 13px; }
 .import-preview th, .import-preview td { text-align: left; padding: 4px 6px; border-bottom: 1px solid var(--line); vertical-align: top; }
 .route-map { position: relative; height: 380px; border-radius: 10px; overflow: hidden; border: 1px solid var(--line); background: #1b2230; }
-.route-map canvas { display: block; touch-action: none; cursor: grab; }
+.route-map canvas { position: absolute; top: 0; left: 0; display: block; touch-action: none; cursor: grab; }
 .route-map.picking canvas { cursor: crosshair; }
 .map-controls { position: absolute; top: 8px; right: 8px; display: grid; gap: 4px; }
 .map-controls button { width: 30px; height: 30px; padding: 0; background: rgba(22,26,33,0.9); }
@@ -129,7 +129,7 @@ input.tz { width: 220px; }
 .itinerary-timeline > p { margin: 0; padding: 18px 14px; }
 
 /* Playback map inset */
-.route-map.inset { position: absolute; height: auto; aspect-ratio: 4 / 3; min-width: 120px; border: 2px solid rgba(255,255,255,0.85); border-radius: 8px; box-shadow: 0 4px 16px rgba(0,0,0,0.5); pointer-events: none; z-index: 2; }
+.route-map.inset { position: absolute; height: auto; aspect-ratio: 4 / 3; min-width: 120px; min-height: 0; max-height: 60%; contain: size; border: 2px solid rgba(255,255,255,0.85); border-radius: 8px; box-shadow: 0 4px 16px rgba(0,0,0,0.5); pointer-events: none; z-index: 2; }
 .route-map.inset.circle { aspect-ratio: 1; border-radius: 50%; }
 .route-map.inset.circle .map-attribution { right: 50%; transform: translateX(50%); bottom: 6px; border-radius: 4px; }
 .route-map.inset canvas { cursor: default; }

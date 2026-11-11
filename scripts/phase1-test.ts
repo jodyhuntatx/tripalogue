@@ -263,6 +263,15 @@ try {
   let ins = await inset();
   check('a map inset shows in Play, about a fifth of the frame wide', !ins.hidden && Math.abs(ins.w / ins.stageW - 0.2) < 0.03, `${Math.round((ins.w / ins.stageW) * 100)}% wide, ${ins.corner}`);
   check('on a title card the inset shows the whole trip', ins.focus === 'trip');
+  // Regression: in browsers that let content stretch an aspect-ratio box (Safari), the inset used to grow taller
+  // on every resize until it ran off the top of the screen. Turn that stretching on and check the size holds.
+  await page.addStyleTag({ content: '.route-map.inset { overflow: visible !important; }' });
+  const box1 = (await page.locator('#map-inset').boundingBox())!;
+  await page.waitForTimeout(1200);
+  const box2 = (await page.locator('#map-inset').boundingBox())!;
+  const canvasFits = await page.evaluate(() => { const el = document.getElementById('map-inset')!; const c = el.querySelector('canvas')!; return c.getBoundingClientRect().height <= el.clientHeight + 0.5; });
+  check('the inset keeps a steady 4:3 size and its map stays inside it', Math.abs(box2.height - box1.height) < 1 && Math.abs(box2.height / box2.width - 0.75) < 0.03 && canvasFits,
+    `${Math.round(box2.width)}×${Math.round(box2.height)}`);
   await page.locator('#stage-wrap').screenshot({ path: path.join(outDir, '05-inset-trip.png') });
   const tripZoom = ins.zoom;
   await page.click('#inset-settings > summary');
