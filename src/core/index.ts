@@ -8,3 +8,5 @@ export * from './edits.js';
 export * from './timeline.js';
 export * from './render-model.js';
 export * from './telemetry.js';
+export * from './fractional.js';
+export * from './ops.js';

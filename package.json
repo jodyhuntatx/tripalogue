@@ -1,22 +1,23 @@
 {
   "name": "tripalogue",
   "version": "0.0.1",
-  "description": "TripAlogue: travelogue authoring and production. Phase 0 foundations: project file, undo/redo, player shell, media cache, telemetry hooks.",
+  "description": "TripAlogue: travelogue authoring and production as a web application. Phase 0 foundations: accounts, cloud project storage with an operation log and versions, resumable uploads, media processing, player, telemetry hooks.",
   "private": true,
   "type": "module",
   "engines": {
-    "node": ">=20"
+    "node": ">=22.13"
   },
   "bin": {
     "tripalogue": "dist/node/cli.js"
   },
   "scripts": {
     "build": "node scripts/build.mjs",
-    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.player.json && tsc -p tsconfig.test.json",
-    "test": "tsx --test test/*.test.ts",
-    "test:e2e": "npm run build && tsx scripts/exit-test.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.web.json && tsc -p tsconfig.test.json",
+    "test": "node --no-warnings --import tsx --test test/*.test.ts",
+    "test:e2e": "npm run build && node --no-warnings --import tsx scripts/exit-test.ts",
     "sample": "tsx scripts/make-sample-media.ts",
-    "dev": "npm run build && tsx src/node/cli.ts serve samples/hand-written-20/trip.travelogue.json"
+    "start": "node --no-warnings dist/node/cli.js serve",
+    "dev": "npm run build && node --no-warnings --import tsx src/node/cli.ts serve --data data"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

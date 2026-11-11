@@ -1,5 +1,21 @@
 {
   "extends": "./tsconfig.json",
-  "compilerOptions": { "noEmit": true, "rootDir": ".", "lib": ["ES2023", "DOM"], "noUnusedLocals": false },
-  "include": ["src/core/**/*.ts", "src/node/**/*.ts", "test/**/*.ts", "scripts/**/*.ts"]
+  "compilerOptions": {
+    "noEmit": true,
+    "rootDir": ".",
+    "lib": [
+      "ES2023",
+      "DOM"
+    ],
+    "noUnusedLocals": false
+  },
+  "include": [
+    "src/core/**/*.ts",
+    "src/node/**/*.ts",
+    "src/server/**/*.ts",
+    "src/player/**/*.ts",
+    "src/web/**/*.ts",
+    "test/**/*.ts",
+    "scripts/**/*.ts"
+  ]
 }

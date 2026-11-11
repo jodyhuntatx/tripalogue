@@ -1,3 +1,4 @@
+import { isOrderKey } from './fractional.js';
 import { SCHEMA_VERSION } from './schema.js';
 
 export interface ValidationIssue {
@@ -124,7 +125,7 @@ export function validate(raw: unknown): ValidationIssue[] {
       if (sourceIds.has(s.id)) err(`${path}.id`, `duplicate source id "${s.id}"`);
       sourceIds.add(s.id);
     }
-    oneOf(s, 'type', path, ['localFolder', 'googlePhotos']);
+    oneOf(s, 'type', path, ['upload', 'googlePhotos', 'cloudDrive', 'uploadLink']);
     str(s, 'displayName', path);
     str(s, 'rootPath', path, true);
     str(s, 'authRef', path, true);
@@ -150,6 +151,10 @@ export function validate(raw: unknown): ValidationIssue[] {
       err(`${path}.chapterId`, 'must reference an existing chapter, or be null (Unassigned)');
     }
     str(m, 'capturedAt', path, true);
+    str(m, 'storageKey', path, true);
+    if (m.contentHash !== undefined && (typeof m.contentHash !== 'string' || !/^[0-9a-f]{64}$/.test(m.contentHash))) err(`${path}.contentHash`, 'must be a sha256 hex string');
+    oneOf(m, 'status', path, ['pending', 'uploading', 'processing', 'ready', 'failed'], true);
+    num(m, 'sizeBytes', path, 0, 1e13, true);
     str(m, 'userTimestamp', path, true);
     oneOf(m, 'timestampConfidence', path, ['high', 'low'], true);
     num(m, 'width', path, 1, 100000, true);
@@ -171,7 +176,7 @@ export function validate(raw: unknown): ValidationIssue[] {
       cueItems.add(c.itemId);
     }
     if (typeof c.included !== 'boolean') err(`${path}.included`, 'must be a boolean');
-    num(c, 'order', path);
+    if (!isOrderKey(c.order)) err(`${path}.order`, 'must be a fractional order key (letters a-z and digits, not ending in 0)');
     num(c, 'durationSec', path, 0.04, 3600, true);
     num(c, 'inPointSec', path, 0, 86400, true);
     num(c, 'outPointSec', path, 0, 86400, true);

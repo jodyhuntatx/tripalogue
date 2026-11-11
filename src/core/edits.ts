@@ -4,6 +4,7 @@
  * Phase 0 ships the handful the player shell and tests need; editors in later
  * phases add theirs here.
  */
+import { keyBetween } from './fractional.js';
 import type { Chapter, Cue, Id, Travelogue } from './schema.js';
 
 export function setTitle(p: Travelogue, title: string): Travelogue {
@@ -22,20 +23,24 @@ export function setIncluded(p: Travelogue, itemId: Id, included: boolean): Trave
   return updateCue(p, itemId, { included });
 }
 
-/** Move an item to a new position (0-based) among its chapter's cues. */
+/**
+ * Move an item to a new position (0-based) among its chapter's cues. Only the
+ * moved cue changes: it gets a fractional key between its new neighbours, so a
+ * concurrent move by someone else never collides with this one.
+ */
 export function moveItem(p: Travelogue, itemId: Id, toIndex: number): Travelogue {
   const item = p.media.find((m) => m.id === itemId);
   if (!item) throw new Error(`No media item ${itemId}`);
   const inChapter = new Set(p.media.filter((m) => m.chapterId === item.chapterId).map((m) => m.id));
-  const ordered = p.cues.filter((c) => inChapter.has(c.itemId)).sort((a, b) => a.order - b.order);
+  const ordered = p.cues.filter((c) => inChapter.has(c.itemId)).sort((a, b) => (a.order < b.order ? -1 : a.order > b.order ? 1 : 0));
   const from = ordered.findIndex((c) => c.itemId === itemId);
   if (from < 0) throw new Error(`No cue for item ${itemId}`);
   const to = Math.max(0, Math.min(ordered.length - 1, toIndex));
   if (from === to) return p;
-  const [moved] = ordered.splice(from, 1);
-  ordered.splice(to, 0, moved);
-  const newOrder = new Map(ordered.map((c, i) => [c.itemId, i]));
-  return { ...p, cues: p.cues.map((c) => (newOrder.has(c.itemId) && newOrder.get(c.itemId) !== c.order ? { ...c, order: newOrder.get(c.itemId)! } : c)) };
+  const rest = ordered.filter((c) => c.itemId !== itemId);
+  const before = rest[to - 1]?.order ?? null;
+  const after = rest[to]?.order ?? null;
+  return updateCue(p, itemId, { order: keyBetween(before, after) });
 }
 
 export function addChapter(p: Travelogue, chapter: Chapter, index = p.chapters.length): Travelogue {

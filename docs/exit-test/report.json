@@ -1,33 +1,38 @@
 {
-  "date": "2026-11-11T04:08:11.775Z",
+  "date": "2026-11-11T05:08:10.037Z",
   "rate": 1,
-  "media": "cache proxies",
   "browser": "153.0.8010.12",
   "timelineSec": 111,
-  "wallSec": 111.025,
-  "framesDrawn": 6661,
+  "wallSec": 111.15,
+  "uploadSec": 0.488,
+  "readySec": 13.523,
+  "framesDrawn": 6670,
   "placeholderFrames": 0,
-  "videoSeeks": 0,
   "checks": [
     {
-      "name": "cache builds for all 20 items",
+      "name": "signs in with an emailed link",
       "pass": true,
-      "detail": "12.8 s"
+      "detail": ""
+    },
+    {
+      "name": "imports and uploads all 20 originals through the browser",
+      "pass": true,
+      "detail": "10.1 MB uploaded in 0.5 s; all processed after 13.5 s"
+    },
+    {
+      "name": "originals are stored byte for byte",
+      "pass": true,
+      "detail": "20 of 20 hashed"
     },
     {
       "name": "plays to the end",
       "pass": true,
-      "detail": "111 s of timeline in 111.0 s wall clock at 1x"
+      "detail": "111 s of timeline in 111.2 s at 1x"
     },
     {
       "name": "enters all 23 segments (4 title cards + 19 items) in order",
       "pass": true,
       "detail": "entered 23"
-    },
-    {
-      "name": "excluded item m14 never plays",
-      "pass": true,
-      "detail": ""
     },
     {
       "name": "no media failed to load",
@@ -37,12 +42,7 @@
     {
       "name": "media ready in time (under 2% of frames waited on loading)",
       "pass": true,
-      "detail": "0 of 6661 frames"
-    },
-    {
-      "name": "no errors in the browser console",
-      "pass": true,
-      "detail": ""
+      "detail": "0 of 6670 frames"
     },
     {
       "name": "draws smoothly (30 fps or better)",
@@ -50,52 +50,52 @@
       "detail": "60 frames per second"
     },
     {
-      "name": "frame at 1.5 s: 01-title-lisbon",
+      "name": "frame at 1.5 s: title-lisbon",
       "pass": true,
       "detail": "100% of the frame lit"
     },
     {
-      "name": "frame at 9.0 s: 02-portrait-fit-m02",
+      "name": "frame at 9.0 s: portrait-fit-m02",
       "pass": true,
-      "detail": "37% of the frame lit, pillarboxed"
+      "detail": "37% of the frame lit"
     },
     {
-      "name": "frame at 19.0 s: 03-custom-rect-m04",
+      "name": "frame at 19.0 s: custom-rect-m04",
       "pass": true,
-      "detail": "41% of the frame lit, right side empty as placed"
+      "detail": "39% of the frame lit"
     },
     {
-      "name": "frame at 45.5 s: 04-fill-m09",
-      "pass": true,
-      "detail": "100% of the frame lit, frame filled edge to edge"
-    },
-    {
-      "name": "frame at 79.0 s: 05-video-trimmed-m15",
+      "name": "frame at 45.5 s: fill-m09",
       "pass": true,
       "detail": "100% of the frame lit"
     },
     {
-      "name": "frame at 93.0 s: 06-video-2x-m20",
+      "name": "frame at 79.0 s: video-trimmed-m15",
       "pass": true,
       "detail": "100% of the frame lit"
     },
     {
-      "name": "frame at 103.0 s: 07-panorama-m18",
+      "name": "frame at 93.0 s: video-2x-m20",
       "pass": true,
-      "detail": "66% of the frame lit"
+      "detail": "100% of the frame lit"
     },
     {
-      "name": "video follows the timeline clock (m20 at media 6.0 s)",
+      "name": "an edit autosaves and survives a reload",
       "pass": true,
-      "detail": "currentTime 6.00 s"
+      "detail": ""
     },
     {
-      "name": "next-chapter button jumps to Sintra",
+      "name": "undo reverts the change on the server too",
       "pass": true,
-      "detail": "t = 27"
+      "detail": ""
     },
     {
-      "name": "End key seeks to the end",
+      "name": "every change is in the operation log with its author",
+      "pass": true,
+      "detail": "63 revisions"
+    },
+    {
+      "name": "no errors in the browser console",
       "pass": true,
       "detail": ""
     }

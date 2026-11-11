@@ -53,10 +53,10 @@ describe('project file (F-1)', () => {
 
   it('defaultCue follows the cue profile', () => {
     const p = createProject({ title: 't' });
-    const img = defaultCue({ id: 'a', sourceId: 's', uri: 'a.jpg', kind: 'image', chapterId: null }, p.cueProfile, 0);
+    const img = defaultCue({ id: 'a', sourceId: 's', uri: 'a.jpg', kind: 'image', chapterId: null }, p.cueProfile, "i");
     assert.equal(img.durationSec, 4);
     assert.deepEqual(img.entrance, { type: 'fade', durationSec: 0.5 });
-    const vid = defaultCue({ id: 'b', sourceId: 's', uri: 'b.mp4', kind: 'video', durationSec: 40, chapterId: null }, p.cueProfile, 0);
+    const vid = defaultCue({ id: 'b', sourceId: 's', uri: 'b.mp4', kind: 'video', durationSec: 40, chapterId: null }, p.cueProfile, "i");
     assert.equal(vid.outPointSec, 15);
   });
 });

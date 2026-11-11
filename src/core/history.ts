@@ -23,7 +23,7 @@ export interface HistoryEntry<T> {
   coalesceKey?: string;
 }
 
-export type HistoryListener<T> = (state: T, change: { label: string; kind: 'edit' | 'undo' | 'redo' | 'reset'; structural: boolean }) => void;
+export type HistoryListener<T> = (state: T, change: { label: string; kind: 'edit' | 'undo' | 'redo' | 'reset' | 'remote'; structural: boolean }) => void;
 
 export const MIN_HISTORY_DEPTH = 100;
 
@@ -100,6 +100,28 @@ export class History<T> {
     return true;
   }
 
+  /**
+   * Fold a change made elsewhere (another session, or the server) into every
+   * state this history holds, without adding an undo step. Undo and redo then
+   * keep that change instead of reverting it. If the change cannot be applied
+   * to an older state it is left as it was.
+   */
+  rebase(fn: (state: T) => T, label = 'Remote change'): void {
+    const safe = (s: T) => {
+      try {
+        return fn(s);
+      } catch {
+        return s;
+      }
+    };
+    for (const e of [...this.past, ...this.future]) {
+      e.before = safe(e.before);
+      e.after = safe(e.after);
+    }
+    this.current = fn(this.current);
+    this.emit(label, 'remote', false);
+  }
+
   /** Replace state without an undo step (open, recover). Clears history. */
   reset(state: T, label = 'Open'): void {
     this.past = [];
@@ -113,7 +135,7 @@ export class History<T> {
     return () => this.listeners.delete(fn);
   }
 
-  private emit(label: string, kind: 'edit' | 'undo' | 'redo' | 'reset', structural: boolean) {
+  private emit(label: string, kind: 'edit' | 'undo' | 'redo' | 'reset' | 'remote', structural: boolean) {
     for (const l of this.listeners) l(this.current, { label, kind, structural });
   }
 }

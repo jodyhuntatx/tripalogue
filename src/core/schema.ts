@@ -1,13 +1,18 @@
 /**
  * TripAlogue project schema (PRD Section 3).
  *
- * One Travelogue = one project file. Media stays where it lives; the project
- * holds references plus cues, never copies of originals. Entities that later
- * phases fill in (map view, audio lanes, annotations) are present from v1 so
- * the file format does not churn phase to phase.
+ * One Travelogue = one project, stored on the server with its operation log
+ * and version history, and exportable as one JSON file. Original media lives
+ * in object storage, referenced by storage key; the project holds references
+ * plus cues, never the media itself. Entities that later phases fill in (map
+ * view, audio lanes, annotations) are present already so the format does not
+ * churn phase to phase.
+ *
+ * v2 (web): upload-based sources, media storage fields, fractional order keys
+ * for cues, and per-entity attribution for multi-author editing.
  */
 
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
 export const FILE_EXTENSION = '.travelogue.json';
 
 export type Id = string;
@@ -52,7 +57,13 @@ export interface TitleCard {
   durationSec?: number;
 }
 
-export interface Chapter {
+/** Who last changed an entity, set by the server when it applies an operation. */
+export interface Attribution {
+  updatedBy?: Id;
+  updatedAt?: string;
+}
+
+export interface Chapter extends Attribution {
   id: Id;
   title: string;
   locationName: string;
@@ -65,28 +76,48 @@ export interface Chapter {
   titleCard: TitleCard;
 }
 
-export type SourceType = 'localFolder' | 'googlePhotos';
+/** upload = files uploaded through the browser (or the import tool). */
+export type SourceType = 'upload' | 'googlePhotos' | 'cloudDrive' | 'uploadLink';
 
 export interface MediaSource {
   id: Id;
   type: SourceType;
   displayName: string;
-  /** Local folders: path relative to the project file's folder, or absolute. */
+  /** Import only: folder (relative to the imported project file) where this source's files were found. */
   rootPath?: string;
-  /** Opaque key into the OS keychain; never a credential. */
+  /** Opaque reference to a server-held, encrypted OAuth grant; never a credential. */
   authRef?: string;
+  /** Member who supplies this source's media (contributor attribution). */
+  contributorId?: Id;
   /** Added to captured-at to correct a wrong camera clock (MM-4). */
   clockOffsetSec: number;
 }
 
 export type MediaKind = 'image' | 'video' | 'audio';
 export type TimestampConfidence = 'high' | 'low';
+/** Absent = ready (hand-written projects). pending = waiting for its upload. */
+export type MediaStatus = 'pending' | 'uploading' | 'processing' | 'ready' | 'failed';
 
-export interface MediaItem {
+export interface MediaAssets {
+  thumb?: string;
+  proxy?: string;
+}
+
+export interface MediaItem extends Attribution {
   id: Id;
   sourceId: Id;
-  /** Path relative to the source root (local) or an opaque source URI. */
+  /** Original file name or path as uploaded (display and import matching only). */
   uri: string;
+  /** Object-storage key of the unaltered original. */
+  storageKey?: string;
+  /** sha256 of the original, hex. */
+  contentHash?: string;
+  sizeBytes?: number;
+  uploadedBy?: Id;
+  status?: MediaStatus;
+  /** Storage keys of derived files, always rebuildable from the original. */
+  assets?: MediaAssets;
+  error?: string;
   kind: MediaKind;
   capturedAt?: string;
   userTimestamp?: string;
@@ -128,11 +159,11 @@ export interface AudioCue {
   duck: boolean;
 }
 
-export interface Cue {
+export interface Cue extends Attribution {
   itemId: Id;
   included: boolean;
-  /** Sort key within the item's chapter. */
-  order: number;
+  /** Fractional order key within the item's chapter (see fractional.ts). */
+  order: string;
   /** Images: time on screen. Videos: derived from in/out and speed when absent. */
   durationSec?: number;
   inPointSec?: number;
