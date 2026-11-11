@@ -224,6 +224,11 @@ export async function startApp(overrides: Partial<ServerConfig> = {}, deps: { ma
     const { user } = member(c, 'contributor');
     sendJson(c.res, 201, await uploads.create(c.params.id, user, await readJson(c.req)));
   });
+  r.on('POST', '/api/projects/:id/uploads/check', async (c) => {
+    member(c, 'contributor');
+    const body = (await readJson(c.req)) as { files?: unknown };
+    sendJson(c.res, 200, await uploads.check(c.params.id, body.files));
+  });
   r.on('GET', '/api/uploads/:uid', (c) => sendJson(c.res, 200, uploads.status(c.params.uid, me(c))));
   r.on('PUT', '/api/uploads/:uid', async (c) => {
     const user = me(c);

@@ -157,6 +157,7 @@ export function validate(raw: unknown): ValidationIssue[] {
     str(m, 'fileModifiedAt', path, true);
     str(m, 'storageKey', path, true);
     if (m.contentHash !== undefined && (typeof m.contentHash !== 'string' || !/^[0-9a-f]{64}$/.test(m.contentHash))) err(`${path}.contentHash`, 'must be a sha256 hex string');
+    if (m.sampleHash !== undefined && (typeof m.sampleHash !== 'string' || !/^[0-9a-f]{64}$/.test(m.sampleHash))) err(`${path}.sampleHash`, 'must be a sha256 hex string');
     oneOf(m, 'status', path, ['pending', 'uploading', 'processing', 'ready', 'failed'], true);
     num(m, 'sizeBytes', path, 0, 1e13, true);
     str(m, 'userTimestamp', path, true);

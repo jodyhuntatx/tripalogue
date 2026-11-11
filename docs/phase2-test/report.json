@@ -1,11 +1,16 @@
 {
-  "date": "2026-11-11T20:20:08.037Z",
+  "date": "2026-11-11T20:32:24.672Z",
   "browser": "153.0.8010.12",
   "checks": [
     {
       "name": "uploaded photos are filed by their capture time with no clicks",
       "pass": true,
-      "detail": "DSC_0103 → ch-sintra; the copied sample photo has no EXIF → null"
+      "detail": "DSC_0103 → ch-sintra"
+    },
+    {
+      "name": "a byte-for-byte copy of a photo already in the travelogue is not uploaded again (MM-7)",
+      "pass": true,
+      "detail": "6 of 6 files · 0.5 MB of 0.5 MB · 1 already uploaded, skipped"
     },
     {
       "name": "the slow camera puts its late-night photos in the wrong chapter (the planted error)",
@@ -60,7 +65,12 @@
     {
       "name": "applying it moves the slow camera’s photos to the right chapter, and nothing else",
       "pass": true,
-      "detail": "saved in 374 ms; the iPhone photo stays in Lisbon"
+      "detail": "saved in 344 ms; the iPhone photo stays in Lisbon"
+    },
+    {
+      "name": "typing in the inspector survives unrelated updates",
+      "pass": true,
+      "detail": "0 h 30"
     },
     {
       "name": "Shift-click selects a range, and Shift moves all of them",
@@ -70,7 +80,7 @@
     {
       "name": "the contributor check finds who sent copies stripped of time and place (G2)",
       "pass": true,
-      "detail": "Ana: Aana 2 itemsEverything has a time and a place. | Ben: Bben 2 items2 without a capture time2 without a location2 look like copies (WhatsApp)Ask ben for originals"
+      "detail": "Ana: Aana 3 items1 without a capture time1 without a location1 look like copiesAsk ana for originals | Ben: Bben 2 items2 without a capture time2 without a location2 look like copies (WhatsApp)Ask ben for originals"
     },
     {
       "name": "a ready-to-send note asks Ben for the originals",
@@ -109,6 +119,21 @@
     },
     {
       "name": "the contributor guide is linked from the Upload tab and served (MM-18)",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "a whole folder uploads its media (subfolders included), skipping system files, text files and files already uploaded (MM-1, MM-7)",
+      "pass": true,
+      "detail": "2 of 2 files · 0.2 MB of 0.2 MB · 1 already uploaded, skipped; IMG_9001 → ch-porto, IMG_9002 → ch-douro; uris IMG_9001.jpg, IMG_9002.jpg"
+    },
+    {
+      "name": "picking files that are already uploaded uploads nothing",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "files dropped on the Upload tab are uploaded and filed (by file date when they have no camera time)",
       "pass": true,
       "detail": ""
     },

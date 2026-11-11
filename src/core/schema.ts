@@ -116,6 +116,8 @@ export interface MediaItem extends Attribution {
   storageKey?: string;
   /** sha256 of the original, hex. */
   contentHash?: string;
+  /** Quick fingerprint (size + samples, see samplehash.ts) used to skip files already uploaded (MM-7). */
+  sampleHash?: string;
   sizeBytes?: number;
   uploadedBy?: Id;
   status?: MediaStatus;

@@ -493,6 +493,23 @@ describe('uploads, processing and media links (F-4, F-7)', () => {
     assert.deepEqual([wave.w, wave.h], [480, 160], 'a waveform picture');
   });
 
+  it('tells the browser which files are already uploaded, by size and sample hash (MM-7)', async () => {
+    const { sampleHashOfFile } = await import('../src/server/samplehash.js');
+    const have = path.join(SAMPLE_DIR, 'media/ch1-04-pasteis.jpg'); // uploaded earlier in this suite
+    const other = path.join(SAMPLE_DIR, 'media/ch4-03-river.jpg'); // not uploaded
+    const files = await Promise.all([have, other].map(async (f) => ({ size: (await fs.stat(f)).size, sampleHash: await sampleHashOfFile(f) })));
+    const r = await contributor.req('POST', `/api/projects/${pid}/uploads/check`, { files });
+    assert.equal(r.status, 200, r.text);
+    assert.deepEqual(r.json.known.map((k: { index: number; mediaId: string }) => [k.index, k.mediaId]), [[0, 'm04']]);
+    // An original stored before sample hashes existed is fingerprinted on first comparison.
+    const before = app.projects.load(pid).doc.media.find((m) => m.id === 'm04')!;
+    app.projects.serverChange(pid, 'system', 'drop sample hash', (d) => ({ ...d, media: d.media.map((m) => (m.id === 'm04' ? { ...m, sampleHash: undefined } : m)) }));
+    assert.deepEqual((await owner.req('POST', `/api/projects/${pid}/uploads/check`, { files })).json.known.map((k: { index: number }) => k.index), [0]);
+    assert.ok(before.sampleHash && /^[0-9a-f]{64}$/.test(before.sampleHash), 'stored at upload');
+    assert.equal((await outsider.req('POST', `/api/projects/${pid}/uploads/check`, { files })).status, 404);
+    assert.equal((await owner.req('POST', `/api/projects/${pid}/uploads/check`, { files: 'nope' })).status, 400);
+  });
+
   it('leaves an item with no time at all in Unassigned', async () => {
     const file = path.join(tmp, 'mystery.jpg');
     await ff(['-f', 'lavfi', '-i', 'color=c=white:s=64x48', '-frames:v', '1', file]);

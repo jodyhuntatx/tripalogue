@@ -1,11 +1,11 @@
 {
-  "date": "2026-11-11T20:23:16.842Z",
+  "date": "2026-11-11T20:42:12.715Z",
   "rate": 1,
   "browser": "153.0.8010.12",
   "timelineSec": 111,
-  "wallSec": 111.211,
-  "uploadSec": 0.526,
-  "readySec": 13.539,
+  "wallSec": 111.214,
+  "uploadSec": 0.52,
+  "readySec": 13.553,
   "framesDrawn": 6670,
   "placeholderFrames": 0,
   "checks": [
@@ -17,7 +17,7 @@
     {
       "name": "imports and uploads all 20 originals through the browser",
       "pass": true,
-      "detail": "10.1 MB uploaded in 0.5 s; all processed after 13.5 s"
+      "detail": "10.1 MB uploaded in 0.5 s; all processed after 13.6 s"
     },
     {
       "name": "originals are stored byte for byte",

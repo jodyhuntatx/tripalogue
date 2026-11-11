@@ -143,16 +143,20 @@ try {
   await page.click('.tabs button[data-tab="Upload"]');
   await page.setInputFiles('#upload-input', [afterTrip, screenshot, dupe, ...slow, phone]);
   await page.click('#upload-start');
-  await page.waitForFunction(() => window.tripalogue!.session!.state.media.length === 27 && window.tripalogue!.session!.state.media.every((m) => !m.status || m.status === 'ready'), null, { timeout: 90_000 });
-  check('uploaded photos are filed by their capture time with no clicks', await chapterOf('DSC_0103.jpg') === 'ch-sintra' && await chapterOf('copy-of-alfama.jpg') === null,
-    `DSC_0103 → ${await chapterOf('DSC_0103.jpg')}; the copied sample photo has no EXIF → ${await chapterOf('copy-of-alfama.jpg')}`);
+  await page.waitForFunction(() => /1 already uploaded, skipped/.test(document.getElementById('upload-summary')?.textContent ?? '') && window.tripalogue!.session!.state.media.length === 26
+    && window.tripalogue!.session!.state.media.every((m) => !m.status || m.status === 'ready'), null, { timeout: 90_000 });
+  check('uploaded photos are filed by their capture time with no clicks', await chapterOf('DSC_0103.jpg') === 'ch-sintra' && await chapterOf('IMG_3002.jpg') === 'ch-lisbon',
+    `DSC_0103 → ${await chapterOf('DSC_0103.jpg')}`);
+  check('a byte-for-byte copy of a photo already in the travelogue is not uploaded again (MM-7)', !(await page.evaluate(() => window.tripalogue!.session!.state.media.some((m) => m.uri === 'copy-of-alfama.jpg'))),
+    await page.textContent('#upload-summary') ?? '');
   check('the slow camera puts its late-night photos in the wrong chapter (the planted error)', await chapterOf('DSC_0101.jpg') === 'ch-lisbon' && await chapterOf('DSC_0102.jpg') === 'ch-lisbon');
   const srcs = await page.evaluate(() => window.tripalogue!.session!.state.sources.map((x) => x.displayName));
   check('uploads are grouped by camera, so one camera’s clock can be fixed alone', (await byName('DSC_0101.jpg')).sourceId !== (await byName('IMG_3002.jpg')).sourceId && srcs.some((n) => /Canon EOS R6/.test(n)) && srcs.some((n) => /iPhone 15 Pro/.test(n)),
     srcs.join(' | '));
 
   // Two more travelers join as contributors and upload from their own devices.
-  for (const [who, list] of [['ana@example.com', ana], ['ben@example.com', ben]] as const) {
+  // Ana also uploads, from her own device, a copy of a photo Jody already added (she was sent it): a duplicate (MM-8).
+  for (const [who, list] of [['ana@example.com', [...ana, dupe]], ['ben@example.com', ben]] as const) {
     await page.evaluate(async ([p, email]) => fetch(`/api/projects/${p}/invites`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-tripalogue-client': '1' }, body: JSON.stringify({ email, role: 'contributor' }) }), [pid, who]);
     const invite = /https?:\/\/\S+accept\S+/.exec((await (app.mailer as OutboxMailer).latestFor(who))!.text)![0];
     const t = new Traveler(who);
@@ -229,6 +233,10 @@ try {
   const sel = await page.evaluate(() => window.tripalogue!.media!.selected().length);
   await page.fill('#shift-hours', '0');
   await page.fill('#shift-minutes', '30');
+  // An unrelated update (autosave status, another upload finishing) must not wipe what was typed.
+  await page.evaluate(() => { window.tripalogue!.media!.update(); window.tripalogue!.media!.update(); });
+  const kept = [await page.inputValue('#shift-hours'), await page.inputValue('#shift-minutes')];
+  check('typing in the inspector survives unrelated updates', kept[0] === '0' && kept[1] === '30', kept.join(' h '));
   await page.click('#apply-shift');
   await saved(page);
   const shifted = await byName('DSC_0101.jpg');
@@ -242,7 +250,7 @@ try {
   };
   const anaReport = await reportText('ana@example.com');
   const benReport = await reportText('ben@example.com');
-  check('the contributor check finds who sent copies stripped of time and place (G2)', /Everything has a time and a place/.test(anaReport ?? '') && /2 without a capture time/.test(benReport ?? '') && /2 without a location/.test(benReport ?? '') && /2 look like copies \(WhatsApp\)/.test(benReport ?? ''),
+  check('the contributor check finds who sent copies stripped of time and place (G2)', !/WhatsApp/.test(anaReport ?? '') && /2 without a capture time/.test(benReport ?? '') && /2 without a location/.test(benReport ?? '') && /2 look like copies \(WhatsApp\)/.test(benReport ?? ''),
     `Ana: ${anaReport?.replace(/\s+/g, ' ').trim()} | Ben: ${benReport?.replace(/\s+/g, ' ').trim()}`);
   const benId = (await app.auth.upsertUser('ben@example.com')).id;
   await page.click(`.media-contributors button[data-ask="${benId}"]`);
@@ -296,6 +304,48 @@ try {
     && await page.locator('#media-grid .tile .who').count() === 32);
   const guide = await page.evaluate(async () => (await fetch('/guide-contributors.html')).status);
   check('the contributor guide is linked from the Upload tab and served (MM-18)', guide === 200);
+
+  // ---- slice D: drag-and-drop and folder uploads, skipping what is already uploaded ----
+  const folder = path.join(files, 'Trip folder');
+  mkdirSync(path.join(folder, 'Day 2', 'Evening'), { recursive: true });
+  await photo('IMG_9001.jpg', 'brown', ['2026:05:07 09:00:00', 1, { make: 'Apple', model: 'iPhone 15 Pro', offset: '+01:00' }]);
+  await fs.rename(path.join(files, 'IMG_9001.jpg'), path.join(folder, 'IMG_9001.jpg'));
+  await fs.copyFile(slow[0], path.join(folder, 'Day 2', 'DSC_0101.jpg')); // already uploaded
+  await photo('IMG_9002.jpg', 'coral', ['2026:05:09 20:00:00', 1, { make: 'Apple', model: 'iPhone 15 Pro', offset: '+01:00' }]);
+  await fs.rename(path.join(files, 'IMG_9002.jpg'), path.join(folder, 'Day 2', 'Evening', 'IMG_9002.jpg'));
+  await fs.writeFile(path.join(folder, '.DS_Store'), 'x');
+  await fs.writeFile(path.join(folder, 'notes.txt'), 'packing list');
+  const before = await page.evaluate(() => window.tripalogue!.session!.state.media.length);
+  await page.click('#view-play');
+  await page.click('.tabs button[data-tab="Upload"]');
+  await page.locator('#drop-zone').screenshot({ path: path.join(outDir, '05-drop-zone.png') });
+  await page.setInputFiles('#upload-folder', folder);
+  await page.waitForFunction(() => /already uploaded, skipped/.test(document.getElementById('upload-summary')?.textContent ?? '') && /2 of 2 files/.test(document.getElementById('upload-summary')?.textContent ?? ''), null, { timeout: 60_000 });
+  const folderSummary = await page.textContent('#upload-summary');
+  await app.jobs.idle();
+  await page.waitForFunction((n) => window.tripalogue!.session!.state.media.length === n + 2
+    && window.tripalogue!.session!.state.media.filter((m) => /IMG_900[12]/.test(m.uri)).every((m) => m.status === 'ready'), before, { timeout: 30_000 });
+  check('a whole folder uploads its media (subfolders included), skipping system files, text files and files already uploaded (MM-1, MM-7)',
+    await chapterOf('IMG_9001.jpg') === 'ch-porto' && await chapterOf('IMG_9002.jpg') === 'ch-douro' && /1 already uploaded, skipped/.test(folderSummary ?? ''),
+    `${folderSummary}; IMG_9001 → ${await chapterOf('IMG_9001.jpg')}, IMG_9002 → ${await chapterOf('IMG_9002.jpg')}; uris ${(await page.evaluate(() => window.tripalogue!.session!.state.media.slice(-2).map((m) => m.uri))).join(', ')}`);
+  // The same files picked again: nothing is sent twice.
+  await page.setInputFiles('#upload-input', [path.join(folder, 'IMG_9001.jpg'), phone]);
+  await page.click('#upload-start');
+  await page.waitForFunction(() => /2 already uploaded, skipped/.test(document.getElementById('upload-summary')?.textContent ?? ''), null, { timeout: 30_000 });
+  check('picking files that are already uploaded uploads nothing', await page.evaluate(() => window.tripalogue!.session!.state.media.length) === before + 2);
+  // Drag-and-drop onto the drop zone (a file built in the page, dropped as a browser would).
+  const dropped = await page.evaluateHandle(async () => {
+    const c = Object.assign(document.createElement('canvas'), { width: 64, height: 48 });
+    c.getContext('2d')!.fillRect(0, 0, 64, 48);
+    const blob = await new Promise<Blob>((r) => c.toBlob((b) => r(b!), 'image/jpeg'));
+    const dt = new DataTransfer();
+    dt.items.add(new File([blob], 'dropped.jpg', { type: 'image/jpeg', lastModified: Date.parse('2026-05-08T12:00:00Z') }));
+    return dt;
+  });
+  await page.dispatchEvent('#drop-zone', 'drop', { dataTransfer: dropped });
+  await page.waitForFunction(() => window.tripalogue!.session!.state.media.some((m) => m.uri === 'dropped.jpg' && m.status === 'ready'), null, { timeout: 30_000 });
+  check('files dropped on the Upload tab are uploaded and filed (by file date when they have no camera time)', await chapterOf('dropped.jpg') === 'ch-douro');
+  await page.click('#view-media');
 
   // Everything is saved on the server and survives a reload.
   await page.reload();

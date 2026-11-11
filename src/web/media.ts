@@ -278,9 +278,18 @@ export function mountMedia(s: ProjectSession, ctx: { projectId: string; play: (i
 
   // ---------------------------------------------------------------- inspector (MM-5)
 
+  // Panels with inputs are rebuilt only when what they show changes, so typing is never wiped by an unrelated update
+  // (an autosave, another item finishing processing).
+  let inspectorKey = '';
+  let sourcesKey = '';
+
   function renderInspector() {
     const p = s.state;
     const items = p.media.filter((m) => selection.has(m.id));
+    const key = JSON.stringify([items.map((m) => [m.id, m.userTimestamp, m.capturedAt, m.location, m.chapterId, m.sourceId, m.uri, m.status]),
+      p.chapters.map((c) => [c.id, c.title, c.timeZone, !!c.coordinates]), p.sources.map((x) => [x.id, x.clockOffsetSec, x.displayName]), s.canEdit, copiedPlace, picking]);
+    if (key === inspectorKey) return;
+    inspectorKey = key;
     if (!items.length) {
       inspector.replaceChildren(h('h3', {}, 'Fix times'),
         h('p', { class: 'muted' }, 'Select items to set or shift their time, or drag them onto a chapter. Ctrl/Cmd-click adds to the selection, Shift-click selects a range.'));
@@ -439,6 +448,9 @@ export function mountMedia(s: ProjectSession, ctx: { projectId: string; play: (i
   const draftOffsets = new Map<Id, number>();
   function renderSources() {
     const p = s.state;
+    const key = JSON.stringify([p.sources, p.media.map((m) => m.sourceId), p.chapters.map((c) => [c.id, c.start, c.end, c.timeZone]), members, s.canEdit]);
+    if (key === sourcesKey) return;
+    sourcesKey = key;
     if (!p.sources.length) {
       sourcesBox.replaceChildren();
       return;

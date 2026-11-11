@@ -12,8 +12,8 @@ import { mountInset, type InsetView } from './inset.js';
 import { mountItinerary, type ItineraryView } from './itinerary.js';
 import { mountMedia, type MediaView } from './media.js';
 import { ProjectSession } from './session.js';
-import { uploadAll, type UploadProgress } from './uploader.js';
-import { h, type Child } from './dom.js';
+import { filesFromDrop, mediaFiles, uploadAll, type UploadProgress } from './uploader.js';
+import { fill, h, type Child } from './dom.js';
 
 declare global {
   interface Window {
@@ -188,10 +188,15 @@ function renderProgress(el: HTMLElement, all: UploadProgress[]) {
   const total = all.reduce((a, p) => a + p.total, 0);
   const sent = all.reduce((a, p) => a + p.sent, 0);
   const done = all.filter((p) => p.state === 'done').length;
-  el.replaceChildren(
-    h('div', { class: 'muted', id: 'upload-summary' }, `${done} of ${all.length} files · ${mb(sent)} of ${mb(total)}`),
+  const skipped = all.filter((p) => p.state === 'skipped');
+  const checking = all.some((p) => p.state === 'checking');
+  fill(el,
+    h('div', { class: 'muted', id: 'upload-summary' }, checking ? `Checking ${all.length} files against what is already uploaded…`
+      : `${done} of ${all.length - skipped.length} files · ${mb(sent)} of ${mb(total)}${skipped.length ? ` · ${skipped.length} already uploaded, skipped` : ''}`),
     h('progress', { max: total || 1, value: sent }),
     ...all.filter((p) => p.state === 'failed' || p.state === 'retrying').map((p) => h('div', { class: p.state === 'failed' ? 'error' : 'muted' }, `${p.file.name}: ${p.state === 'failed' ? p.error : 'retrying…'}`)),
+    skipped.length > 0 && h('details', { class: 'skipped' }, h('summary', { class: 'muted small' }, `Skipped ${skipped.length} file${skipped.length === 1 ? '' : 's'} already in this travelogue`),
+      h('ul', { class: 'pending' }, ...skipped.map((p) => h('li', { class: 'muted small' }, `${p.file.name}: ${p.error}`)))),
   );
 }
 
@@ -471,6 +476,20 @@ async function renderProject(id: string, initialView?: View) {
     }));
   }
 
+  /** MM-1: drop files or whole folders to upload them. */
+  function dropZone(start: (files: File[]) => Promise<void>): HTMLElement {
+    const zone = h('div', { class: 'drop-zone', id: 'drop-zone', tabindex: '0' }, h('strong', {}, 'Drop photos, videos or whole folders here'),
+      h('span', { class: 'muted small' }, 'Folders are searched for media; other files are left out.'));
+    zone.addEventListener('dragover', (e) => { if (e.dataTransfer?.types.includes('Files')) { e.preventDefault(); zone.classList.add('over'); } });
+    zone.addEventListener('dragleave', () => zone.classList.remove('over'));
+    zone.addEventListener('drop', async (e) => {
+      e.preventDefault();
+      zone.classList.remove('over');
+      if (e.dataTransfer) await start(await filesFromDrop(e.dataTransfer));
+    });
+    return zone;
+  }
+
   function renderUpload() {
     const p = s.state;
     const mayUpload = s.role !== 'viewer';
@@ -489,9 +508,12 @@ async function renderProject(id: string, initialView?: View) {
         h('ul', { class: 'pending' }, ...failedProcessing.slice(0, 50).map((m) => h('li', { class: 'muted' }, `${m.uri.split('/').pop()}${m.error ? ` · ${m.error}` : ''}`))),
         mayUpload && h('button', { class: 'primary', id: 'retry-failed', onclick: () => void retry() }, `Retry processing (${failedProcessing.length})`))
       : null;
-    const input = h('input', { type: 'file', multiple: true, accept: 'image/*,video/*,audio/*', id: 'upload-input', 'aria-label': 'Choose photos and videos' });
-    const start = async () => {
-      const files = [...(input.files ?? [])];
+    const input = h('input', { type: 'file', multiple: true, accept: 'image/*,video/*,audio/*,.heic,.heif', id: 'upload-input', 'aria-label': 'Choose photos and videos' });
+    const folder = h('input', { type: 'file', multiple: true, id: 'upload-folder', 'aria-label': 'Choose a folder', hidden: true });
+    folder.setAttribute('webkitdirectory', '');
+    folder.addEventListener('change', () => void start(mediaFiles(folder.files ?? [])));
+    const start = async (picked?: File[]) => {
+      const files = picked ?? [...(input.files ?? [])];
       if (!files.length) return;
       const byName = new Map(pending.map((m) => [m.uri.split('/').pop()!, m.id]));
       const jobs = files.map((f) => ({ file: f, mediaId: byName.get(f.name) }));
@@ -507,8 +529,9 @@ async function renderProject(id: string, initialView?: View) {
             ? `${pending.length} item(s) are waiting for their original. Choose the matching files to finish the upload, or add new photos and videos (they go to Unassigned).`
             : 'Add photos and videos. Originals upload unaltered, so capture time and location are kept. Each item goes to the chapter its time falls in.'),
           h('p', { class: 'small' }, h('a', { href: '/guide-contributors.html', target: '_blank', rel: 'noopener', id: 'guide-link' }, 'How to share originals from a phone or camera')),
-          input,
-          h('button', { class: 'primary', id: 'upload-start', onclick: () => void start() }, 'Upload'),
+          dropZone(start),
+          h('div', { class: 'row' }, input, h('button', { class: 'primary', id: 'upload-start', onclick: () => void start() }, 'Upload')),
+          h('div', { class: 'row' }, folder, h('button', { id: 'upload-folder-btn', onclick: () => folder.click() }, 'Upload a whole folder…')),
           uploadProgress,
           pending.length ? h('ul', { class: 'pending' }, ...pending.slice(0, 50).map((m) => h('li', { class: 'muted' }, `${m.uri.split('/').pop()} · ${m.status}${m.error ? ` · ${m.error}` : ''}`))) : null)
         : h('p', { class: 'muted' }, 'Viewers cannot upload media.'));

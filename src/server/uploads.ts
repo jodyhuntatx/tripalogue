@@ -11,6 +11,7 @@
  * processing. Uploading into an existing pending item (import) or creating a
  * new item are both supported.
  */
+import { sampleHashOfFile } from './samplehash.js';
 import { createHash, randomBytes } from 'node:crypto';
 import { createReadStream, promises as fs } from 'node:fs';
 import path from 'node:path';
@@ -136,18 +137,53 @@ export class Uploads {
     }
   }
 
+  /**
+   * MM-7: which of these files the project already has (same size and sample hash), so the browser can skip them.
+   * Originals stored before sample hashes existed are fingerprinted on first comparison and remembered.
+   */
+  async check(projectId: string, files: unknown): Promise<{ known: { index: number; mediaId: string; uri: string }[] }> {
+    if (!Array.isArray(files) || files.length > 5000) throw new HttpError(400, 'files must be a list of up to 5000 entries', 'invalid');
+    const doc = this.projects.load(projectId).doc;
+    const stored = doc.media.filter((m) => m.storageKey && m.sizeBytes);
+    const known: { index: number; mediaId: string; uri: string }[] = [];
+    for (const [index, f] of (files as { size?: unknown; sampleHash?: unknown }[]).entries()) {
+      const size = Number(f?.size);
+      const h = typeof f?.sampleHash === 'string' ? f.sampleHash : '';
+      if (!/^[0-9a-f]{64}$/.test(h) || !Number.isSafeInteger(size)) continue;
+      for (const m of stored.filter((x) => x.sizeBytes === size)) {
+        let mh = m.sampleHash ?? this.fingerprints.get(m.storageKey!);
+        if (!mh) {
+          try {
+            mh = await sampleHashOfFile(await this.blobs.localPath(m.storageKey!));
+            this.fingerprints.set(m.storageKey!, mh);
+          } catch {
+            continue;
+          }
+        }
+        if (mh === h) {
+          known.push({ index, mediaId: m.id, uri: m.uri });
+          break;
+        }
+      }
+    }
+    return { known };
+  }
+
+  private readonly fingerprints = new Map<string, string>();
+
   private async finish(u: UploadRow): Promise<void> {
     const file = this.part(u.id);
     const hash = createHash('sha256');
     await pipeline(createReadStream(file), hash);
     const contentHash = hash.digest('hex');
+    const sampleHash = await sampleHashOfFile(file);
     const ext = path.extname(u.file_name).toLowerCase().replace(/[^.a-z0-9]/g, '');
     const key = `originals/${u.project_id}/${u.media_id}${ext}`;
     await this.blobs.putFile(key, file);
     this.db.run('UPDATE uploads SET completed_at = ? WHERE id = ?', Date.now(), u.id);
     this.projects.serverChange(u.project_id, u.user_id, `Uploaded ${u.file_name}`, (doc) => ({
       ...doc,
-      media: doc.media.map((m) => (m.id === u.media_id ? { ...m, storageKey: key, contentHash, sizeBytes: u.size, uploadedBy: u.user_id, status: 'processing' as const } : m)),
+      media: doc.media.map((m) => (m.id === u.media_id ? { ...m, storageKey: key, contentHash, sampleHash, sizeBytes: u.size, uploadedBy: u.user_id, status: 'processing' as const } : m)),
     }));
     this.jobs.enqueue(u.project_id, u.media_id);
   }

@@ -225,3 +225,6 @@ button.linkish.strong { font-weight: 600; color: var(--text); }
 .ask-dialog::backdrop { background: rgba(0,0,0,.6); }
 .ask-dialog textarea { width: 100%; background: #0f1217; color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 8px; font: inherit; margin: 8px 0; }
 #location-field .row button { padding: 4px 9px; }
+.drop-zone { display: grid; gap: 4px; place-items: center; text-align: center; padding: 22px 12px; margin: 8px 0 10px; border: 2px dashed var(--line); border-radius: 10px; color: var(--text); }
+.drop-zone.over { border-color: var(--accent); background: #13233a; }
+details.skipped summary { cursor: pointer; margin-top: 6px; }
