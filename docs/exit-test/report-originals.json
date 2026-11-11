@@ -1,0 +1,103 @@
+{
+  "date": "2026-11-11T04:03:22.260Z",
+  "rate": 1,
+  "media": "originals",
+  "browser": "153.0.8010.12",
+  "timelineSec": 111,
+  "wallSec": 111.199,
+  "framesDrawn": 6662,
+  "placeholderFrames": 0,
+  "videoSeeks": 0,
+  "checks": [
+    {
+      "name": "cache builds for all 20 items",
+      "pass": true,
+      "detail": "1.0 s"
+    },
+    {
+      "name": "plays to the end",
+      "pass": true,
+      "detail": "111 s of timeline in 111.2 s wall clock at 1x"
+    },
+    {
+      "name": "enters all 23 segments (4 title cards + 19 items) in order",
+      "pass": true,
+      "detail": "entered 23"
+    },
+    {
+      "name": "excluded item m14 never plays",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "no media failed to load",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "media ready in time (under 2% of frames waited on loading)",
+      "pass": true,
+      "detail": "0 of 6662 frames"
+    },
+    {
+      "name": "no errors in the browser console",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "draws smoothly (30 fps or better)",
+      "pass": true,
+      "detail": "60 frames per second"
+    },
+    {
+      "name": "frame at 1.5 s: 01-title-lisbon",
+      "pass": true,
+      "detail": "100% of the frame lit"
+    },
+    {
+      "name": "frame at 9.0 s: 02-portrait-fit-m02",
+      "pass": true,
+      "detail": "37% of the frame lit, pillarboxed"
+    },
+    {
+      "name": "frame at 19.0 s: 03-custom-rect-m04",
+      "pass": true,
+      "detail": "41% of the frame lit, right side empty as placed"
+    },
+    {
+      "name": "frame at 45.5 s: 04-fill-m09",
+      "pass": true,
+      "detail": "100% of the frame lit, frame filled edge to edge"
+    },
+    {
+      "name": "frame at 79.0 s: 05-video-trimmed-m15",
+      "pass": true,
+      "detail": "100% of the frame lit"
+    },
+    {
+      "name": "frame at 93.0 s: 06-video-2x-m20",
+      "pass": true,
+      "detail": "100% of the frame lit"
+    },
+    {
+      "name": "frame at 103.0 s: 07-panorama-m18",
+      "pass": true,
+      "detail": "66% of the frame lit"
+    },
+    {
+      "name": "video follows the timeline clock (m20 at media 6.0 s)",
+      "pass": true,
+      "detail": "currentTime 6.00 s"
+    },
+    {
+      "name": "next-chapter button jumps to Sintra",
+      "pass": true,
+      "detail": "t = 27"
+    },
+    {
+      "name": "End key seeks to the end",
+      "pass": true,
+      "detail": ""
+    }
+  ]
+}

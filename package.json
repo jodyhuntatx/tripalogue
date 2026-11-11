@@ -1,0 +1,28 @@
+{
+  "name": "tripalogue",
+  "version": "0.0.1",
+  "description": "TripAlogue: travelogue authoring and production. Phase 0 foundations: project file, undo/redo, player shell, media cache, telemetry hooks.",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "bin": {
+    "tripalogue": "dist/node/cli.js"
+  },
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.player.json && tsc -p tsconfig.test.json",
+    "test": "tsx --test test/*.test.ts",
+    "test:e2e": "npm run build && tsx scripts/exit-test.ts",
+    "sample": "tsx scripts/make-sample-media.ts",
+    "dev": "npm run build && tsx src/node/cli.ts serve samples/hand-written-20/trip.travelogue.json"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "esbuild": "^0.25.0",
+    "playwright": "^1.50.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0"
+  }
+}

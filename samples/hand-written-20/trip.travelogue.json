@@ -1,0 +1,108 @@
+{
+  "schemaVersion": 1,
+  "id": "trv-sample-portugal",
+  "title": "Portugal in Ten Days",
+  "createdAt": "2026-11-10T00:00:00.000Z",
+  "updatedAt": "2026-11-10T00:00:00.000Z",
+  "output": { "width": 1920, "height": 1080, "fps": 30, "aspect": "16:9" },
+  "cueProfile": {
+    "imageDurationSec": 4,
+    "videoMaxSec": 15,
+    "fadeInSec": 0.5,
+    "fadeOutSec": 0.5,
+    "titleCardSec": 3,
+    "defaultPlacement": "fit"
+  },
+  "chapters": [
+    {
+      "id": "ch-lisbon", "title": "Lisbon", "locationName": "Lisbon, Portugal",
+      "coordinates": { "lat": 38.7223, "lng": -9.1393 },
+      "start": "2026-05-01T00:00", "end": "2026-05-03T23:59", "timeZone": "Europe/Lisbon",
+      "description": "Three days of hills, trams and custard tarts.",
+      "titleCard": { "enabled": true }
+    },
+    {
+      "id": "ch-sintra", "title": "Sintra", "locationName": "Sintra, Portugal",
+      "coordinates": { "lat": 38.8029, "lng": -9.3817 },
+      "start": "2026-05-04T00:00", "end": "2026-05-04T23:59", "timeZone": "Europe/Lisbon",
+      "description": "Palaces in the fog, then the westernmost cape of Europe.",
+      "titleCard": { "enabled": true }
+    },
+    {
+      "id": "ch-porto", "title": "Porto", "locationName": "Porto, Portugal",
+      "coordinates": { "lat": 41.1579, "lng": -8.6291 },
+      "start": "2026-05-05T00:00", "end": "2026-05-07T23:59", "timeZone": "Europe/Lisbon",
+      "description": "Riverside streets, bookshops and port lodges.",
+      "titleCard": { "enabled": true, "durationSec": 4 }
+    },
+    {
+      "id": "ch-douro", "title": "Douro Valley", "locationName": "Pinhão, Portugal",
+      "coordinates": { "lat": 41.1906, "lng": -7.5458 },
+      "start": "2026-05-08T00:00", "end": "2026-05-10T23:59", "timeZone": "Europe/Lisbon",
+      "description": "Terraced vineyards and a slow train along the river.",
+      "titleCard": { "enabled": true }
+    }
+  ],
+  "sources": [
+    { "id": "src-camera", "type": "localFolder", "displayName": "Sample media", "rootPath": "media", "clockOffsetSec": 0 }
+  ],
+  "media": [
+    { "id": "m01", "sourceId": "src-camera", "uri": "ch1-01-alfama.jpg", "kind": "image", "capturedAt": "2026-05-01T10:12:00", "timestampConfidence": "high", "width": 1600, "height": 1200, "location": { "lat": 38.7118, "lng": -9.1300 }, "chapterId": "ch-lisbon" },
+    { "id": "m02", "sourceId": "src-camera", "uri": "ch1-02-tram28.jpg", "kind": "image", "capturedAt": "2026-05-01T14:40:00", "timestampConfidence": "high", "width": 1080, "height": 1440, "chapterId": "ch-lisbon" },
+    { "id": "m03", "sourceId": "src-camera", "uri": "ch1-03-belem.jpg", "kind": "image", "capturedAt": "2026-05-02T11:05:00", "timestampConfidence": "high", "width": 2400, "height": 900, "chapterId": "ch-lisbon" },
+    { "id": "m04", "sourceId": "src-camera", "uri": "ch1-04-pasteis.jpg", "kind": "image", "capturedAt": "2026-05-02T16:20:00", "timestampConfidence": "high", "width": 1600, "height": 1200, "chapterId": "ch-lisbon" },
+    { "id": "m05", "sourceId": "src-camera", "uri": "ch1-05-fado.mp4", "kind": "video", "capturedAt": "2026-05-03T21:30:00", "timestampConfidence": "high", "width": 1280, "height": 720, "durationSec": 6, "chapterId": "ch-lisbon" },
+
+    { "id": "m06", "sourceId": "src-camera", "uri": "ch2-01-pena.jpg", "kind": "image", "capturedAt": "2026-05-04T09:45:00", "timestampConfidence": "high", "width": 1600, "height": 1200, "chapterId": "ch-sintra" },
+    { "id": "m07", "sourceId": "src-camera", "uri": "ch2-02-regaleira.jpg", "kind": "image", "capturedAt": "2026-05-04T12:10:00", "timestampConfidence": "high", "width": 1080, "height": 1440, "chapterId": "ch-sintra" },
+    { "id": "m08", "sourceId": "src-camera", "uri": "ch2-03-moorish.jpg", "kind": "image", "capturedAt": "2026-05-04T14:00:00", "timestampConfidence": "low", "width": 2400, "height": 900, "chapterId": "ch-sintra" },
+    { "id": "m09", "sourceId": "src-camera", "uri": "ch2-04-cabo.jpg", "kind": "image", "capturedAt": "2026-05-04T18:55:00", "timestampConfidence": "high", "width": 1600, "height": 1200, "chapterId": "ch-sintra" },
+    { "id": "m10", "sourceId": "src-camera", "uri": "ch2-05-forest.mp4", "kind": "video", "capturedAt": "2026-05-04T13:30:00", "timestampConfidence": "high", "width": 720, "height": 1280, "durationSec": 5, "chapterId": "ch-sintra" },
+
+    { "id": "m11", "sourceId": "src-camera", "uri": "ch3-01-ribeira.jpg", "kind": "image", "capturedAt": "2026-05-05T17:00:00", "timestampConfidence": "high", "width": 1600, "height": 1200, "chapterId": "ch-porto" },
+    { "id": "m12", "sourceId": "src-camera", "uri": "ch3-02-livraria.jpg", "kind": "image", "capturedAt": "2026-05-06T10:30:00", "timestampConfidence": "high", "width": 1080, "height": 1440, "chapterId": "ch-porto" },
+    { "id": "m13", "sourceId": "src-camera", "uri": "ch3-03-bridge.jpg", "kind": "image", "capturedAt": "2026-05-06T20:15:00", "timestampConfidence": "high", "width": 2400, "height": 900, "chapterId": "ch-porto" },
+    { "id": "m14", "sourceId": "src-camera", "uri": "ch3-04-port.jpg", "kind": "image", "capturedAt": "2026-05-07T15:00:00", "timestampConfidence": "high", "width": 1600, "height": 1200, "chapterId": "ch-porto" },
+    { "id": "m15", "sourceId": "src-camera", "uri": "ch3-05-boat.mp4", "kind": "video", "capturedAt": "2026-05-07T11:00:00", "timestampConfidence": "high", "width": 1280, "height": 720, "durationSec": 20, "chapterId": "ch-porto" },
+
+    { "id": "m16", "sourceId": "src-camera", "uri": "ch4-01-terraces.jpg", "kind": "image", "capturedAt": "2026-05-08T10:00:00", "timestampConfidence": "high", "width": 1600, "height": 1200, "chapterId": "ch-douro" },
+    { "id": "m17", "sourceId": "src-camera", "uri": "ch4-02-pinhao.jpg", "kind": "image", "capturedAt": "2026-05-08T13:20:00", "timestampConfidence": "high", "width": 1080, "height": 1440, "chapterId": "ch-douro" },
+    { "id": "m18", "sourceId": "src-camera", "uri": "ch4-03-river.jpg", "kind": "image", "capturedAt": "2026-05-09T16:45:00", "timestampConfidence": "high", "width": 2400, "height": 900, "chapterId": "ch-douro" },
+    { "id": "m19", "sourceId": "src-camera", "uri": "ch4-04-sunset.jpg", "kind": "image", "capturedAt": "2026-05-10T19:50:00", "timestampConfidence": "high", "width": 1600, "height": 1200, "chapterId": "ch-douro" },
+    { "id": "m20", "sourceId": "src-camera", "uri": "ch4-05-train.mp4", "kind": "video", "capturedAt": "2026-05-09T09:15:00", "timestampConfidence": "high", "width": 1280, "height": 720, "durationSec": 12, "chapterId": "ch-douro" }
+  ],
+  "cues": [
+    { "itemId": "m01", "included": true, "order": 0, "durationSec": 4, "placement": { "mode": "fit" }, "entrance": { "type": "fade", "durationSec": 0.5 }, "animation": { "type": "none" }, "exit": { "type": "fade", "durationSec": 0.5 }, "speed": 1, "volume": 1 },
+    { "itemId": "m02", "included": true, "order": 1, "durationSec": 4, "placement": { "mode": "fit" }, "entrance": { "type": "fade", "durationSec": 0.5 }, "animation": { "type": "none" }, "exit": { "type": "fade", "durationSec": 0.5 }, "speed": 1, "volume": 1 },
+    { "itemId": "m03", "included": true, "order": 2, "durationSec": 6, "placement": { "mode": "fit" }, "entrance": { "type": "fade", "durationSec": 0.5 }, "animation": { "type": "none" }, "exit": { "type": "fade", "durationSec": 0.5 }, "speed": 1, "volume": 1 },
+    { "itemId": "m04", "included": true, "order": 3, "durationSec": 4, "placement": { "mode": "custom", "rect": { "x": 0.05, "y": 0.1, "w": 0.5, "h": 0.8 } }, "entrance": { "type": "fade", "durationSec": 0.5 }, "animation": { "type": "none" }, "exit": { "type": "fade", "durationSec": 0.5 }, "speed": 1, "volume": 1 },
+    { "itemId": "m05", "included": true, "order": 4, "inPointSec": 0, "outPointSec": 6, "placement": { "mode": "fit" }, "entrance": { "type": "fade", "durationSec": 0.5 }, "animation": { "type": "none" }, "exit": { "type": "fade", "durationSec": 0.5 }, "speed": 1, "volume": 1 },
+
+    { "itemId": "m06", "included": true, "order": 0, "durationSec": 4, "placement": { "mode": "fit" }, "entrance": { "type": "fade", "durationSec": 0.5 }, "animation": { "type": "none" }, "exit": { "type": "fade", "durationSec": 0.5 }, "speed": 1, "volume": 1 },
+    { "itemId": "m07", "included": true, "order": 1, "durationSec": 4, "placement": { "mode": "fit" }, "entrance": { "type": "fade", "durationSec": 0.5 }, "animation": { "type": "none" }, "exit": { "type": "fade", "durationSec": 0.5 }, "speed": 1, "volume": 1 },
+    { "itemId": "m10", "included": true, "order": 2, "inPointSec": 0, "outPointSec": 5, "placement": { "mode": "fit" }, "entrance": { "type": "fade", "durationSec": 0.5 }, "animation": { "type": "none" }, "exit": { "type": "fade", "durationSec": 0.5 }, "speed": 1, "volume": 1 },
+    { "itemId": "m09", "included": true, "order": 4, "durationSec": 5, "placement": { "mode": "fill" }, "entrance": { "type": "fade", "durationSec": 1 }, "animation": { "type": "none" }, "exit": { "type": "fade", "durationSec": 1 }, "speed": 1, "volume": 1 },
+
+    { "itemId": "m11", "included": true, "order": 0, "durationSec": 4, "placement": { "mode": "fit" }, "entrance": { "type": "fade", "durationSec": 0.5 }, "animation": { "type": "none" }, "exit": { "type": "fade", "durationSec": 0.5 }, "speed": 1, "volume": 1 },
+    { "itemId": "m12", "included": true, "order": 1, "durationSec": 4, "placement": { "mode": "fit" }, "entrance": { "type": "fade", "durationSec": 0.5 }, "animation": { "type": "none" }, "exit": { "type": "fade", "durationSec": 0.5 }, "speed": 1, "volume": 1 },
+    { "itemId": "m13", "included": true, "order": 2, "durationSec": 5, "placement": { "mode": "fit" }, "entrance": { "type": "fade", "durationSec": 0.5 }, "animation": { "type": "none" }, "exit": { "type": "fade", "durationSec": 0.5 }, "speed": 1, "volume": 1 },
+    { "itemId": "m15", "included": true, "order": 3, "inPointSec": 0, "outPointSec": 15, "placement": { "mode": "fit" }, "entrance": { "type": "fade", "durationSec": 0.5 }, "animation": { "type": "none" }, "exit": { "type": "fade", "durationSec": 0.5 }, "speed": 1, "volume": 1 },
+    { "itemId": "m14", "included": false, "order": 4, "durationSec": 4, "placement": { "mode": "fit" }, "entrance": { "type": "fade", "durationSec": 0.5 }, "animation": { "type": "none" }, "exit": { "type": "fade", "durationSec": 0.5 }, "speed": 1, "volume": 1 },
+
+    { "itemId": "m16", "included": true, "order": 0, "durationSec": 4, "placement": { "mode": "fit" }, "entrance": { "type": "fade", "durationSec": 0.5 }, "animation": { "type": "none" }, "exit": { "type": "fade", "durationSec": 0.5 }, "speed": 1, "volume": 1 },
+    { "itemId": "m20", "included": true, "order": 1, "inPointSec": 2, "outPointSec": 12, "placement": { "mode": "fit" }, "entrance": { "type": "fade", "durationSec": 0.5 }, "animation": { "type": "none" }, "exit": { "type": "fade", "durationSec": 0.5 }, "speed": 2, "volume": 1 },
+    { "itemId": "m17", "included": true, "order": 2, "durationSec": 4, "placement": { "mode": "fit" }, "entrance": { "type": "fade", "durationSec": 0.5 }, "animation": { "type": "none" }, "exit": { "type": "fade", "durationSec": 0.5 }, "speed": 1, "volume": 1 },
+    { "itemId": "m18", "included": true, "order": 3, "durationSec": 6, "placement": { "mode": "fit" }, "entrance": { "type": "fade", "durationSec": 0.5 }, "animation": { "type": "none" }, "exit": { "type": "fade", "durationSec": 0.5 }, "speed": 1, "volume": 1 },
+    { "itemId": "m19", "included": true, "order": 4, "durationSec": 5, "placement": { "mode": "fit" }, "entrance": { "type": "cut", "durationSec": 0 }, "animation": { "type": "none" }, "exit": { "type": "cut", "durationSec": 0 }, "speed": 1, "volume": 1 }
+  ],
+  "annotations": [],
+  "audioLanes": [
+    { "id": "lane-narration", "kind": "narration", "volume": 1, "mute": false, "ducks": [{ "laneId": "lane-music", "db": -12 }, { "laneId": "lane-clip", "db": -12 }] },
+    { "id": "lane-music", "kind": "music", "volume": 0.7, "mute": false, "ducks": [] },
+    { "id": "lane-clip", "kind": "clipSound", "volume": 1, "mute": false, "ducks": [] }
+  ],
+  "mapView": {
+    "enabled": false, "corner": "bottomRight", "size": 0.2, "shape": "rect", "style": "light",
+    "tripOverview": true, "transitionAnimation": true, "hidePreciseLocations": false
+  }
+}
