@@ -127,3 +127,21 @@ input.tz { width: 220px; }
 .itinerary-timeline .block { position: absolute; height: 24px; padding: 0 6px; font-size: 12px; text-align: left; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; background: #1f4f8a; border-color: #2c64a8; border-radius: 4px; }
 .itinerary-timeline .block.selected { background: #fff; color: #0d0f13; }
 .itinerary-timeline > p { margin: 0; padding: 18px 14px; }
+
+/* Playback map inset */
+.route-map.inset { position: absolute; height: auto; aspect-ratio: 4 / 3; min-width: 120px; border: 2px solid rgba(255,255,255,0.85); border-radius: 8px; box-shadow: 0 4px 16px rgba(0,0,0,0.5); pointer-events: none; z-index: 2; }
+.route-map.inset.circle { aspect-ratio: 1; border-radius: 50%; }
+.route-map.inset.circle .map-attribution { right: 50%; transform: translateX(50%); bottom: 6px; border-radius: 4px; }
+.route-map.inset canvas { cursor: default; }
+.route-map.inset .map-attribution { font-size: 9px; padding: 1px 4px; }
+.route-map.inset[data-corner=topLeft] { top: 3%; left: 2%; }
+.route-map.inset[data-corner=topRight] { top: 3%; right: 2%; }
+.route-map.inset[data-corner=bottomLeft] { bottom: 3%; left: 2%; }
+.route-map.inset[data-corner=bottomRight] { bottom: 3%; right: 2%; }
+.inset-settings { position: relative; }
+.inset-settings > summary { list-style: none; cursor: pointer; padding: 6px 12px; border: 1px solid var(--line); border-radius: 8px; }
+.inset-settings > summary::-webkit-details-marker { display: none; }
+.inset-settings[open] > summary { background: rgba(79,156,247,0.15); }
+.inset-panel { position: absolute; right: 0; bottom: calc(100% + 6px); z-index: 5; width: 280px; display: grid; gap: 8px; padding: 12px; background: #161a21; border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 8px 24px rgba(0,0,0,0.5); }
+.inset-panel .row { display: flex; gap: 8px; }
+.inset-panel p { margin: 0; font-size: 12px; }

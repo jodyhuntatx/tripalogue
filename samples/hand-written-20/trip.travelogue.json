@@ -102,7 +102,7 @@
     { "id": "lane-clip", "kind": "clipSound", "volume": 1, "mute": false, "ducks": [] }
   ],
   "mapView": {
-    "enabled": false, "corner": "bottomRight", "size": 0.2, "shape": "rect", "style": "light",
+    "enabled": true, "corner": "bottomRight", "size": 0.2, "shape": "rect", "style": "light",
     "tripOverview": true, "transitionAnimation": true, "hidePreciseLocations": false
   }
 }

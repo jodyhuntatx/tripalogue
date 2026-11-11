@@ -85,7 +85,7 @@ describe('operations (F-9)', () => {
       (p) => ({ ...p, chapters: [p.chapters[2], p.chapters[0], p.chapters[1], p.chapters[3]] }),
       (p) => ({ ...p, media: p.media.filter((m) => m.id !== 'm14'), cues: p.cues.filter((c) => c.itemId !== 'm14') }),
       (p) => ({ ...p, chapters: [...p.chapters, { ...p.chapters[0], id: 'ch-new', title: 'Évora' }] }),
-      (p) => ({ ...p, mapView: { ...p.mapView, enabled: true } }),
+      (p) => ({ ...p, mapView: { ...p.mapView, enabled: !p.mapView.enabled } }),
     ];
     let cur = a;
     for (const e of edits) {

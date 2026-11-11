@@ -1,12 +1,12 @@
 {
-  "date": "2026-11-11T12:49:03.959Z",
+  "date": "2026-11-11T16:35:02.515Z",
   "rate": 1,
   "browser": "153.0.8010.12",
   "timelineSec": 111,
-  "wallSec": 111.184,
-  "uploadSec": 0.485,
-  "readySec": 15.996,
-  "framesDrawn": 6664,
+  "wallSec": 111.188,
+  "uploadSec": 0.501,
+  "readySec": 16.018,
+  "framesDrawn": 6671,
   "placeholderFrames": 0,
   "checks": [
     {
@@ -42,7 +42,7 @@
     {
       "name": "media ready in time (under 2% of frames waited on loading)",
       "pass": true,
-      "detail": "0 of 6664 frames"
+      "detail": "0 of 6671 frames"
     },
     {
       "name": "draws smoothly (30 fps or better)",
@@ -78,6 +78,11 @@
       "name": "frame at 93.0 s: video-2x-m20",
       "pass": true,
       "detail": "100% of the frame lit"
+    },
+    {
+      "name": "the map inset shows the whole trip on a title card, then the chapter being played",
+      "pass": true,
+      "detail": "title: trip; m02: ch-lisbon; m09: ch-sintra"
     },
     {
       "name": "an edit autosaves and survives a reload",
