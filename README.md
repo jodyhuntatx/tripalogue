@@ -151,7 +151,8 @@ survives a reload and can be undone. Report and screenshots: `docs/exit-test/`.
 | Play 111 s of timeline at 1x | 111.2 s, all 23 segments in order, 0 of 6,669 frames waiting on media, 60 fps |
 | Frame checks (title, fit, custom rectangle, fill, trimmed clip, 2x clip) | 6 of 6 |
 | Edit → autosave → reload → undo, every change in the operation log | pass |
-| Total | 18 of 18 checks |
+| Map inset: whole trip on a title card, then the chapter being played | pass |
+| Total | 19 of 19 checks |
 
 ## Phase 1: Itinerary editor
 
@@ -169,15 +170,21 @@ keeps the same session.
 | IT-7 | Split a chapter at a time (media moves by timestamp) and merge with the next | `splitChapter`, `mergeChapters` |
 | IT-8 | Place search, or drop a pin by clicking the map | `src/server/geo.ts`, `src/web/map.ts` |
 | MV-1 | Route map: numbered pins joined in order; selecting a pin selects its chapter and the reverse | `src/web/map.ts` |
+| MV-9 | Basic playback inset: a corner map in Play that shows the whole trip on each title card, then flies in to the chapter being played; visited chapters marked, route ahead dashed; on/off, corner, size and shape under **Map** in the player controls | `src/web/inset.ts` |
 
 Moving a start past its end (or an end before its start) keeps the chapter's length, so an edit never leaves an
 invalid chapter. Numeric dates in pasted text are read month/day/year.
 
+The inset is on for new travelogues. For a travelogue made before it existed, open **Map** next to Mute in the
+Play view and tick **Show map inset**. It is preview only: per-photo locations, the animated travel
+transition, per-chapter settings and drawing it into exported video come with the full map view in Phase 5.
+
 `scripts/phase1-test.ts` scripts the G1 usability tasks in headless Chromium against a stand-in map provider:
 create a travelogue, paste six lines (one bad) and add five chapters from the preview, add three more by hand
 with place search, drop a pin on the map, split a three-day chapter, find and fix a planted overlap, undo and
-redo, reload, and play the nine title cards. Report and screenshots: `docs/phase1-test/`. Result: 16 of 16
-checks, with no browser console errors; the Phase 0 exit test still passes 18 of 18.
+redo, reload, play the nine title cards, and check the map inset (trip view on title cards, chapter view,
+moving, hiding and undo). Report and screenshots: `docs/phase1-test/`. Result: 20 of 20 checks, with no
+browser console errors. The Phase 0 exit test, now 19 checks, adds the inset following the sample's chapters.
 
 ## Layout
 
@@ -198,5 +205,5 @@ scripts/      build, sample media, exit test, Phase 1 test
   interface is ready; the file-system driver ships).
 - Exporting an archive of originals alongside the JSON file.
 - A production map provider (see Configuration), and a hosted test site.
-- The media manager, timestamp assignment, presentation editor, export to MP4, the inset map, audio lanes, and
-  live co-editing are later phases; their data already has a place in the schema.
+- The media manager, timestamp assignment, presentation editor, export to MP4, the full inset map, audio lanes,
+  and live co-editing are later phases; their data already has a place in the schema.

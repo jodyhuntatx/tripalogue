@@ -245,7 +245,7 @@ export const OUTPUT_PRESETS: Record<AspectRatio, OutputSettings> = {
 };
 
 export const DEFAULT_MAP_VIEW: MapViewSettings = {
-  enabled: false,
+  enabled: true,
   corner: 'bottomRight',
   size: 0.2,
   shape: 'rect',

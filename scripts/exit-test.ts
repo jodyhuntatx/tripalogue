@@ -20,6 +20,7 @@ import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
 import { buildTimeline, parseProject } from '../src/core/index.js';
 import { startApp } from '../src/server/app.js';
+import { geoConfigFromEnv } from '../src/server/geo.js';
 import type { OutboxMailer } from '../src/server/mailer.js';
 import type {} from '../src/web/main.js'; // window.tripalogue typings
 
@@ -42,7 +43,8 @@ mkdirSync(outDir, { recursive: true });
 for (const f of readdirSync(outDir)) if (f.endsWith('.png') || f.endsWith('.json')) await fs.rm(path.join(outDir, f));
 
 const dataDir = mkdtempSync(path.join(os.tmpdir(), 'tripalogue-exit-'));
-const app = await startApp({ dataDir, port: 0, log: () => {} });
+// No internet here: map tiles and place search off (the inset map draws its pins on a plain background).
+const app = await startApp({ dataDir, port: 0, log: () => {}, geo: geoConfigFromEnv(dataDir, { tileUrl: '', geocoderUrl: '' }) });
 const browser = await chromium.launch({ args: ['--autoplay-policy=no-user-gesture-required'] });
 const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
 const consoleErrors: string[] = [];
@@ -125,6 +127,24 @@ try {
     if (s.name.includes('portrait')) ok &&= lit.left === 0;
     check(`frame at ${s.t.toFixed(1)} s: ${s.name.slice(3)}`, ok, `${Math.round(lit.share * 100)}% of the frame lit`);
   }
+
+  // 4b. The map inset follows the story: the whole trip on a title card, the chapter while its media plays.
+  const insetAt = async (t: number) => {
+    await page.evaluate((x) => window.tripalogue!.player!.seek(x), t);
+    await page.waitForTimeout(1800); // let the inset finish its flight
+    return page.evaluate(() => {
+      const el = document.getElementById('map-inset')!;
+      const f = window.tripalogue!.inset!.map.focused;
+      return { visible: !el.hidden && el.getBoundingClientRect().width > 100, focus: f.kind === 'chapter' ? f.id : 'trip' };
+    });
+  };
+  const onTitle = await insetAt(1.5);
+  const inFirst = await insetAt(find('m02').start + 2);
+  const inLater = await insetAt(find('m09').start + 2.5);
+  await page.locator('#stage-wrap').screenshot({ path: path.join(outDir, '08b-map-inset.png') });
+  check('the map inset shows the whole trip on a title card, then the chapter being played',
+    onTitle.visible && onTitle.focus === 'trip' && inFirst.focus === find('m02').chapterId && inLater.focus === find('m09').chapterId,
+    `title: ${onTitle.focus}; m02: ${inFirst.focus}; m09: ${inLater.focus}`);
 
   // 5. Edit, autosave, reload, undo.
   await page.uncheck('li[data-item="m02"] input[type=checkbox]');

@@ -187,7 +187,7 @@ try {
     const s = m.screenPos(porto.id)!;
     return { x: s.x + 40, y: s.y };
   });
-  const box = (await page.locator('.route-map canvas').boundingBox())!;
+  const box = (await page.locator('#itinerary .route-map canvas').boundingBox())!;
   await page.mouse.click(box.x + target.x, box.y + target.y);
   await saved(page);
   doc = serverDoc(pid);
@@ -250,6 +250,42 @@ try {
   await page.evaluate(() => window.tripalogue!.player!.seek(10.5));
   await page.waitForTimeout(300);
   await page.locator('#stage').screenshot({ path: path.join(outDir, '04-title-card.png') });
+
+  // Playback map inset: on by default, follows the chapter, settings are saved and undoable.
+  const inset = () => page.evaluate(() => {
+    const el = document.getElementById('map-inset')!;
+    const m = window.tripalogue!.inset!.map;
+    const f = m.focused;
+    return { hidden: el.hidden, w: el.getBoundingClientRect().width, stageW: document.getElementById('stage-wrap')!.getBoundingClientRect().width, corner: el.dataset.corner, focus: f.kind === 'chapter' ? f.id : 'trip', zoom: m.view.zoom };
+  });
+  await page.evaluate(() => window.tripalogue!.player!.seek(10.5));
+  await page.waitForTimeout(1800);
+  let ins = await inset();
+  check('a map inset shows in Play, about a fifth of the frame wide', !ins.hidden && Math.abs(ins.w / ins.stageW - 0.2) < 0.03, `${Math.round((ins.w / ins.stageW) * 100)}% wide, ${ins.corner}`);
+  check('on a title card the inset shows the whole trip', ins.focus === 'trip');
+  await page.locator('#stage-wrap').screenshot({ path: path.join(outDir, '05-inset-trip.png') });
+  const tripZoom = ins.zoom;
+  await page.click('#inset-settings > summary');
+  await page.uncheck('#inset-overview');
+  await page.selectOption('#inset-corner', 'topLeft');
+  await saved(page);
+  const ch4 = serverDoc(pid).chapters[3];
+  await page.evaluate(() => window.tripalogue!.player!.seek(10.5));
+  await page.waitForTimeout(1800);
+  ins = await inset();
+  check('with trip overview off, the inset flies in to the current chapter and keeps its neighbours in view', ins.focus === ch4.id && ins.zoom > tripZoom && ins.corner === 'topLeft',
+    `chapter 4 (${ch4.title}) at zoom ${ins.zoom.toFixed(1)} vs trip ${tripZoom.toFixed(1)}`);
+  await page.locator('#stage-wrap').screenshot({ path: path.join(outDir, '06-inset-chapter.png') });
+  await page.uncheck('#inset-enabled');
+  await saved(page);
+  await page.waitForTimeout(300); // the player view refreshes shortly after an edit
+  const hiddenOk = (await inset()).hidden && serverDoc(pid).mapView.enabled === false;
+  await page.click('#undo');
+  await saved(page);
+  await page.waitForTimeout(300);
+  const afterUndo = await inset();
+  const undoLabel = await page.getAttribute('#undo', 'title');
+  check('the inset can be hidden, and undo brings it back', hiddenOk && !afterUndo.hidden && serverDoc(pid).mapView.enabled === true, `hidden ok ${hiddenOk}, after undo hidden ${afterUndo.hidden}, server ${serverDoc(pid).mapView.enabled}, next undo "${undoLabel}"`);
 
   check('no errors in the browser console', consoleErrors.length === 0, consoleErrors.slice(0, 3).join(' | '));
   writeFileSync(path.join(outDir, 'report.json'), JSON.stringify({ date: new Date().toISOString(), browser: browser.version(), enterTripSec: enterSec, checks }, null, 2));

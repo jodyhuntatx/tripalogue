@@ -8,13 +8,14 @@
 import { moveItem, parseProject, setIncluded, setTitle, Telemetry, type TelemetryEvent, type Travelogue } from '../core/index.js';
 import { Player, type PlayerState } from '../player/player.js';
 import { Api, ApiError, type Role, type User } from './api.js';
+import { mountInset, type InsetView } from './inset.js';
 import { mountItinerary, type ItineraryView } from './itinerary.js';
 import { ProjectSession } from './session.js';
 import { uploadAll, type UploadProgress } from './uploader.js';
 
 declare global {
   interface Window {
-    tripalogue?: { player?: Player; session?: ProjectSession; itinerary?: ItineraryView; state?: () => PlayerState | undefined; telemetry: Telemetry };
+    tripalogue?: { player?: Player; session?: ProjectSession; itinerary?: ItineraryView; inset?: InsetView; state?: () => PlayerState | undefined; telemetry: Telemetry };
   }
 }
 
@@ -250,6 +251,7 @@ async function renderProject(id: string, initialView?: View) {
       player.play();
     },
   });
+  const inset = mountInset(s, stageWrap, cfg.map);
   const playMain = h('main', { class: 'project' },
       h('section', {},
         stageWrap,
@@ -258,7 +260,7 @@ async function renderProject(id: string, initialView?: View) {
           playBtn,
           h('button', { id: 'next', 'aria-label': 'Next chapter', onclick: () => player.seekChapter(1) }, '⏭'),
           h('div', { class: 'scrub-wrap' }, scrub, marks),
-          time, muteBtn),
+          time, muteBtn, inset.settings),
         chapterLabel, meta),
       h('aside', { class: 'side card' }, tabBar, side));
   app.replaceChildren(topbar(viewTabs, titleInput, statusChip, undoBtn, redoBtn, s.mayEdit && exportLink), itinerary.el, playMain);
@@ -287,6 +289,7 @@ async function renderProject(id: string, initialView?: View) {
       const ch = player.timeline.chapters[frame.chapterIndex];
       chapterLabel.textContent = ch ? `${ch.index + 1}. ${ch.title}` : '';
       marks.querySelectorAll<HTMLElement>('.chapter-mark').forEach((el) => el.classList.toggle('current', Number(el.dataset.index) === frame.chapterIndex));
+      inset.onFrame(frame, player.timeline);
     },
     onEvent: (name, props) => telemetry.track(`player_${name}`, props ?? {}),
   });
@@ -378,6 +381,7 @@ async function renderProject(id: string, initialView?: View) {
     renderMarks();
     if (tab === 'Items' || tab === 'Upload') renderSide();
     itinerary.update();
+    inset.update(p);
   }
 
   // ---- side panel ----
@@ -499,7 +503,7 @@ async function renderProject(id: string, initialView?: View) {
   renderSide();
   update();
   setView(view);
-  window.tripalogue = { telemetry, player, session: s, itinerary, state: () => player.state };
+  window.tripalogue = { telemetry, player, session: s, itinerary, inset, state: () => player.state };
   if (params.get('autoplay') === '1') {
     player.setMuted(true);
     player.play();
@@ -509,6 +513,7 @@ async function renderProject(id: string, initialView?: View) {
     dispose: () => {
       unsub();
       itinerary.dispose();
+      inset.dispose();
       ro.disconnect();
       removeEventListener('keydown', onKey);
       removeEventListener('pagehide', onHide);
