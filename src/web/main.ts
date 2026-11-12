@@ -239,7 +239,7 @@ async function renderProject(id: string, initialView?: View) {
     h('a', { href: `#/p/${encodeURIComponent(id)}/itinerary`, 'data-view': 'itinerary', id: 'view-itinerary' }, 'Itinerary'),
     h('a', { href: `#/p/${encodeURIComponent(id)}/media`, 'data-view': 'media', id: 'view-media' }, 'Media'),
     h('a', { href: `#/p/${encodeURIComponent(id)}/play`, 'data-view': 'play', id: 'view-play' }, 'Play'));
-  const cfg = await Api.config().catch(() => ({ map: { tiles: false, search: false, attribution: '' }, media: undefined as MediaToolStatus | undefined }));
+  const cfg = await Api.config().catch(() => ({ map: { tiles: false, search: false, attribution: '' }, media: undefined as MediaToolStatus | undefined, purgeAfterDays: 30 }));
   let mediaTools: MediaToolStatus | undefined = cfg.media;
   // Process failed items again from their stored originals (all of them, or the ids given).
   const retry = async (ids?: string[]) => {
@@ -265,6 +265,7 @@ async function renderProject(id: string, initialView?: View) {
   const media = mountMedia(s, {
     projectId: id,
     map: cfg.map,
+    purgeAfterDays: cfg.purgeAfterDays ?? 30,
     play: (itemId) => {
       location.hash = `#/p/${encodeURIComponent(id)}/play`;
       const seg = player.timeline.segments.find((x) => x.kind !== 'title' && x.item.id === itemId);
@@ -564,7 +565,33 @@ async function renderProject(id: string, initialView?: View) {
           msg.textContent = (err as Error).message;
         }
       } }, h('h3', {}, 'Invite someone'), email, role, h('button', { type: 'submit', class: 'primary' }, 'Send invite'), msg) : '',
-      h('p', { class: 'muted small' }, 'Editors change the travelogue (one at a time until live co-editing arrives). Contributors upload media. Viewers watch.'));
+      h('p', { class: 'muted small' }, 'Editors change the travelogue (one at a time until live co-editing arrives). Contributors upload media. Viewers watch.'),
+      owner ? deleteProjectBox() : '');
+  }
+
+  /** The owner can delete the whole travelogue, with everything in it, after typing its title. */
+  function deleteProjectBox(): HTMLElement {
+    const title = s.state.title;
+    const confirmInput = h('input', { id: 'delete-confirm', 'aria-label': 'Type the travelogue’s title to confirm', placeholder: title, autocomplete: 'off' });
+    const go = h('button', { class: 'danger', id: 'delete-project', disabled: true }, 'Delete this travelogue');
+    const msg = h('div', { class: 'form-msg', role: 'status' });
+    confirmInput.addEventListener('input', () => { go.disabled = confirmInput.value.trim() !== title.trim(); });
+    go.addEventListener('click', async () => {
+      go.disabled = true;
+      try {
+        await Api.deleteProject(id, confirmInput.value);
+        s.abandon();
+        current?.dispose();
+        current = undefined;
+        location.hash = '#/';
+      } catch (err) {
+        msg.textContent = (err as Error).message;
+        go.disabled = false;
+      }
+    });
+    return h('details', { class: 'danger-zone', id: 'danger-zone' }, h('summary', {}, 'Delete this travelogue'),
+      h('p', { class: 'small' }, 'Deletes the travelogue for everyone: its chapters, every photo, video and audio file (originals included), its versions and its members. This cannot be undone.'),
+      h('label', { for: 'delete-confirm', class: 'small' }, `Type “${title}” to confirm`), confirmInput, go, msg);
   }
 
   async function renderVersions() {

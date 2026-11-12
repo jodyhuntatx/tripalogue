@@ -117,6 +117,7 @@ const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
 const consoleErrors: string[] = [];
 page.on('console', (m) => { if (m.type() === 'error') consoleErrors.push(m.text()); });
 page.on('pageerror', (e) => consoleErrors.push(e.stack ?? e.message));
+page.on('response', (r) => { if (r.status() === 404) consoleErrors.push(`404 ${r.request().method()} ${new URL(r.url()).pathname}`); });
 const shot = (name: string) => page.screenshot({ path: path.join(outDir, `${name}.png`), fullPage: false });
 const saved = (p: Page) => p.waitForFunction(() => window.tripalogue!.session!.unsaved === 0 && window.tripalogue!.session!.status === 'saved', null, { timeout: 10_000 });
 const byName = (name: string) => page.evaluate((n) => window.tripalogue!.session!.state.media.find((m) => m.uri.endsWith(n))!, name);
@@ -354,6 +355,45 @@ try {
   const where = (n: string) => doc.media.find((m) => m.uri.endsWith(n))!.chapterId;
   check('all fixes are saved and survive a reload', where('IMG_3001.jpg') === 'ch-porto' && where('Screenshot 2026-05-20.jpg') === 'ch-douro' && where('DSC_0102.jpg') === 'ch-sintra'
     && doc.sources.find((s) => s.id === src)!.clockOffsetSec === 3600 && !!doc.media.find((m) => m.uri === 'DSC_0102.jpg')!.location);
+
+  // ---- removing media, the Removed bin, deleting for good, deleting the travelogue ----
+  await page.waitForSelector('#media-grid .tile');
+  const total = await page.evaluate(() => window.tripalogue!.session!.state.media.length);
+  await tile('IMG_3001.jpg').click();
+  await tile('Screenshot 2026-05-20.jpg').click({ modifiers: ['Control'] });
+  await page.click('#remove-items');
+  await saved(page);
+  await settle();
+  const binCount = await page.textContent('#removed-bin summary .count');
+  check('removing items takes them out of the travelogue into the Removed bin', await page.evaluate(() => window.tripalogue!.session!.state.media.length) === total - 2 && binCount?.trim() === '2', `bin: ${binCount?.trim()}`);
+  await page.click('#removed-bin summary');
+  await tile('IMG_3001.jpg').click();
+  await page.click('#restore-items');
+  await saved(page);
+  await settle();
+  check('Put back returns an item to its chapter', await chapterOf('IMG_3001.jpg') === 'ch-porto');
+  const shotKey = (await page.evaluate(() => window.tripalogue!.session!.state.removed!.find((r) => r.item.uri.startsWith('Screenshot'))!.item.storageKey))!;
+  await page.locator('#removed-bin').screenshot({ path: path.join(outDir, '06-removed-bin.png') });
+  await tile('Screenshot 2026-05-20.jpg').click();
+  page.once('dialog', (d) => void d.accept());
+  await page.click('#purge-items');
+  await page.waitForFunction(() => !(window.tripalogue!.session!.state.removed ?? []).length, null, { timeout: 10_000 });
+  await settle();
+  const blobLeft = !!(await app.blobs.stat(shotKey));
+  const binLeft = await page.locator('#removed-bin').count();
+  check('Delete for good erases the original once nothing refers to it', !blobLeft && !binLeft, `${shotKey}: file ${blobLeft ? 'still there' : 'erased'}, bin ${binLeft ? 'still shown' : 'gone'}`);
+
+  await page.click('#view-play');
+  await page.click('.tabs button[data-tab="Members"]');
+  await page.click('#danger-zone summary');
+  const title = await page.evaluate(() => window.tripalogue!.session!.state.title);
+  const goDisabled = await page.isDisabled('#delete-project');
+  await page.fill('#delete-confirm', title);
+  await page.click('#delete-project');
+  await page.waitForFunction(() => location.hash === '#/' || location.hash === '', null, { timeout: 10_000 });
+  await page.waitForTimeout(500);
+  check('the owner deletes the travelogue after typing its title, and it is gone', goDisabled && (await page.locator(`a[href*="${pid}"]`).count()) === 0
+    && !(await fs.stat(path.join(dataDir, 'blobs', 'originals', pid)).then(() => true, () => false)));
 
   check('no errors in the browser console', consoleErrors.length === 0, consoleErrors.slice(0, 3).join(' | '));
   writeFileSync(path.join(outDir, 'report.json'), JSON.stringify({ date: new Date().toISOString(), browser: browser.version(), checks }, null, 2));

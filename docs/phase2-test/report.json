@@ -1,5 +1,5 @@
 {
-  "date": "2026-11-11T20:32:24.672Z",
+  "date": "2026-11-12T00:03:47.953Z",
   "browser": "153.0.8010.12",
   "checks": [
     {
@@ -65,7 +65,7 @@
     {
       "name": "applying it moves the slow camera’s photos to the right chapter, and nothing else",
       "pass": true,
-      "detail": "saved in 344 ms; the iPhone photo stays in Lisbon"
+      "detail": "saved in 354 ms; the iPhone photo stays in Lisbon"
     },
     {
       "name": "typing in the inspector survives unrelated updates",
@@ -139,6 +139,26 @@
     },
     {
       "name": "all fixes are saved and survive a reload",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "removing items takes them out of the travelogue into the Removed bin",
+      "pass": true,
+      "detail": "bin: 2"
+    },
+    {
+      "name": "Put back returns an item to its chapter",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "Delete for good erases the original once nothing refers to it",
+      "pass": true,
+      "detail": "originals/trv_TbNRYTzxdH3P/m_RP-SVFTg.jpg: file erased, bin gone"
+    },
+    {
+      "name": "the owner deletes the travelogue after typing its title, and it is gone",
       "pass": true,
       "detail": ""
     },

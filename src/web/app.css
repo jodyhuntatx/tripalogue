@@ -228,3 +228,16 @@ button.linkish.strong { font-weight: 600; color: var(--text); }
 .drop-zone { display: grid; gap: 4px; place-items: center; text-align: center; padding: 22px 12px; margin: 8px 0 10px; border: 2px dashed var(--line); border-radius: 10px; color: var(--text); }
 .drop-zone.over { border-color: var(--accent); background: #13233a; }
 details.skipped summary { cursor: pointer; margin-top: 6px; }
+button.danger { background: #6b1f1f; border-color: #8f2a2a; color: #fff; }
+button.danger:disabled { opacity: .45; }
+.danger-zone { margin-top: 18px; border: 1px solid #5a2626; border-radius: 10px; padding: 10px 12px; display: grid; gap: 8px; }
+.danger-zone summary { cursor: pointer; color: #f19b9b; }
+.danger-zone[open] { display: grid; gap: 8px; }
+.removed-bin { background: #15161a; border-style: dashed; }
+.removed-bin > summary { cursor: pointer; display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; list-style: none; }
+.removed-bin > summary::-webkit-details-marker { display: none; }
+.removed-bin > summary h3 { margin: 0; font-size: 15px; }
+.removed-bin[open] > summary { margin-bottom: 8px; }
+.tile.removed img { filter: grayscale(.8) brightness(.7); }
+button.danger-outline { background: none; border-color: #8f2a2a; color: #f19b9b; }
+.remove-field { border-top: 1px solid var(--line); padding-top: 10px; }

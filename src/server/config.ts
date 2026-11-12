@@ -42,6 +42,8 @@ export interface ServerConfig {
   webDir?: string;
   ffmpeg: string;
   ffprobe: string;
+  /** Days an item stays in the Removed bin before it is deleted for good (TRIPALOGUE_PURGE_AFTER_DAYS). */
+  purgeAfterDays: number;
   /** HEIC converter: auto (default), off, or a tool name (see heic.ts). */
   heicConverter: string;
   sessionDays: number;
@@ -77,6 +79,7 @@ export function loadConfig(overrides: Partial<ServerConfig> = {}): ServerConfig 
     ffmpeg: overrides.ffmpeg ?? 'ffmpeg',
     ffprobe: overrides.ffprobe ?? 'ffprobe',
     heicConverter: overrides.heicConverter ?? env.TRIPALOGUE_HEIC_CONVERTER ?? 'auto',
+    purgeAfterDays: overrides.purgeAfterDays ?? Math.max(1, Number(env.TRIPALOGUE_PURGE_AFTER_DAYS ?? 30) || 30),
     sessionDays: overrides.sessionDays ?? 30,
     geo: overrides.geo ?? geoConfigFromEnv(dataDir),
     log: overrides.log ?? ((m) => console.error(m)),

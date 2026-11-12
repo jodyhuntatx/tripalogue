@@ -192,7 +192,7 @@ export class ProjectSession {
    * keepalive, which the browser completes even after the page has unloaded.
    */
   flushOnExit(): boolean {
-    if (!this.queue.length || !this.canEdit) return false;
+    if (this.abandoned || !this.queue.length || !this.canEdit) return false;
     const ops = this.queue.flatMap((q) => q.ops);
     const label = this.queue.length === 1 ? this.queue[0].label : `${this.queue.length} edits`;
     this.queue = [];
@@ -202,7 +202,15 @@ export class ProjectSession {
   }
   private exitSent = false;
 
+  /** The project was deleted: stop everything, send nothing more (there is nothing left to save or unlock). */
+  abandon(): void {
+    this.abandoned = true;
+    for (const t of this.timers) clearInterval(t);
+  }
+  private abandoned = false;
+
   async close(): Promise<void> {
+    if (this.abandoned) return;
     this.flushOnExit();
     for (const t of this.timers) clearInterval(t);
     try {

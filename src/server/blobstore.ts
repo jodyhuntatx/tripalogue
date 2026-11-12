@@ -23,6 +23,8 @@ export interface BlobStore {
   /** A local file path holding the blob's bytes, for tools that need one. */
   localPath(key: string): Promise<string>;
   delete(key: string): Promise<void>;
+  /** Delete every blob whose key starts with this folder prefix ("derived/p1/m1/"). */
+  deletePrefix(prefix: string): Promise<void>;
 }
 
 const KEY = /^[a-z0-9][a-z0-9._-]*(\/[a-z0-9][a-z0-9._-]*)*$/i;
@@ -76,5 +78,10 @@ export class FsBlobStore implements BlobStore {
 
   async delete(key: string): Promise<void> {
     await fs.rm(this.file(key), { force: true });
+  }
+
+  async deletePrefix(prefix: string): Promise<void> {
+    if (!/^[a-z]+\/[A-Za-z0-9_-]+(\/[A-Za-z0-9_-]+)?\/$/.test(prefix)) throw new Error(`refusing to delete prefix "${prefix}"`);
+    await fs.rm(this.file(prefix.slice(0, -1)), { recursive: true, force: true });
   }
 }

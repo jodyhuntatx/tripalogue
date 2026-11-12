@@ -106,6 +106,15 @@ const MIGRATIONS: string[] = [
   );
   CREATE INDEX jobs_queued ON jobs(status, id);
   `,
+  // 2: media deleted for good. Edits that would bring one back are refused.
+  `
+  CREATE TABLE purged_media (
+    project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    media_id TEXT NOT NULL,
+    purged_at INTEGER NOT NULL,
+    PRIMARY KEY (project_id, media_id)
+  );
+  `,
 ];
 
 export class Db {

@@ -1,12 +1,12 @@
 {
-  "date": "2026-11-11T20:42:12.715Z",
+  "date": "2026-11-12T00:06:58.918Z",
   "rate": 1,
   "browser": "153.0.8010.12",
   "timelineSec": 111,
-  "wallSec": 111.214,
-  "uploadSec": 0.52,
-  "readySec": 13.553,
-  "framesDrawn": 6670,
+  "wallSec": 111.212,
+  "uploadSec": 0.499,
+  "readySec": 16.014,
+  "framesDrawn": 6654,
   "placeholderFrames": 0,
   "checks": [
     {
@@ -17,7 +17,7 @@
     {
       "name": "imports and uploads all 20 originals through the browser",
       "pass": true,
-      "detail": "10.1 MB uploaded in 0.5 s; all processed after 13.6 s"
+      "detail": "10.1 MB uploaded in 0.5 s; all processed after 16.0 s"
     },
     {
       "name": "originals are stored byte for byte",
@@ -42,7 +42,7 @@
     {
       "name": "media ready in time (under 2% of frames waited on loading)",
       "pass": true,
-      "detail": "0 of 6670 frames"
+      "detail": "0 of 6654 frames"
     },
     {
       "name": "draws smoothly (30 fps or better)",

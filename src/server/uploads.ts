@@ -54,6 +54,16 @@ export class Uploads {
     this.tmpDir = path.join(cfg.dataDir, 'uploads');
   }
 
+  /** Forget unfinished uploads (and their partial files) for a whole project, or for some of its media. */
+  async discard(projectId: string, mediaIds?: string[]): Promise<void> {
+    const rows = this.db.all<{ id: string; media_id: string }>('SELECT id, media_id FROM uploads WHERE project_id = ?', projectId)
+      .filter((r) => !mediaIds || mediaIds.includes(r.media_id));
+    for (const r of rows) {
+      await fs.rm(this.part(r.id), { force: true });
+      this.db.run('DELETE FROM uploads WHERE id = ?', r.id);
+    }
+  }
+
   private part(id: string) {
     return path.join(this.tmpDir, `${id}.part`);
   }

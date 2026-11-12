@@ -19,6 +19,7 @@ import { OutboxMailer, type Mailer } from './mailer.js';
 import { Geo } from './geo.js';
 import { Jobs } from './media.js';
 import { MediaTools } from './toolcheck.js';
+import { Deletion } from './deletion.js';
 import { LOCK_TTL_MS, Projects, type Role } from './projects.js';
 import { Uploads } from './uploads.js';
 
@@ -39,6 +40,7 @@ export interface App {
   jobs: Jobs;
   blobs: BlobStore;
   mailer: Mailer;
+  deletion: Deletion;
   server: http.Server;
   url: string;
   close(): Promise<void>;
@@ -59,6 +61,7 @@ export async function startApp(overrides: Partial<ServerConfig> = {}, deps: { ma
   const jobs = new Jobs(db, cfg, blobs, projects);
   const tools = new MediaTools(cfg); // reads cfg.ffmpeg / cfg.ffprobe / cfg.log at each check
   const uploads = new Uploads(db, cfg, blobs, projects, jobs);
+  const deletion = new Deletion(db, blobs, projects, uploads, { purgeAfterDays: cfg.purgeAfterDays, log: cfg.log });
   const geo = new Geo(cfg.geo);
   const webDir = cfg.webDir ?? defaultWebDir();
   const r = new Router();
@@ -99,6 +102,7 @@ export async function startApp(overrides: Partial<ServerConfig> = {}, deps: { ma
     google: auth.googleEnabled, telemetryEndpoint: cfg.telemetryDir ? '/api/telemetry' : null, chunkBytes: cfg.chunkBytes, maxUploadBytes: cfg.maxUploadBytes,
     map: { tiles: !!cfg.geo.tileUrl, search: !!cfg.geo.geocoderUrl, attribution: cfg.geo.attribution },
     media: await mediaStatus(),
+    purgeAfterDays: cfg.purgeAfterDays,
   }));
   // The media tools' state, checked again on request (after installing ffmpeg, say) and before every retry.
   const mediaStatus = async (fresh = false) => {
@@ -236,6 +240,20 @@ export async function startApp(overrides: Partial<ServerConfig> = {}, deps: { ma
   });
 
   // ---- processing again after a failure (the stored original is reused) ----
+  // ---- deleting for good (items already in the Removed bin; the remove itself is an ordinary, undoable edit) ----
+  r.on('POST', '/api/projects/:id/media/purge', async (c) => {
+    const { user } = member(c, 'editor');
+    const body = (await readJson(c.req)) as { mediaIds?: unknown };
+    if (!Array.isArray(body.mediaIds) || !body.mediaIds.every((x) => typeof x === 'string')) throw new HttpError(400, 'mediaIds must be a list of ids', 'invalid');
+    sendJson(c.res, 200, { deleted: await deletion.purge(c.params.id, body.mediaIds as string[], user.id) });
+  });
+  r.on('DELETE', '/api/projects/:id', async (c) => {
+    member(c, 'owner');
+    const body = (await readJson(c.req)) as { confirmTitle?: unknown };
+    await deletion.deleteProject(c.params.id, body.confirmTitle);
+    sendJson(c.res, 200, { deleted: true });
+  });
+
   r.on('POST', '/api/projects/:id/media/retry', async (c) => {
     const { user } = member(c, 'contributor');
     const body = (await readJson(c.req)) as { mediaIds?: unknown };
@@ -348,11 +366,15 @@ export async function startApp(overrides: Partial<ServerConfig> = {}, deps: { ma
   const port = typeof addr === 'object' && addr ? addr.port : cfg.port;
   if (!overrides.baseUrl && !process.env.TRIPALOGUE_BASE_URL) cfg.baseUrl = `http://${cfg.host}:${port}`;
   void tools.status(); // check ffmpeg now, so problems are in the log at startup
-  if (cfg.runWorker) jobs.start();
+  if (cfg.runWorker) {
+    jobs.start();
+    deletion.start(); // hourly: delete items whose time in the Removed bin is up
+  }
 
   return {
-    cfg, db, auth, projects, uploads, jobs, blobs, mailer, server, url: `${cfg.baseUrl}/`,
+    cfg, db, auth, projects, uploads, jobs, blobs, mailer, server, deletion, url: `${cfg.baseUrl}/`,
     async close() {
+      deletion.stop();
       jobs.stop();
       await jobs.idle();
       await new Promise<void>((r2) => { server.closeAllConnections?.(); server.close(() => r2()); });
