@@ -56,11 +56,12 @@ function formatDateRange(c: Chapter): string {
 }
 
 /** Seconds of timeline a cue occupies. */
-export function cueDuration(item: MediaItem, cue: Cue, videoMaxSec: number): number | undefined {
+export function cueDuration(item: MediaItem, cue: Cue): number | undefined {
   if (item.kind === 'image') return cue.durationSec;
   if (item.kind !== 'video') return undefined;
   const inPt = cue.inPointSec ?? 0;
-  const outPt = cue.outPointSec ?? (item.durationSec !== undefined ? Math.min(item.durationSec, inPt + videoMaxSec) : undefined);
+  // No out-point means "to the end of the clip".
+  const outPt = cue.outPointSec ?? item.durationSec;
   if (outPt === undefined) return cue.durationSec;
   return (outPt - inPt) / (cue.speed || 1);
 }
@@ -97,7 +98,7 @@ export function buildTimeline(p: Travelogue): Timeline {
         skipped.push({ itemId: item.id, reason: item.status === 'failed' ? `processing failed${item.error ? `: ${item.error}` : ''}` : `not ready yet (${item.status})` });
         continue;
       }
-      const duration = cueDuration(item, cue, p.cueProfile.videoMaxSec);
+      const duration = cueDuration(item, cue);
       if (duration === undefined || !(duration > 0)) {
         skipped.push({ itemId: item.id, reason: item.kind === 'video' ? 'video length unknown and no out-point set' : 'no duration' });
         continue;

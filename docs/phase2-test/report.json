@@ -1,5 +1,5 @@
 {
-  "date": "2026-11-12T00:03:47.953Z",
+  "date": "2026-11-12T01:45:54.223Z",
   "browser": "153.0.8010.12",
   "checks": [
     {
@@ -65,7 +65,7 @@
     {
       "name": "applying it moves the slow camera’s photos to the right chapter, and nothing else",
       "pass": true,
-      "detail": "saved in 354 ms; the iPhone photo stays in Lisbon"
+      "detail": "saved in 369 ms; the iPhone photo stays in Lisbon"
     },
     {
       "name": "typing in the inspector survives unrelated updates",
@@ -143,6 +143,21 @@
       "detail": ""
     },
     {
+      "name": "a video plays its whole length by default (PE-5)",
+      "pass": true,
+      "detail": "Plays 20.0 s (the whole video)."
+    },
+    {
+      "name": "it can be trimmed from the beginning and the end",
+      "pass": true,
+      "detail": "3–18: Plays 15.0 s of 20.0 s."
+    },
+    {
+      "name": "\"Play the whole video\" removes the trim",
+      "pass": true,
+      "detail": ""
+    },
+    {
       "name": "removing items takes them out of the travelogue into the Removed bin",
       "pass": true,
       "detail": "bin: 2"
@@ -155,7 +170,7 @@
     {
       "name": "Delete for good erases the original once nothing refers to it",
       "pass": true,
-      "detail": "originals/trv_TbNRYTzxdH3P/m_RP-SVFTg.jpg: file erased, bin gone"
+      "detail": "originals/trv_utQIIVVug2eZ/m_8qRFv9zO.jpg: file erased, bin gone"
     },
     {
       "name": "the owner deletes the travelogue after typing its title, and it is gone",

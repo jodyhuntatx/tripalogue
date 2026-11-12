@@ -105,7 +105,7 @@ try {
   const spots = [
     { name: '03-title-lisbon', t: 1.5 }, { name: '04-portrait-fit-m02', t: find('m02').start + 2 },
     { name: '05-custom-rect-m04', t: find('m04').start + 2 }, { name: '06-fill-m09', t: find('m09').start + 2.5 },
-    { name: '07-video-trimmed-m15', t: find('m15').start + 10 }, { name: '08-video-2x-m20', t: find('m20').start + 2 },
+    { name: '07-video-full-m15', t: find('m15').start + 10 }, { name: '08-video-2x-m20', t: find('m20').start + 2 },
   ];
   for (const s of spots) {
     await page.evaluate((t) => window.tripalogue!.player!.seek(t), s.t);

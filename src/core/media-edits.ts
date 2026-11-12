@@ -9,6 +9,35 @@ import { effectiveInstant, keepAssigned, reassign } from './assign.js';
 import { localToUtc } from './itinerary.js';
 import type { Id, MediaItem, Travelogue } from './schema.js';
 
+/** The shortest a trimmed video can be, in seconds. */
+export const MIN_CLIP_SEC = 0.5;
+
+const r3 = (n: number) => Math.round(n * 1000) / 1000;
+
+/**
+ * PE-5: play a video from inSec to outSec (seconds into the clip). outSec null,
+ * or at the clip's end, means "to the end", so the cue keeps following the clip's
+ * real length. Values are clamped to the clip and to MIN_CLIP_SEC.
+ */
+export function setVideoTrim(p: Travelogue, itemId: Id, inSec: number, outSec: number | null): Travelogue {
+  const m = p.media.find((x) => x.id === itemId);
+  if (!m || m.kind !== 'video' || !Number.isFinite(inSec)) return p;
+  const len = m.durationSec;
+  let a = r3(Math.max(0, inSec));
+  if (len !== undefined) a = Math.min(a, r3(Math.max(0, len - MIN_CLIP_SEC)));
+  let b: number | undefined = outSec === null || !Number.isFinite(outSec) ? undefined : r3(outSec);
+  if (b !== undefined && len !== undefined && b >= len - 0.05) b = undefined;
+  if (b !== undefined) b = r3(Math.max(b, a + MIN_CLIP_SEC));
+  return {
+    ...p,
+    cues: p.cues.map((c) => {
+      if (c.itemId !== itemId) return c;
+      const { outPointSec: _old, ...rest } = c;
+      return b === undefined ? { ...rest, inPointSec: a } : { ...rest, inPointSec: a, outPointSec: b };
+    }),
+  };
+}
+
 const zoneOf = (p: Travelogue, m: MediaItem) => (p.chapters.find((c) => c.id === m.chapterId) ?? p.chapters[0])?.timeZone ?? 'UTC';
 
 /** An item's effective instant (ms), read in its chapter's zone; NaN when it has no time. */

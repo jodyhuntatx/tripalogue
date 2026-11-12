@@ -64,7 +64,7 @@ const stills: Still[] = [
 const clips: Clip[] = [
   { file: 'ch1-05-fado.mp4', w: 1280, h: 720, sec: 6, src: 'testsrc2', hz: 440, text: 'Fado street singer', sub: 'Lisbon · video 6 s' },
   { file: 'ch2-05-forest.mp4', w: 720, h: 1280, sec: 5, src: 'gradients=c0=0x1b5e20:c1=0x8bc34a', hz: 523, text: 'Forest walk', sub: 'Sintra · portrait video 5 s' },
-  { file: 'ch3-05-boat.mp4', w: 1280, h: 720, sec: 20, src: 'mandelbrot', hz: 330, text: 'Rabelo boat ride', sub: 'Porto · 20 s clip, cut to 15 s' },
+  { file: 'ch3-05-boat.mp4', w: 1280, h: 720, sec: 20, src: 'mandelbrot', hz: 330, text: 'Rabelo boat ride', sub: 'Porto · 20 s clip, played in full' },
   { file: 'ch4-05-train.mp4', w: 1280, h: 720, sec: 12, src: 'testsrc2', hz: 392, text: 'Train along the river', sub: 'Douro · 2x speed from 2 s' },
 ];
 

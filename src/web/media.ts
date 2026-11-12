@@ -23,7 +23,7 @@
  */
 import {
   contributorOf, contributorReports, duplicateGroups, dropIntoChapter, farFromChapter, itemInstant, localToUtc, messagingApp,
-  originalsRequest, overlapItems, previewClockOffset, removeMedia, renameSource, restoreMedia, setClockOffset, setItemLocation, setSourceContributor, setUserTime, shiftUserTime,
+  originalsRequest, overlapItems, previewClockOffset, removeMedia, renameSource, restoreMedia, setClockOffset, setItemLocation, setVideoTrim, MIN_CLIP_SEC, setSourceContributor, setUserTime, shiftUserTime,
   strippedSigns, type ContributorReport, type Id, type LatLng, type MediaItem, type Travelogue,
 } from '../core/index.js';
 import { Api } from './api.js';
@@ -311,7 +311,8 @@ export function mountMedia(s: ProjectSession, ctx: { projectId: string; play: (i
     const items = p.media.filter((m) => selection.has(m.id));
     const inBin = (p.removed ?? []).filter((r) => selection.has(r.item.id));
     const key = JSON.stringify([items.map((m) => [m.id, m.userTimestamp, m.capturedAt, m.location, m.chapterId, m.sourceId, m.uri, m.status]),
-      p.chapters.map((c) => [c.id, c.title, c.timeZone, !!c.coordinates]), p.sources.map((x) => [x.id, x.clockOffsetSec, x.displayName]), s.canEdit, copiedPlace, picking]);
+      p.chapters.map((c) => [c.id, c.title, c.timeZone, !!c.coordinates]), p.sources.map((x) => [x.id, x.clockOffsetSec, x.displayName]), s.canEdit, copiedPlace, picking,
+      items.length === 1 && first0Trim(p, items[0])]);
     if (key === inspectorKey && !inBin.length) return;
     inspectorKey = key;
     if (inBin.length && !items.length) return renderBinInspector(inBin);
@@ -356,6 +357,7 @@ export function mountMedia(s: ProjectSession, ctx: { projectId: string; play: (i
             if (ms) s.edit(`Shift ${items.length === 1 ? 'item' : `${items.length} items`}`, (q) => shiftUserTime(q, ids, ms), { structural: true });
           },
         }, 'Shift'))),
+      items.length === 1 && first.kind === 'video' && trimField(p, first),
       locationField(p, items),
       p.chapters.length > 0 && h('div', { class: 'field' },
         h('label', { for: 'move-chapter' }, 'Move to chapter'),
@@ -367,6 +369,47 @@ export function mountMedia(s: ProjectSession, ctx: { projectId: string; play: (i
           items.length === 1 ? 'Remove from the travelogue' : `Remove ${items.length} items from the travelogue`),
         h('p', { class: 'muted small' }, `Removed items go to the Removed bin at the bottom, where you can put them back for ${ctx.purgeAfterDays} days.`)),
     );
+  }
+
+  /** What the trim field shows, for the inspector's rebuild key. */
+  function first0Trim(p: Travelogue, m: MediaItem) {
+    if (m.kind !== 'video') return null;
+    const c = p.cues.find((x) => x.itemId === m.id);
+    return [m.durationSec, m.assets?.proxy, c?.inPointSec, c?.outPointSec, c?.speed];
+  }
+
+  /** PE-5: a video plays in full by default; trim it from the beginning and/or the end. */
+  function trimField(p: Travelogue, m: MediaItem): HTMLElement | null {
+    const cue = p.cues.find((c) => c.itemId === m.id);
+    if (!cue) return null;
+    const len = m.durationSec;
+    const inPt = cue.inPointSec ?? 0;
+    const outPt = cue.outPointSec ?? len;
+    const editable = s.canEdit && len !== undefined;
+    const sec = (n: number | undefined) => (n === undefined ? '' : n.toFixed(1));
+    const startIn = h('input', { type: 'number', id: 'trim-start', class: 'num', min: '0', step: '0.1', max: len !== undefined ? String(len) : undefined, value: sec(inPt), disabled: !editable, 'aria-label': 'Start at (seconds)' });
+    const endIn = h('input', { type: 'number', id: 'trim-end', class: 'num', min: '0', step: '0.1', max: len !== undefined ? String(len) : undefined, value: sec(outPt), disabled: !editable, 'aria-label': 'End at (seconds)' });
+    const apply = (a: number, b: number | null, label: string) => s.edit(label, (q) => setVideoTrim(q, m.id, a, b));
+    const endVal = () => (endIn.value === '' ? null : Number(endIn.value));
+    startIn.addEventListener('change', () => apply(Number(startIn.value || 0), cue.outPointSec ?? null, 'Trim start'));
+    endIn.addEventListener('change', () => apply(cue.inPointSec ?? 0, endVal(), 'Trim end'));
+    const ready = (!m.status || m.status === 'ready') && m.assets?.proxy;
+    const video = ready ? h('video', { id: 'trim-video', src: Api.mediaUrl(ctx.projectId, m.id, 'proxy'), controls: true, preload: 'metadata', muted: true, playsinline: true, class: 'trim-video' }) as HTMLVideoElement : null;
+    if (video) video.addEventListener('loadedmetadata', () => { if (inPt > 0) video.currentTime = inPt; }, { once: true });
+    const trimmed = inPt > 0 || cue.outPointSec !== undefined;
+    const plays = len === undefined ? 'Plays in full once the video is processed.'
+      : `Plays ${((outPt! - inPt) / (cue.speed || 1)).toFixed(1)} s${trimmed ? ` of ${len.toFixed(1)} s` : ' (the whole video)'}${cue.speed && cue.speed !== 1 ? ` at ${cue.speed}× speed` : ''}.`;
+    return h('div', { class: 'field trim-field', id: 'trim-field' },
+      h('label', {}, 'Play'),
+      video,
+      h('div', { class: 'row' }, h('label', { for: 'trim-start', class: 'small' }, 'From'), startIn, h('span', { class: 'small' }, 's'),
+        h('label', { for: 'trim-end', class: 'small' }, 'to'), endIn, h('span', { class: 'small' }, 's')),
+      video && editable && h('div', { class: 'row' },
+        h('button', { id: 'trim-start-here', onclick: () => apply(video.currentTime, cue.outPointSec ?? null, 'Trim start') }, 'Start here'),
+        h('button', { id: 'trim-end-here', onclick: () => apply(cue.inPointSec ?? 0, video.currentTime, 'Trim end') }, 'End here')),
+      h('p', { class: 'muted small', id: 'trim-summary' }, plays),
+      trimmed && editable && h('button', { id: 'trim-reset', class: 'linkish', onclick: () => apply(0, null, 'Play whole video') }, 'Play the whole video'),
+      editable && h('p', { class: 'muted small' }, `Shortest: ${MIN_CLIP_SEC} s.`));
   }
 
   function renderBinInspector(entries: NonNullable<Travelogue['removed']>) {

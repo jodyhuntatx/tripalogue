@@ -241,3 +241,7 @@ button.danger:disabled { opacity: .45; }
 .tile.removed img { filter: grayscale(.8) brightness(.7); }
 button.danger-outline { background: none; border-color: #8f2a2a; color: #f19b9b; }
 .remove-field { border-top: 1px solid var(--line); padding-top: 10px; }
+
+/* PE-5 video trim in the Media inspector */
+.trim-field .trim-video { width: 100%; max-height: 220px; background: #000; border-radius: 4px; margin: 4px 0; }
+.trim-field .row { gap: 6px; align-items: center; }
