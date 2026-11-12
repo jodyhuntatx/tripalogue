@@ -208,6 +208,22 @@ export function validate(raw: unknown): ValidationIssue[] {
   });
   for (const id of mediaIds.keys()) if (!cueItems.has(id)) warn('$.cues', `media item "${id}" has no cue; defaults will be used`);
 
+  // The Removed bin: each entry an item (with an id not used elsewhere) and when it was removed.
+  if (p.removed !== undefined) {
+    if (!Array.isArray(p.removed)) err('$.removed', 'must be a list');
+    else (p.removed as unknown[]).forEach((r, i) => {
+      const path = `$.removed[${i}]`;
+      if (!isObj(r) || !isObj(r.item)) return err(path, 'must be an object with an item');
+      str(r.item, 'id', `${path}.item`);
+      str(r, 'removedAt', path);
+      const id = r.item.id;
+      if (typeof id === 'string') {
+        if (mediaIds.has(id)) err(`${path}.item.id`, `media id "${id}" is both in the travelogue and removed`);
+        mediaIds.set(id, r.item);
+      }
+    });
+  }
+
   arr('annotations');
   const laneIds = new Set<string>();
   arr('audioLanes').forEach((l, i) => {

@@ -15,3 +15,4 @@ export * from './assign.js';
 export * from './media-edits.js';
 export * from './contributors.js';
 export * from './samplehash.js';
+export * from './remove.js';

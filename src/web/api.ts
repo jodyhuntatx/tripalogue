@@ -58,8 +58,10 @@ export async function api<T = unknown>(method: string, path: string, body?: unkn
 }
 
 export const Api = {
-  config: () => api<{ google: boolean; telemetryEndpoint: string | null; chunkBytes: number; maxUploadBytes: number; map: { tiles: boolean; search: boolean; attribution: string }; media?: MediaToolStatus }>('GET', '/api/config'),
+  config: () => api<{ google: boolean; telemetryEndpoint: string | null; chunkBytes: number; maxUploadBytes: number; map: { tiles: boolean; search: boolean; attribution: string }; media?: MediaToolStatus; purgeAfterDays?: number }>('GET', '/api/config'),
   mediaTools: (recheck = false) => api<MediaToolStatus>('GET', `/api/media-tools${recheck ? '?recheck=1' : ''}`),
+  purgeMedia: (id: string, mediaIds: string[]) => api<{ deleted: string[] }>('POST', `/api/projects/${encodeURIComponent(id)}/media/purge`, { mediaIds }),
+  deleteProject: (id: string, confirmTitle: string) => api<{ deleted: boolean }>('DELETE', `/api/projects/${encodeURIComponent(id)}`, { confirmTitle }),
   retryMedia: (id: string, mediaIds?: string[]) => api<{ queued: string[]; media: MediaToolStatus }>('POST', `/api/projects/${encodeURIComponent(id)}/media/retry`, mediaIds ? { mediaIds } : {}),
   geoSearch: (q: string, lang?: string) => api<{ places: { name: string; displayName: string; lat: number; lng: number; kind?: string }[] }>('GET', `/api/geo/search?q=${encodeURIComponent(q)}${lang ? `&lang=${encodeURIComponent(lang)}` : ''}`),
   me: () => api<{ user: User | null }>('GET', '/api/me'),

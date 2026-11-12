@@ -23,7 +23,7 @@
  */
 import {
   contributorOf, contributorReports, duplicateGroups, dropIntoChapter, farFromChapter, itemInstant, localToUtc, messagingApp,
-  originalsRequest, overlapItems, previewClockOffset, renameSource, setClockOffset, setItemLocation, setSourceContributor, setUserTime, shiftUserTime,
+  originalsRequest, overlapItems, previewClockOffset, removeMedia, renameSource, restoreMedia, setClockOffset, setItemLocation, setSourceContributor, setUserTime, shiftUserTime,
   strippedSigns, type ContributorReport, type Id, type LatLng, type MediaItem, type Travelogue,
 } from '../core/index.js';
 import { Api } from './api.js';
@@ -47,7 +47,7 @@ interface Member { userId: string; name: string; email: string }
 
 const deviceZone = () => Intl.DateTimeFormat().resolvedOptions().timeZone;
 
-export function mountMedia(s: ProjectSession, ctx: { projectId: string; play: (itemId: Id) => void; map: { tiles: boolean; attribution: string } }): MediaView {
+export function mountMedia(s: ProjectSession, ctx: { projectId: string; play: (itemId: Id) => void; map: { tiles: boolean; attribution: string }; purgeAfterDays: number }): MediaView {
   let selection = new Set<Id>();
   let anchor: Id | null = null;
   let filter: Filter = 'all';
@@ -56,6 +56,7 @@ export function mountMedia(s: ProjectSession, ctx: { projectId: string; play: (i
   let focus: { label: string; ids: Set<Id> } | null = null;
   let members: Member[] = [];
   let copiedPlace: LatLng | null = null;
+  let binOpen = false;
   let picking = false;
   void Api.members(ctx.projectId).then((r) => { members = r.members; render(); }).catch(() => {});
   const memberName = (id: Id | null) => (id === null ? 'No traveler named' : members.find((m) => m.userId === id)?.name ?? 'A traveler');
@@ -134,7 +135,8 @@ export function mountMedia(s: ProjectSession, ctx: { projectId: string; play: (i
       ready && copy.length > 0 && h('span', { class: 'badge low', title: copyReason(m) }, 'copy?'),
       !ready && h('span', { class: `badge ${m.status}`, title: m.error ?? '' }, m.status ?? ''),
     ];
-    const tileEl = h('figure', { class: 'tile', 'data-id': m.id, draggable: 'true', tabindex: '0', title: name },
+    const binned = (p.removed ?? []).some((r) => r.item.id === m.id);
+    const tileEl = h('figure', { class: binned ? 'tile removed' : 'tile', 'data-id': m.id, draggable: binned ? 'false' : 'true', tabindex: '0', title: name },
       ready && m.assets?.thumb ? h('img', { src: Api.mediaUrl(ctx.projectId, m.id, 'thumb'), alt: '', loading: 'lazy', draggable: false })
         : h('div', { class: 'tile-placeholder' }, m.kind === 'audio' ? '♪' : m.kind === 'video' ? '▶' : ''),
       m.kind !== 'image' && h('span', { class: 'kind' }, m.kind === 'video' ? `▶ ${dur(m.durationSec)}` : `♪ ${dur(m.durationSec)}`),
@@ -176,12 +178,23 @@ export function mountMedia(s: ProjectSession, ctx: { projectId: string; play: (i
       sections.push(sec);
     }
     if (!p.chapters.length) sections.unshift(h('p', { class: 'banner info' }, 'Add chapters in the Itinerary view first: media is sorted into chapters by time.'));
+    // The Removed bin, last and folded: put items back, or delete them for good.
+    const binned = (p.removed ?? []).slice().sort((a, b) => (a.removedAt < b.removedAt ? 1 : -1));
+    if (binned.length) {
+      const binEl = h('details', { class: 'media-chapter removed-bin', id: 'removed-bin', ...(binOpen ? { open: true } : {}) },
+        h('summary', {}, h('h3', {}, 'Removed', h('span', { class: 'count' }, ` ${binned.length}`)),
+          h('span', { class: 'muted' }, ` Not in the travelogue. Each is deleted for good ${ctx.purgeAfterDays} days after it was removed.`)),
+        h('div', { class: 'tiles' }, ...binned.map((r) => tileFor(p, r.item))));
+      binEl.addEventListener('toggle', () => { binOpen = binEl.open; });
+      sections.push(binEl);
+    }
     grid.replaceChildren(...sections);
+    const ids = new Set([...p.media.map((m) => m.id), ...binned.map((r) => r.item.id)]);
     for (const [id, t] of tiles) {
-      if (!p.media.some((m) => m.id === id)) tiles.delete(id);
+      if (!ids.has(id)) tiles.delete(id);
       else t.el.classList.toggle('selected', selection.has(id));
     }
-    selection = new Set([...selection].filter((id) => p.media.some((m) => m.id === id)));
+    selection = new Set([...selection].filter((id) => ids.has(id)));
     renderInspector();
     renderSources();
     renderContributors();
@@ -218,6 +231,11 @@ export function mountMedia(s: ProjectSession, ctx: { projectId: string; play: (i
   });
   grid.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') setSelection([]);
+    if ((e.key === 'Delete' || e.key === 'Backspace') && selection.size && s.canEdit) {
+      e.preventDefault();
+      const live = [...selection].filter((id) => s.state.media.some((m) => m.id === id));
+      if (live.length) removeSelected(live);
+    }
     if ((e.key === 'Enter' || e.key === ' ') && (e.target as HTMLElement).classList.contains('tile')) {
       e.preventDefault();
       (e.target as HTMLElement).click();
@@ -283,13 +301,20 @@ export function mountMedia(s: ProjectSession, ctx: { projectId: string; play: (i
   let inspectorKey = '';
   let sourcesKey = '';
 
+  function removeSelected(ids: Id[]) {
+    s.edit(ids.length === 1 ? 'Remove item' : `Remove ${ids.length} items`, (q) => removeMedia(q, ids, new Date().toISOString(), s.me.id), { structural: true });
+    setSelection([]);
+  }
+
   function renderInspector() {
     const p = s.state;
     const items = p.media.filter((m) => selection.has(m.id));
+    const inBin = (p.removed ?? []).filter((r) => selection.has(r.item.id));
     const key = JSON.stringify([items.map((m) => [m.id, m.userTimestamp, m.capturedAt, m.location, m.chapterId, m.sourceId, m.uri, m.status]),
       p.chapters.map((c) => [c.id, c.title, c.timeZone, !!c.coordinates]), p.sources.map((x) => [x.id, x.clockOffsetSec, x.displayName]), s.canEdit, copiedPlace, picking]);
-    if (key === inspectorKey) return;
+    if (key === inspectorKey && !inBin.length) return;
     inspectorKey = key;
+    if (inBin.length && !items.length) return renderBinInspector(inBin);
     if (!items.length) {
       inspector.replaceChildren(h('h3', {}, 'Fix times'),
         h('p', { class: 'muted' }, 'Select items to set or shift their time, or drag them onto a chapter. Ctrl/Cmd-click adds to the selection, Shift-click selects a range.'));
@@ -337,7 +362,42 @@ export function mountMedia(s: ProjectSession, ctx: { projectId: string; play: (i
         h('div', { class: 'row' }, chapterSel, h('button', { id: 'apply-move', disabled: !editable, onclick: () => moveTo(ids, chapterSel.value) }, 'Move'))),
       anyUser && h('button', { id: 'clear-time', disabled: !editable, onclick: () => s.edit('Use camera time', (q) => setUserTime(q, ids, null), { structural: true }) }, 'Use the camera’s time again'),
       first.chapterId && items.length === 1 && h('button', { class: 'linkish', onclick: () => ctx.play(first.id) }, 'Play from here'),
+      h('div', { class: 'field remove-field' },
+        h('button', { id: 'remove-items', class: 'danger-outline', disabled: !editable, onclick: () => removeSelected(ids) },
+          items.length === 1 ? 'Remove from the travelogue' : `Remove ${items.length} items from the travelogue`),
+        h('p', { class: 'muted small' }, `Removed items go to the Removed bin at the bottom, where you can put them back for ${ctx.purgeAfterDays} days.`)),
     );
+  }
+
+  function renderBinInspector(entries: NonNullable<Travelogue['removed']>) {
+    const ids = entries.map((r) => r.item.id);
+    const editable = s.canEdit;
+    const until = (r: (typeof entries)[number]) => new Date(Date.parse(r.removedAt) + ctx.purgeAfterDays * 86_400_000)
+      .toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+    const msg = h('p', { class: 'form-msg', role: 'status' });
+    fill(inspector,
+      h('h3', {}, entries.length === 1 ? (entries[0].item.uri.split('/').pop() ?? entries[0].item.uri) : `${entries.length} removed items`),
+      h('p', { class: 'muted small' }, entries.length === 1
+        ? `Removed ${new Date(entries[0].removedAt).toLocaleString()}. Deleted for good on ${until(entries[0])} unless you put it back.`
+        : `Deleted for good from ${until(entries.reduce((a, b) => (a.removedAt < b.removedAt ? a : b)))} unless you put them back.`),
+      h('div', { class: 'row' },
+        h('button', { class: 'primary', id: 'restore-items', disabled: !editable, onclick: () => {
+          s.edit(entries.length === 1 ? 'Put back' : `Put back ${entries.length} items`, (q) => restoreMedia(q, ids), { structural: true });
+          setSelection(ids);
+        } }, 'Put back'),
+        h('button', { class: 'danger', id: 'purge-items', disabled: !editable, onclick: async () => {
+          const what = entries.length === 1 ? 'this item' : `these ${entries.length} items`;
+          if (!confirm(`Delete ${what} for good? Their original files are erased and they cannot be brought back, not even from a saved version.`)) return;
+          try {
+            await s.flush(); // the item must be in the bin on the server first
+            await Api.purgeMedia(ctx.projectId, ids);
+            setSelection([]);
+            await s.poll();
+          } catch (e) {
+            msg.textContent = (e as Error).message;
+          }
+        } }, 'Delete for good now')),
+      msg);
   }
 
   // ---------------------------------------------------------------- location (MM-9) and the media map (MV-2)

@@ -235,6 +235,18 @@ export interface Travelogue {
   annotations: Annotation[];
   audioLanes: AudioLane[];
   mapView: MapViewSettings;
+  /**
+   * The Removed bin: items taken out of the travelogue, with the cue they had, so they can be put back. They are
+   * deleted for good (and their files erased) by hand or a set number of days after removal.
+   */
+  removed?: RemovedItem[];
+}
+
+export interface RemovedItem {
+  item: MediaItem;
+  cue?: Cue;
+  removedAt: string;
+  removedBy?: Id;
 }
 
 export const DEFAULT_CUE_PROFILE: CueProfile = {

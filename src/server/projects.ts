@@ -13,8 +13,7 @@
 import { randomBytes } from 'node:crypto';
 import {
   applyOps, createProject, defaultCue, diff, isOperation, parseProject, serializeProject, spreadKeys,
-  SCHEMA_VERSION, validate, keyBetween, type Id, type MediaItem, type Operation, type Travelogue,
-} from '../core/index.js';
+  SCHEMA_VERSION, validate, keyBetween, type Id, type MediaItem, type Operation, type Travelogue, mediaIdsIn } from '../core/index.js';
 import { newId, sha256, token, type Auth, type User } from './auth.js';
 import type { ServerConfig } from './config.js';
 import type { Db } from './db.js';
@@ -160,6 +159,15 @@ export class Projects {
         throw new HttpError(409, `Could not apply change: ${(e as Error).message}`, 'conflict');
       }
       if (next.id !== projectId || next.schemaVersion !== SCHEMA_VERSION) throw new HttpError(400, 'A change may not alter the project id or schema version', 'bad_ops');
+      // Media deleted for good stays deleted: an edit that would bring one back (a stale Undo in another browser) is refused.
+      if (origin === 'client') {
+        const before = mediaIdsIn(doc);
+        const back = [...mediaIdsIn(next)].filter((id) => !before.has(id));
+        if (back.length) {
+          const purged = this.db.all<{ media_id: string }>(`SELECT media_id FROM purged_media WHERE project_id = ? AND media_id IN (${back.map(() => '?').join(',')})`, projectId, ...back);
+          if (purged.length) throw new HttpError(409, 'That change would bring back media that was deleted for good', 'purged');
+        }
+      }
       const stamps = authorId === SYSTEM_USER ? [] : attributionStamps(ops as Operation[], next, authorId);
       if (stamps.length) next = applyOps(next, stamps);
       const errors = validate(next).filter((i) => i.level === 'error');
@@ -215,13 +223,24 @@ export class Projects {
     return this.db.tx(() => {
       const { doc, rev } = this.load(projectId);
       const target = JSON.parse(v.snapshot) as Travelogue;
-      // Keep media that finished uploading after the snapshot: restoring an edit must not lose originals.
-      const keep = new Map(doc.media.map((m) => [m.id, m]));
+      // Keep what processing learned about each item since the snapshot (status, assets, metadata).
+      const now = [...doc.media, ...(doc.removed ?? []).map((r) => r.item)];
+      const keep = new Map(now.map((m) => [m.id, m]));
+      const fresh = (m: MediaItem) => (keep.get(m.id)?.status === 'ready' ? { ...m, ...pickMediaState(keep.get(m.id)!) } : m);
+      // Media the snapshot does not know (uploaded after it) is not lost: it goes to the Removed bin, from where it
+      // can be put back, and is deleted for good later like anything else removed.
+      const known = mediaIdsIn(target);
+      const binned = new Map((doc.removed ?? []).map((r) => [r.item.id, r]));
+      const at = new Date().toISOString();
+      const extra = now.filter((m) => !known.has(m.id)).map((item) => binned.get(item.id)
+        ?? { item, ...(doc.cues.find((c) => c.itemId === item.id) ? { cue: doc.cues.find((c) => c.itemId === item.id)! } : {}), removedAt: at, removedBy: user.id });
       const restored: Travelogue = {
         ...target,
         id: projectId,
-        media: target.media.map((m) => (keep.get(m.id)?.status === 'ready' ? { ...m, ...pickMediaState(keep.get(m.id)!) } : m)),
+        media: target.media.map(fresh),
+        removed: [...(target.removed ?? []).map((r) => ({ ...r, item: fresh(r.item) })), ...extra],
       };
+      if (!restored.removed!.length) delete restored.removed;
       const ops = diff(doc, restored);
       if (!ops.length) return rev;
       const out = this.commit(projectId, user.id, 'server', `Restored "${v.label}"`, ops);

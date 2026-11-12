@@ -83,6 +83,7 @@ Upload tab, or **Retry** next to an item in the Items list, to process them agai
 | `TRIPALOGUE_MAX_UPLOAD_BYTES` | 10 GB | Per-file upload limit |
 | `TRIPALOGUE_TELEMETRY_DIR` | unset | Turn on the opt-in telemetry endpoint |
 | `TRIPALOGUE_HEIC_CONVERTER` | `auto` | HEIC photo converter: `auto`, `off`, or one of `ffmpeg`, `heif-dec`, `heif-convert`, `sips`, `magick`, `convert` |
+| `TRIPALOGUE_PURGE_AFTER_DAYS` | `30` | Days removed items wait in the Removed bin before their files are erased |
 | `TRIPALOGUE_GEOCODER_URL` | Nominatim (`https://nominatim.openstreetmap.org/search`) | Place search; empty turns it off |
 | `TRIPALOGUE_TILE_URL` | `https://tile.openstreetmap.org/{z}/{x}/{y}.png` | Map tiles; empty shows a plain grid |
 | `TRIPALOGUE_TILE_ATTRIBUTION` | `© OpenStreetMap contributors` | Credit shown on the map |
@@ -249,6 +250,7 @@ Uploaded photos, videos and voice memos now land in the right chapter by themsel
 | MM-16 | The traveler behind each source, their initials on each item, and each person's items on their own | `src/web/media.ts` |
 | MM-17 | Per traveler: items without a capture time or a location, and items that look like reduced copies (stills of 2,048 px or less, 720p video, chat-app file names), with a ready-to-send note asking for the originals | `src/core/contributors.ts` |
 | MM-18 | A one-page guide to sharing originals, linked from invitations and the Upload tab | `src/web/guide-contributors.html` |
+| MM-22 | Remove items to a Removed bin, put them back, delete them for good; delete a whole travelogue | `src/core/remove.ts`, `src/server/deletion.ts` |
 | MV-2 | Media map: each located item around its chapter's pin; items far from their chapter flagged | `src/web/media.ts`, `src/web/map.ts` |
 
 **Sources are per person and camera.** Uploads are grouped by who sent them and the camera that recorded them
@@ -265,8 +267,22 @@ then has three travelers upload:
 - plus a voice memo, a folder with subfolders, and a drag-and-drop.
 
 In the Media view it then places the unassigned items, fixes the slow camera with the preview, finds Ben's
-stripped copies and drafts the note, sets locations three ways, and checks everything survives a reload. Report
-and screenshots: `docs/phase2-test/`. Result: 29 of 29 checks, with no browser console errors.
+stripped copies and drafts the note, sets locations three ways, and checks everything survives a reload. It also removes, puts back
+and deletes items for good, and deletes a whole travelogue. Report and screenshots: `docs/phase2-test/`.
+Result: 33 of 33 checks, with no browser console errors.
+
+### Removing and deleting media
+
+- **Remove:** in the Media view, select items and press **Remove** (or Delete/Backspace). They leave the
+  travelogue and wait in the **Removed** bin at the bottom of the grid. Removing is an ordinary edit: Undo brings
+  them back, and so does restoring a saved version from before.
+- **Put back:** select items in the Removed bin and press **Put back**.
+- **Delete for good:** select items in the bin and press **Delete for good now**, or leave them: an hourly sweep
+  deletes anything that has been in the bin for 30 days (`TRIPALOGUE_PURGE_AFTER_DAYS`). Deleting first takes the
+  items out of the travelogue and out of every saved version, records their ids so no edit can bring them back,
+  and only then erases the original and derived files.
+- **Delete a travelogue:** the owner can, in the Members tab, type the travelogue's title and press **Delete this
+  travelogue**. Its database rows, operation log, versions, media files and unfinished uploads are all erased.
 
 ## Layout
 
