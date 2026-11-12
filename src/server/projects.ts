@@ -279,7 +279,10 @@ export class Projects {
     await this.mailer.send({
       to: email,
       subject: `${by.name} invited you to "${doc.title}" on TripAlogue`,
-      text: `${by.name} invited you to join the travelogue "${doc.title}" as ${role === 'contributor' ? 'a contributor' : `an ${role}`}.\n\nOpen the invitation:\n\n${this.cfg.baseUrl}/api/invites/accept?token=${t}\n\nThe invitation expires in 14 days.`,
+      text: `${by.name} invited you to join the travelogue "${doc.title}" as ${role === 'contributor' ? 'a contributor' : `an ${role}`}.\n\nOpen the invitation:\n\n${this.cfg.baseUrl}/api/invites/accept?token=${t}\n\nThe invitation expires in 14 days.`
+        + (role === 'contributor' || role === 'editor' || role === 'owner'
+          ? `\n\nAdding your photos and videos? Please upload the originals, not copies from a chat app, so they land in the right part of the trip and on the map. A one-page guide:\n\n${this.cfg.baseUrl}/guide-contributors.html`
+          : ''),
     });
   }
 
@@ -317,12 +320,13 @@ export class Projects {
   // ---- media items created by uploads ----
 
   /** Add a media item (and its default cue) for a new upload; it starts in the Unassigned bin. */
-  addUploadedItem(projectId: string, user: User, fileName: string, kind: MediaItem['kind']): string {
+  addUploadedItem(projectId: string, user: User, fileName: string, kind: MediaItem['kind'], fileModifiedAt?: string): string {
     const id = `m_${randomBytes(6).toString('base64url')}`;
     this.serverChange(projectId, user.id, `Upload ${fileName}`, (doc) => {
-      let source = doc.sources.find((s) => s.type === 'upload' && s.contributorId === user.id);
+      // The person's own uploads source (not a source they imported, and not one of their per-camera sources).
+      let source = doc.sources.find((s) => s.id === `src_${user.id}`);
       const sources = source ? doc.sources : [...doc.sources, (source = { id: `src_${user.id}`, type: 'upload' as const, displayName: `${user.name}'s uploads`, clockOffsetSec: 0, contributorId: user.id })];
-      const item: MediaItem = { id, sourceId: source.id, uri: fileName, kind, chapterId: null, status: 'uploading', uploadedBy: user.id };
+      const item: MediaItem = { id, sourceId: source.id, uri: fileName, kind, chapterId: null, status: 'uploading', uploadedBy: user.id, ...(fileModifiedAt ? { fileModifiedAt } : {}) };
       const unassigned = doc.cues.filter((c) => doc.media.find((m) => m.id === c.itemId)?.chapterId === null).map((c) => c.order).sort();
       const order = unassigned.length ? keyBetween(unassigned[unassigned.length - 1], null) : spreadKeys(1)[0];
       return { ...doc, sources, media: [...doc.media, item], cues: [...doc.cues, defaultCue(item, doc.cueProfile, order)] };
@@ -332,7 +336,8 @@ export class Projects {
 }
 
 function pickMediaState(m: MediaItem): Partial<MediaItem> {
-  return { storageKey: m.storageKey, contentHash: m.contentHash, sizeBytes: m.sizeBytes, status: m.status, assets: m.assets, width: m.width, height: m.height, durationSec: m.durationSec, error: undefined };
+  return { storageKey: m.storageKey, contentHash: m.contentHash, sizeBytes: m.sizeBytes, status: m.status, assets: m.assets, width: m.width, height: m.height, durationSec: m.durationSec, error: undefined,
+    capturedAt: m.capturedAt, timestampConfidence: m.timestampConfidence, fileModifiedAt: m.fileModifiedAt };
 }
 
 /** Stamp updatedBy/updatedAt on every chapter, media item and cue an operation batch touched. */

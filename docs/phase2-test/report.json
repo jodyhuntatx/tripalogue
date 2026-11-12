@@ -1,0 +1,151 @@
+{
+  "date": "2026-11-11T20:32:24.672Z",
+  "browser": "153.0.8010.12",
+  "checks": [
+    {
+      "name": "uploaded photos are filed by their capture time with no clicks",
+      "pass": true,
+      "detail": "DSC_0103 → ch-sintra"
+    },
+    {
+      "name": "a byte-for-byte copy of a photo already in the travelogue is not uploaded again (MM-7)",
+      "pass": true,
+      "detail": "6 of 6 files · 0.5 MB of 0.5 MB · 1 already uploaded, skipped"
+    },
+    {
+      "name": "the slow camera puts its late-night photos in the wrong chapter (the planted error)",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "uploads are grouped by camera, so one camera’s clock can be fixed alone",
+      "pass": true,
+      "detail": "Sample media | jody's uploads | jody · Canon EOS R6 | jody · Apple iPhone 15 Pro"
+    },
+    {
+      "name": "with unassigned items, the project opens in the Media view",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "the Unassigned bin is listed first with its count",
+      "pass": true,
+      "detail": "32 items · 5 unassigned · 5 with uncertain times · 2 possible duplicates"
+    },
+    {
+      "name": "a file with no camera time is badged as uncertain",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "dragging an item onto a chapter gives it a time inside that chapter",
+      "pass": true,
+      "detail": "2026-05-05T17:00:00Z"
+    },
+    {
+      "name": "undo puts it back",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "setting a time by hand moves the item to its chapter",
+      "pass": true,
+      "detail": "ch-douro, 2026-05-09T09:30:00Z (10:30 Lisbon time)"
+    },
+    {
+      "name": "the copied photo and its original are flagged as duplicates",
+      "pass": true,
+      "detail": "2 tiles under Duplicates"
+    },
+    {
+      "name": "a clock offset previews how many items would change chapter before applying",
+      "pass": true,
+      "detail": "Moving times later by 1 h changes the chapter of 2 items: 2 Lisbon → Sintra."
+    },
+    {
+      "name": "applying it moves the slow camera’s photos to the right chapter, and nothing else",
+      "pass": true,
+      "detail": "saved in 344 ms; the iPhone photo stays in Lisbon"
+    },
+    {
+      "name": "typing in the inspector survives unrelated updates",
+      "pass": true,
+      "detail": "0 h 30"
+    },
+    {
+      "name": "Shift-click selects a range, and Shift moves all of them",
+      "pass": true,
+      "detail": "4 selected; DSC_0101 now 2026-05-03T23:50:00Z"
+    },
+    {
+      "name": "the contributor check finds who sent copies stripped of time and place (G2)",
+      "pass": true,
+      "detail": "Ana: Aana 3 items1 without a capture time1 without a location1 look like copiesAsk ana for originals | Ben: Bben 2 items2 without a capture time2 without a location2 look like copies (WhatsApp)Ask ben for originals"
+    },
+    {
+      "name": "a ready-to-send note asks Ben for the originals",
+      "pass": true,
+      "detail": "Thanks for adding your photos and videos to \"Portugal in Ten Days\". Of the 2 photos and videos you shared, 2 look like s"
+    },
+    {
+      "name": "a contributor’s problem items can be shown on their own",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "a photo taken far from its chapter is flagged (likely misassigned)",
+      "pass": true,
+      "detail": "AMay 2, 6:00 PM274 km"
+    },
+    {
+      "name": "a location can be set from the chapter, pasted from another item, or picked on the map (MM-9)",
+      "pass": true,
+      "detail": "{\"lat\":38.8029,\"lng\":-9.3817} / picked {\"lat\":39.96243,\"lng\":-8.46375}"
+    },
+    {
+      "name": "the media map shows a dot for every located item",
+      "pass": true,
+      "detail": "6 of 32 items have a location · 2 far from their chapter (amber). Click a dot to select its item."
+    },
+    {
+      "name": "a voice memo is filed by its recording time, with a waveform thumbnail (MM-15)",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "a source can be credited to a traveler, and items show who sent them (MM-16)",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "the contributor guide is linked from the Upload tab and served (MM-18)",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "a whole folder uploads its media (subfolders included), skipping system files, text files and files already uploaded (MM-1, MM-7)",
+      "pass": true,
+      "detail": "2 of 2 files · 0.2 MB of 0.2 MB · 1 already uploaded, skipped; IMG_9001 → ch-porto, IMG_9002 → ch-douro; uris IMG_9001.jpg, IMG_9002.jpg"
+    },
+    {
+      "name": "picking files that are already uploaded uploads nothing",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "files dropped on the Upload tab are uploaded and filed (by file date when they have no camera time)",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "all fixes are saved and survive a reload",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "no errors in the browser console",
+      "pass": true,
+      "detail": ""
+    }
+  ]
+}

@@ -91,6 +91,8 @@ export interface MediaSource {
   contributorId?: Id;
   /** Added to captured-at to correct a wrong camera clock (MM-4). */
   clockOffsetSec: number;
+  /** Uploads are grouped per person and camera ("Canon EOS R6"), since clock errors belong to a camera, not a person. */
+  camera?: string;
 }
 
 export type MediaKind = 'image' | 'video' | 'audio';
@@ -114,6 +116,8 @@ export interface MediaItem extends Attribution {
   storageKey?: string;
   /** sha256 of the original, hex. */
   contentHash?: string;
+  /** Quick fingerprint (size + samples, see samplehash.ts) used to skip files already uploaded (MM-7). */
+  sampleHash?: string;
   sizeBytes?: number;
   uploadedBy?: Id;
   status?: MediaStatus;
@@ -122,6 +126,8 @@ export interface MediaItem extends Attribution {
   error?: string;
   kind: MediaKind;
   capturedAt?: string;
+  /** The file's last-modified time as the uploader's computer reported it: the fallback capture time (low confidence). */
+  fileModifiedAt?: string;
   userTimestamp?: string;
   timestampConfidence?: TimestampConfidence;
   location?: LatLng;

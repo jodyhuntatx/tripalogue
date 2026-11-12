@@ -25,5 +25,5 @@ await esbuild.build({
   minify: false,
   logLevel: 'warning',
 });
-for (const f of ['index.html', 'app.css']) copyFileSync(path.join(root, 'src/web', f), path.join(root, 'dist/web', f));
+for (const f of ['index.html', 'app.css', 'guide-contributors.html']) copyFileSync(path.join(root, 'src/web', f), path.join(root, 'dist/web', f));
 console.log('Built dist/node, dist/server and dist/web');

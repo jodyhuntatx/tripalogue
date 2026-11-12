@@ -1,9 +1,9 @@
-# TripAlogue — Phase 1: Itinerary editor (web)
+# TripAlogue — Phase 2: Media manager (web)
 
 TripAlogue is a web application for building travelogues from a trip's itinerary, photos and videos, and
 (from Phase 7) for building them together with the people who were on the trip. This is Phase 0 of the PRD:
 the foundations every later phase plugs into, plus Phase 1: the itinerary editor
-(see [Phase 1](#phase-1-itinerary-editor)).
+(see [Phase 1](#phase-1-itinerary-editor)) and Phase 2: the media manager (see [Phase 2](#phase-2-media-manager)).
 
 **Exit criterion met:** a hand-written project with 20 media items is imported into an account, its originals
 are uploaded through the browser, and it plays end to end in the browser from cloud storage
@@ -131,9 +131,10 @@ with "could not be converted", check that line, and that `ffmpeg -decoders | gre
 
 ```sh
 npm run typecheck
-npm test            # 97 tests: model, order keys, operations, history, itinerary, geo proxy, HEIC, server API, uploads, processing, retry, auth
+npm test            # 131 tests: model, order keys, operations, history, itinerary, assignment, metadata, contributors, sample hash, geo proxy, HEIC, server API, uploads, processing, retry, auth
 npm run test:e2e    # Phase 0 browser exit test (needs Playwright's Chromium: npx playwright install chromium)
 npm run test:phase1 # Phase 1 browser test of the G1 tasks (no internet needed: it uses a stand-in map provider)
+npm run test:phase2 # Phase 2 browser test of the G2 tasks (three travelers, a slow camera, WhatsApp copies, a folder upload)
 ```
 
 ## How it works
@@ -228,17 +229,56 @@ redo, reload, play the nine title cards, and check the map inset (trip view on t
 moving, hiding and undo). Report and screenshots: `docs/phase1-test/`. Result: 20 of 20 checks, with no
 browser console errors. The Phase 0 exit test, now 23 checks, adds the inset following the sample's chapters, the hideable side panel, a HEIC upload, and recovery from a broken ffmpeg.
 
+## Phase 2: Media manager
+
+Uploaded photos, videos and voice memos now land in the right chapter by themselves, and the **Media** view
+(between Itinerary and Play) is where the sort gets fixed. A travelogue opens there while anything is unassigned.
+
+| PRD | Requirement | Where |
+| --- | --- | --- |
+| MM-1 | Upload files or whole folders: drop them on the Upload tab or pick a folder; subfolders are searched, other files left out | `src/web/uploader.ts` |
+| MM-2 | Capture time from EXIF (JPEG, HEIC) and QuickTime/MP4 tags, with the camera's UTC offset when recorded; otherwise the file's modified time, marked uncertain | `src/server/metadata.ts` |
+| MM-3 | Each item goes to the chapter whose dates contain its time, read in that chapter's time zone; gaps go to Unassigned; overlaps go to the earlier chapter and are flagged; new items slot in by time. Changing chapter dates, a camera's clock or an item's time moves items in the same undoable step | `src/core/assign.ts` |
+| MM-4 | A clock offset per camera, with a live preview of which items would change chapter | `src/core/media-edits.ts`, `src/web/media.ts` |
+| MM-5 | Set or shift the time of one or many items (spacing kept), go back to the camera's time, move to a chapter, or drag onto a chapter or an item | same |
+| MM-6 | Media grid by chapter: Unassigned first, counts, thumbnails, kind, time, and badges for uncertain times, overlaps, duplicates, copies and distance | `src/web/media.ts` |
+| MM-7 | Files already uploaded (same content) are skipped, using a quick sample hash compared in the browser before sending; resumable uploads and Retry processing as before | `src/core/samplehash.ts` |
+| MM-8 | Likely duplicates: same content, or same time and size from different sources | `src/core/media-edits.ts` |
+| MM-9 | Location from EXIF GPS or QuickTime ISO 6709; set from the chapter's place, by clicking the map, copy/paste between items, or clear | `src/core/contributors.ts` |
+| MM-15 | Audio (MP3, M4A, AAC, WAV): duration, recording time, a waveform thumbnail and a playable AAC copy; filed by time | `src/server/media.ts` |
+| MM-16 | The traveler behind each source, their initials on each item, and each person's items on their own | `src/web/media.ts` |
+| MM-17 | Per traveler: items without a capture time or a location, and items that look like reduced copies (stills of 2,048 px or less, 720p video, chat-app file names), with a ready-to-send note asking for the originals | `src/core/contributors.ts` |
+| MM-18 | A one-page guide to sharing originals, linked from invitations and the Upload tab | `src/web/guide-contributors.html` |
+| MV-2 | Media map: each located item around its chapter's pin; items far from their chapter flagged | `src/web/media.ts`, `src/web/map.ts` |
+
+**Sources are per person and camera.** Uploads are grouped by who sent them and the camera that recorded them
+(EXIF or QuickTime make and model), for example "Jody · Canon EOS R6". Clock errors belong to a camera, so a
+camera an hour slow can be corrected without moving the same person's phone photos, whose clocks keep network
+time. Files with no camera recorded go to the person's own uploads source.
+
+`scripts/phase2-test.ts` scripts the G2 tasks in headless Chromium. It imports the sample with its originals,
+then has three travelers upload:
+- the owner, with photos taken after the trip, a screenshot with no camera time, a copy of a sample photo, three
+  photos from a camera an hour slow and a phone photo;
+- Ana, with phone originals, one of them taken 274 km from its chapter;
+- Ben, with WhatsApp copies;
+- plus a voice memo, a folder with subfolders, and a drag-and-drop.
+
+In the Media view it then places the unassigned items, fixes the slow camera with the preview, finds Ben's
+stripped copies and drafts the note, sets locations three ways, and checks everything survives a reload. Report
+and screenshots: `docs/phase2-test/`. Result: 29 of 29 checks, with no browser console errors.
+
 ## Layout
 
 ```text
-src/core/     platform-neutral model: schema, validation, migrations, order keys, operations, history, autosave, timeline, render model, telemetry
-src/server/   web server: config, database, object storage, auth, projects and operation log, uploads, media jobs (with HEIC conversion and photo orientation), mailer, geo proxy
-src/web/      browser app: API client, project session (sync, autosave, lock), resumable uploader, itinerary view, route map, UI
+src/core/     platform-neutral model: schema, validation, migrations, order keys, operations, history, autosave, timeline, render model, telemetry, itinerary, assignment, media edits, contributors, sample hash
+src/server/   web server: config, database, object storage, auth, projects and operation log, uploads, media jobs (with HEIC conversion, photo orientation, capture metadata), mailer, geo proxy
+src/web/      browser app: API client, project session (sync, autosave, lock), resumable uploader, itinerary view, media view, route map, playback inset, UI
 src/player/   canvas player and media pool
 src/node/     command line (serve, worker, import, validate, info, new) and file helpers
 samples/      hand-written 20-item project (schema v1) and its synthetic media generator
 test/         unit and API tests (node:test)
-scripts/      build, sample media, exit test, Phase 1 test
+scripts/      build, sample media, exit test, Phase 1 and Phase 2 tests
 ```
 
 ## Not built yet
@@ -248,5 +288,6 @@ scripts/      build, sample media, exit test, Phase 1 test
   file-system driver ships).
 - A production map provider (see Configuration).
 - Google sign-in is built but untested against Google: it needs a Google OAuth client (see Configuration).
-- The media manager, timestamp assignment, presentation editor, export to MP4, the full inset map, audio lanes,
-  and live co-editing are later phases; their data already has a place in the schema.
+- The presentation editor (cues, order, transitions), export to MP4, the full inset map, audio lanes, Google
+  Photos and upload links, and live co-editing are later phases; their data already has a place in the schema.
+- Audio items are imported and placed, but not yet played: narration and music lanes come in a later phase.

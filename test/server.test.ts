@@ -177,6 +177,8 @@ describe('projects, operation log and edit lock (F-1, F-8, F-9)', () => {
       assert.equal((await owner.req('POST', `/api/projects/${pid}/invites`, { email, role })).status, 201);
       const mail = await outbox().latestFor(email);
       assert.match(mail!.subject, /invited you/);
+      // Anyone who may add media gets the one-page guide to sharing originals (MM-18); viewers do not.
+      assert.equal(/guide-contributors\.html/.test(mail!.text), role === 'editor', `${role}: guide link`);
       const link = new URL(/https?:\/\/\S+/.exec(mail!.text)![0]);
       const acc = await c.req('GET', link.pathname + link.search);
       assert.equal(acc.headers.get('location'), `/#/p/${pid}`);
@@ -272,6 +274,20 @@ describe('projects, operation log and edit lock (F-1, F-8, F-9)', () => {
   });
 });
 
+describe('odd request paths', () => {
+  it('answers "//", "//x" and "///api/me" instead of crashing the server', async () => {
+    for (const p of ['//', '//evil.example/x', '///api/me']) {
+      const r = await new Promise<number>((resolve, reject) => {
+        const req = http.request({ host: '127.0.0.1', port: new URL(app.url).port, path: p }, (res) => { res.resume(); resolve(res.statusCode ?? 0); });
+        req.on('error', reject);
+        req.end();
+      });
+      assert.ok(r > 0 && r < 500, `${p} → ${r}`);
+    }
+    assert.equal((await new Client('x').req('GET', '/api/me')).status, 200, 'server still up');
+  });
+});
+
 describe('uploads, processing and media links (F-4, F-7)', () => {
   const owner = new Client('uploader');
   const contributor = new Client('contrib');
@@ -291,6 +307,10 @@ describe('uploads, processing and media links (F-4, F-7)', () => {
   async function upload(c: Client, file: string, body: Record<string, unknown>) {
     const data = await fs.readFile(file);
     const created = await c.req('POST', `/api/projects/${pid}/uploads`, { fileName: path.basename(file), size: data.length, ...body });
+    assert.equal(created.status, 201, created.text);
+    return finishUpload(c, created, data);
+  }
+  async function finishUpload(c: Client, created: { status: number; text: string; json: Record<string, any> }, data: Buffer) {
     assert.equal(created.status, 201, created.text);
     const { uploadId, chunkBytes } = created.json;
     let offset = created.json.offset;
@@ -410,6 +430,94 @@ describe('uploads, processing and media links (F-4, F-7)', () => {
       app.cfg.ffprobe = good;
       await owner.req('GET', '/api/media-tools?recheck=1');
     }
+  });
+
+  const ff = (args: string[]) => new Promise<void>((resolve, reject) => import('node:child_process').then(({ execFile }) =>
+    execFile('ffmpeg', ['-v', 'error', '-y', ...args], (e) => (e ? reject(e) : resolve()))));
+  const itemOf = async (mediaId: string) => (await owner.req('GET', `/api/projects/${pid}`)).json.project.media.find((m: { id: string }) => m.id === mediaId) as Record<string, any>;
+
+  it('reads capture time and GPS from a photo and files it in the right chapter (MM-2, MM-3, MM-9)', async () => {
+    const plain = path.join(tmp, 'plain-sintra.jpg');
+    await ff(['-f', 'lavfi', '-i', 'color=c=green:s=64x48', '-frames:v', '1', plain]);
+    const file = path.join(tmp, 'IMG_1001.jpg');
+    await fs.writeFile(file, withExif(await fs.readFile(plain), exifTiff('2026:05:04 15:10:00', 1, { offset: '+01:00', gps: { lat: 38.7876, lng: -9.3906 }, make: 'Apple', model: 'iPhone 15 Pro' })));
+    const { mediaId } = await upload(owner, file, { lastModified: Date.UTC(2026, 9, 1) });
+    await app.jobs.idle();
+    const item = await itemOf(mediaId);
+    assert.equal(item.capturedAt, '2026-05-04T15:10:00+01:00');
+    assert.equal(item.timestampConfidence, 'high');
+    assert.equal(item.chapterId, 'ch-sintra', 'Sintra is 4 May');
+    assert.ok(Math.abs(item.location.lat - 38.7876) < 1e-4 && Math.abs(item.location.lng + 9.3906) < 1e-4);
+    const src = (await owner.req('GET', `/api/projects/${pid}`)).json.project.sources.find((x: { id: string }) => x.id === item.sourceId);
+    assert.equal(src.camera, 'Apple iPhone 15 Pro', 'grouped by camera');
+    assert.match(src.displayName, /Apple iPhone 15 Pro/);
+  });
+
+  it('falls back to the file’s modified time, marked low confidence, when a file has no capture time', async () => {
+    const file = path.join(tmp, 'screenshot.jpg');
+    await ff(['-f', 'lavfi', '-i', 'color=c=gray:s=64x48', '-frames:v', '1', file]);
+    const { mediaId } = await upload(owner, file, { lastModified: Date.parse('2026-05-06T11:00:00Z') });
+    await app.jobs.idle();
+    const item = await itemOf(mediaId);
+    assert.equal(item.capturedAt, '2026-05-06T11:00:00.000Z');
+    assert.equal(item.timestampConfidence, 'low');
+    assert.equal(item.chapterId, 'ch-porto');
+  });
+
+  it('reads a video’s QuickTime creation time and location', async () => {
+    const file = path.join(tmp, 'VID_2001.mp4');
+    await ff(['-f', 'lavfi', '-i', 'testsrc2=s=160x120:d=1', '-c:v', 'libx264', '-pix_fmt', 'yuv420p',
+      '-metadata', 'creation_time=2026-05-09T09:30:00Z', '-metadata', 'location=+41.1906-007.5458/', file]);
+    const { mediaId } = await upload(owner, file, {});
+    await app.jobs.idle();
+    const item = await itemOf(mediaId);
+    assert.equal(item.capturedAt, '2026-05-09T09:30:00Z');
+    assert.equal(item.chapterId, 'ch-douro');
+    assert.deepEqual(item.location, { lat: 41.1906, lng: -7.5458 });
+  });
+
+  it('imports a voice memo: duration, recording time, waveform thumbnail, playable copy, and its chapter (MM-15)', async () => {
+    const file = path.join(tmp, 'Memo 2026-05-06.m4a');
+    await ff(['-f', 'lavfi', '-i', 'sine=frequency=330:duration=4', '-c:a', 'aac', '-metadata', 'creation_time=2026-05-06T19:15:00Z', file]);
+    const { mediaId } = await upload(owner, file, {});
+    await app.jobs.idle();
+    const item = await itemOf(mediaId);
+    assert.equal(item.kind, 'audio');
+    assert.equal(item.status, 'ready', item.error);
+    assert.ok(Math.abs(item.durationSec - 4) < 0.2, String(item.durationSec));
+    assert.equal(item.capturedAt, '2026-05-06T19:15:00Z');
+    assert.equal(item.chapterId, 'ch-porto');
+    assert.match(item.assets.thumb, /thumb\.jpg$/);
+    assert.match(item.assets.proxy, /proxy\.m4a$/);
+    const wave = await look(await app.blobs.localPath(item.assets.thumb), 2, 2);
+    assert.deepEqual([wave.w, wave.h], [480, 160], 'a waveform picture');
+  });
+
+  it('tells the browser which files are already uploaded, by size and sample hash (MM-7)', async () => {
+    const { sampleHashOfFile } = await import('../src/server/samplehash.js');
+    const have = path.join(SAMPLE_DIR, 'media/ch1-04-pasteis.jpg'); // uploaded earlier in this suite
+    const other = path.join(SAMPLE_DIR, 'media/ch4-03-river.jpg'); // not uploaded
+    const files = await Promise.all([have, other].map(async (f) => ({ size: (await fs.stat(f)).size, sampleHash: await sampleHashOfFile(f) })));
+    const r = await contributor.req('POST', `/api/projects/${pid}/uploads/check`, { files });
+    assert.equal(r.status, 200, r.text);
+    assert.deepEqual(r.json.known.map((k: { index: number; mediaId: string }) => [k.index, k.mediaId]), [[0, 'm04']]);
+    // An original stored before sample hashes existed is fingerprinted on first comparison.
+    const before = app.projects.load(pid).doc.media.find((m) => m.id === 'm04')!;
+    app.projects.serverChange(pid, 'system', 'drop sample hash', (d) => ({ ...d, media: d.media.map((m) => (m.id === 'm04' ? { ...m, sampleHash: undefined } : m)) }));
+    assert.deepEqual((await owner.req('POST', `/api/projects/${pid}/uploads/check`, { files })).json.known.map((k: { index: number }) => k.index), [0]);
+    assert.ok(before.sampleHash && /^[0-9a-f]{64}$/.test(before.sampleHash), 'stored at upload');
+    assert.equal((await outsider.req('POST', `/api/projects/${pid}/uploads/check`, { files })).status, 404);
+    assert.equal((await owner.req('POST', `/api/projects/${pid}/uploads/check`, { files: 'nope' })).status, 400);
+  });
+
+  it('leaves an item with no time at all in Unassigned', async () => {
+    const file = path.join(tmp, 'mystery.jpg');
+    await ff(['-f', 'lavfi', '-i', 'color=c=white:s=64x48', '-frames:v', '1', file]);
+    const { mediaId } = await upload(owner, file, {});
+    await app.jobs.idle();
+    const item = await itemOf(mediaId);
+    assert.equal(item.capturedAt, undefined);
+    assert.equal(item.chapterId, null);
   });
 
   it('lets a contributor add new media (to Unassigned), but not edit the travelogue', async () => {

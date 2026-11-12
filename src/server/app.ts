@@ -224,6 +224,11 @@ export async function startApp(overrides: Partial<ServerConfig> = {}, deps: { ma
     const { user } = member(c, 'contributor');
     sendJson(c.res, 201, await uploads.create(c.params.id, user, await readJson(c.req)));
   });
+  r.on('POST', '/api/projects/:id/uploads/check', async (c) => {
+    member(c, 'contributor');
+    const body = (await readJson(c.req)) as { files?: unknown };
+    sendJson(c.res, 200, await uploads.check(c.params.id, body.files));
+  });
   r.on('GET', '/api/uploads/:uid', (c) => sendJson(c.res, 200, uploads.status(c.params.uid, me(c))));
   r.on('PUT', '/api/uploads/:uid', async (c) => {
     const user = me(c);
@@ -264,7 +269,14 @@ export async function startApp(overrides: Partial<ServerConfig> = {}, deps: { ma
 
   const server = http.createServer(async (rawReq, res) => {
     const req = rawReq as Req;
-    const url = new URL(req.url ?? '/', 'http://local');
+    // "//x" would parse as a host name (and "//" not at all): collapse leading slashes; refuse anything still unparseable.
+    let url: URL;
+    try {
+      url = new URL((req.url ?? '/').replace(/^\/{2,}/, '/'), 'http://local');
+    } catch {
+      res.writeHead(400, { 'content-type': 'text/plain' }).end('Bad request');
+      return;
+    }
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('Referrer-Policy', 'same-origin');
     try {

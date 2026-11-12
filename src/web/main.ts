@@ -5,33 +5,22 @@
  *
  * Routes: #/signin · #/projects · #/p/<projectId>
  */
-import { moveItem, parseProject, setIncluded, setTitle, Telemetry, type TelemetryEvent, type Travelogue } from '../core/index.js';
+import { effectiveInstant, moveItem, parseProject, setIncluded, setTitle, Telemetry, type TelemetryEvent, type Travelogue } from '../core/index.js';
 import { Player, type PlayerState } from '../player/player.js';
 import { Api, ApiError, type MediaToolStatus, type Role, type User } from './api.js';
 import { mountInset, type InsetView } from './inset.js';
 import { mountItinerary, type ItineraryView } from './itinerary.js';
+import { mountMedia, type MediaView } from './media.js';
 import { ProjectSession } from './session.js';
-import { uploadAll, type UploadProgress } from './uploader.js';
+import { filesFromDrop, mediaFiles, uploadAll, type UploadProgress } from './uploader.js';
+import { fill, h, type Child } from './dom.js';
 
 declare global {
   interface Window {
-    tripalogue?: { player?: Player; session?: ProjectSession; itinerary?: ItineraryView; inset?: InsetView; state?: () => PlayerState | undefined; telemetry: Telemetry };
+    tripalogue?: { player?: Player; session?: ProjectSession; itinerary?: ItineraryView; media?: MediaView; inset?: InsetView; state?: () => PlayerState | undefined; telemetry: Telemetry };
   }
 }
 
-type Child = Node | string | false | null | undefined;
-function h<K extends keyof HTMLElementTagNameMap>(tag: K, attrs: Record<string, unknown> = {}, ...children: Child[]): HTMLElementTagNameMap[K] {
-  const el = document.createElement(tag);
-  for (const [k, v] of Object.entries(attrs)) {
-    if (v === undefined || v === false || v === null) continue;
-    if (k.startsWith('on') && typeof v === 'function') el.addEventListener(k.slice(2), v as EventListener);
-    else if (k === 'class') el.className = String(v);
-    else if (k in el && typeof v !== 'string') (el as unknown as Record<string, unknown>)[k] = v;
-    else el.setAttribute(k, v === true ? '' : String(v));
-  }
-  for (const c of children) if (c !== false && c !== null && c !== undefined) el.append(c);
-  return el;
-}
 
 const app = document.getElementById('app')!;
 const params = new URLSearchParams(location.search);
@@ -45,8 +34,8 @@ const ago = (t: number) => {
 const telemetry = new Telemetry();
 window.tripalogue = { telemetry };
 let me: User | undefined;
-type View = 'itinerary' | 'play';
-let current: { id: string; session: ProjectSession; player: Player; setView: (v: View) => void; dispose: () => void } | undefined;
+type View = 'itinerary' | 'media' | 'play';
+let current: { id: string; session: ProjectSession; player: Player; setView: (v: View) => void; view: () => View; dispose: () => void } | undefined;
 
 function setTelemetry(endpoint: string | null) {
   if (params.get('telemetry') !== '1' || !endpoint) return;
@@ -67,9 +56,10 @@ function banner(text: string, kind: 'info' | 'error' = 'info') {
 
 async function route() {
   const hash = location.hash || '#/projects';
-  const pm = /^#\/p\/([^/?]+)(?:\/(itinerary|play))?/.exec(hash);
+  const pm = /^#\/p\/([^/?]+)(?:\/(itinerary|media|play))?/.exec(hash);
   // Switching views inside the open project keeps the session (and its edit lock) alive.
-  if (current && pm && decodeURIComponent(pm[1]) === current.id) return current.setView((pm[2] as View) ?? 'play');
+  // Same project: switch to the view in the link, or stay on the current one when the link names none.
+  if (current && pm && decodeURIComponent(pm[1]) === current.id) return current.setView((pm[2] as View | undefined) ?? current.view());
   if (current) {
     current.dispose();
     current = undefined;
@@ -198,10 +188,15 @@ function renderProgress(el: HTMLElement, all: UploadProgress[]) {
   const total = all.reduce((a, p) => a + p.total, 0);
   const sent = all.reduce((a, p) => a + p.sent, 0);
   const done = all.filter((p) => p.state === 'done').length;
-  el.replaceChildren(
-    h('div', { class: 'muted', id: 'upload-summary' }, `${done} of ${all.length} files · ${mb(sent)} of ${mb(total)}`),
+  const skipped = all.filter((p) => p.state === 'skipped');
+  const checking = all.some((p) => p.state === 'checking');
+  fill(el,
+    h('div', { class: 'muted', id: 'upload-summary' }, checking ? `Checking ${all.length} files against what is already uploaded…`
+      : `${done} of ${all.length - skipped.length} files · ${mb(sent)} of ${mb(total)}${skipped.length ? ` · ${skipped.length} already uploaded, skipped` : ''}`),
     h('progress', { max: total || 1, value: sent }),
     ...all.filter((p) => p.state === 'failed' || p.state === 'retrying').map((p) => h('div', { class: p.state === 'failed' ? 'error' : 'muted' }, `${p.file.name}: ${p.state === 'failed' ? p.error : 'retrying…'}`)),
+    skipped.length > 0 && h('details', { class: 'skipped' }, h('summary', { class: 'muted small' }, `Skipped ${skipped.length} file${skipped.length === 1 ? '' : 's'} already in this travelogue`),
+      h('ul', { class: 'pending' }, ...skipped.map((p) => h('li', { class: 'muted small' }, `${p.file.name}: ${p.error}`)))),
   );
 }
 
@@ -237,9 +232,12 @@ async function renderProject(id: string, initialView?: View) {
   titleInput.addEventListener('input', () => s.edit('Rename travelogue', (p) => setTitle(p, titleInput.value), { coalesceKey: 'title' }));
   const exportLink = h('a', { class: 'button', href: `/api/projects/${encodeURIComponent(id)}/export`, download: '' }, 'Export file');
 
-  let view: View = initialView ?? (s.state.chapters.length === 0 || s.state.media.length === 0 ? 'itinerary' : 'play');
+  // Start where the work is: chapters first, then sorting media (while anything is unassigned), then watching.
+  let view: View = initialView ?? (s.state.chapters.length === 0 || s.state.media.length === 0 ? 'itinerary'
+    : s.state.media.some((m) => m.chapterId === null) ? 'media' : 'play');
   const viewTabs = h('nav', { class: 'view-tabs', 'aria-label': 'Views' },
     h('a', { href: `#/p/${encodeURIComponent(id)}/itinerary`, 'data-view': 'itinerary', id: 'view-itinerary' }, 'Itinerary'),
+    h('a', { href: `#/p/${encodeURIComponent(id)}/media`, 'data-view': 'media', id: 'view-media' }, 'Media'),
     h('a', { href: `#/p/${encodeURIComponent(id)}/play`, 'data-view': 'play', id: 'view-play' }, 'Play'));
   const cfg = await Api.config().catch(() => ({ map: { tiles: false, search: false, attribution: '' }, media: undefined as MediaToolStatus | undefined }));
   let mediaTools: MediaToolStatus | undefined = cfg.media;
@@ -264,6 +262,16 @@ async function renderProject(id: string, initialView?: View) {
     },
   });
   const inset = mountInset(s, stageWrap, cfg.map);
+  const media = mountMedia(s, {
+    projectId: id,
+    map: cfg.map,
+    play: (itemId) => {
+      location.hash = `#/p/${encodeURIComponent(id)}/play`;
+      const seg = player.timeline.segments.find((x) => x.kind !== 'title' && x.item.id === itemId);
+      player.seek(seg?.start ?? 0);
+      player.play();
+    },
+  });
   const playMain = h('main', { class: 'project' },
       h('section', {},
         stageWrap,
@@ -291,11 +299,13 @@ async function renderProject(id: string, initialView?: View) {
   try { startCollapsed = localStorage.getItem(PANEL_KEY) === '1'; } catch { /* default: shown */ }
   setPanel(startCollapsed, false);
   playMain.querySelector('.controls')!.append(panelBtn);
-  app.replaceChildren(topbar(viewTabs, titleInput, statusChip, undoBtn, redoBtn, s.mayEdit && exportLink), itinerary.el, playMain);
+  app.replaceChildren(topbar(viewTabs, titleInput, statusChip, undoBtn, redoBtn, s.mayEdit && exportLink), itinerary.el, media.el, playMain);
 
   function setView(v: View) {
     view = v;
     itinerary.el.hidden = v !== 'itinerary';
+    media.el.hidden = v !== 'media';
+    if (v === 'media') media.update();
     playMain.hidden = v !== 'play';
     viewTabs.querySelectorAll<HTMLElement>('a').forEach((a) => (a.dataset.view === v ? a.setAttribute('aria-current', 'page') : a.removeAttribute('aria-current')));
     if (v !== 'play') player.pause();
@@ -412,6 +422,7 @@ async function renderProject(id: string, initialView?: View) {
     renderMarks();
     if (tab === 'Items' || tab === 'Upload') renderSide();
     itinerary.update();
+    if (view === 'media') media.update();
     inset.update(p);
   }
 
@@ -427,6 +438,15 @@ async function renderProject(id: string, initialView?: View) {
     return void renderVersions();
   }
 
+  /** An item's time as the trip saw it: local time in its chapter's zone (or the first chapter's for Unassigned). */
+  function itemTime(p: Travelogue, m: Travelogue['media'][number]): string {
+    const ch = p.chapters.find((c) => c.id === m.chapterId) ?? p.chapters[0];
+    const tz = ch?.timeZone ?? Intl.DateTimeFormat().resolvedOptions().timeZone;
+    const t = effectiveInstant(m, p.sources.find((x) => x.id === m.sourceId), tz);
+    if (Number.isNaN(t)) return '';
+    return new Intl.DateTimeFormat(undefined, { timeZone: tz, month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }).format(t);
+  }
+
   function renderItems() {
     const p = s.state;
     const cueOf = new Map(p.cues.map((c) => [c.itemId, c]));
@@ -436,12 +456,14 @@ async function renderProject(id: string, initialView?: View) {
     ].filter((g) => g.items.length);
     side.replaceChildren(...groups.map((g) => {
       const sorted = g.items.slice().sort((a, b) => ((cueOf.get(a.id)?.order ?? '~') < (cueOf.get(b.id)?.order ?? '~') ? -1 : 1));
-      return h('div', { class: 'group' }, h('h3', {}, g.title), h('ul', { class: 'items' }, ...sorted.map((m, i) => {
+      return h('div', { class: 'group' }, h('h3', {}, g.title, h('span', { class: 'count' }, ` ${g.items.length}`)), h('ul', { class: 'items' }, ...sorted.map((m, i) => {
         const cue = cueOf.get(m.id);
         const ready = !m.status || m.status === 'ready';
         return h('li', { 'data-item': m.id, class: cue?.included === false ? 'excluded' : '' },
           ready && m.assets?.thumb ? h('img', { src: Api.mediaUrl(id, m.id, 'thumb'), alt: '', loading: 'lazy' }) : h('span', { class: 'thumb-placeholder' }),
-          h('span', { class: 'name', title: m.uri }, m.uri.split('/').pop() ?? m.uri),
+          h('span', { class: 'name', title: m.uri }, m.uri.split('/').pop() ?? m.uri,
+            itemTime(p, m) && h('span', { class: 'when' }, itemTime(p, m))),
+          m.timestampConfidence === 'low' && !m.userTimestamp && h('span', { class: 'badge low', title: 'Time taken from the file date, not the camera: it may be wrong' }, 'time?'),
           !ready && h('span', { class: `badge ${m.status}`, title: m.status === 'failed' ? m.error ?? '' : '' }, m.status ?? ''),
           m.status === 'failed' && m.storageKey && s.role !== 'viewer' && h('button', { class: 'retry', 'aria-label': `Retry processing ${m.uri}`, title: m.error ?? '', onclick: () => void retry([m.id]) }, 'Retry'),
           ready && m.assets?.jpeg && h('a', { class: 'badge jpg', href: Api.mediaUrl(id, m.id, 'jpeg'), download: `${(m.uri.split('/').pop() ?? 'photo').replace(/\.[^.]+$/, '')}.jpg`,
@@ -452,6 +474,20 @@ async function renderProject(id: string, initialView?: View) {
           s.canEdit && cue && h('button', { class: 'icon', 'aria-label': `Move ${m.uri} down`, disabled: i === sorted.length - 1, onclick: () => s.edit('Move item', (q) => moveItem(q, m.id, i + 1)) }, '↓'));
       })));
     }));
+  }
+
+  /** MM-1: drop files or whole folders to upload them. */
+  function dropZone(start: (files: File[]) => Promise<void>): HTMLElement {
+    const zone = h('div', { class: 'drop-zone', id: 'drop-zone', tabindex: '0' }, h('strong', {}, 'Drop photos, videos or whole folders here'),
+      h('span', { class: 'muted small' }, 'Folders are searched for media; other files are left out.'));
+    zone.addEventListener('dragover', (e) => { if (e.dataTransfer?.types.includes('Files')) { e.preventDefault(); zone.classList.add('over'); } });
+    zone.addEventListener('dragleave', () => zone.classList.remove('over'));
+    zone.addEventListener('drop', async (e) => {
+      e.preventDefault();
+      zone.classList.remove('over');
+      if (e.dataTransfer) await start(await filesFromDrop(e.dataTransfer));
+    });
+    return zone;
   }
 
   function renderUpload() {
@@ -472,9 +508,12 @@ async function renderProject(id: string, initialView?: View) {
         h('ul', { class: 'pending' }, ...failedProcessing.slice(0, 50).map((m) => h('li', { class: 'muted' }, `${m.uri.split('/').pop()}${m.error ? ` · ${m.error}` : ''}`))),
         mayUpload && h('button', { class: 'primary', id: 'retry-failed', onclick: () => void retry() }, `Retry processing (${failedProcessing.length})`))
       : null;
-    const input = h('input', { type: 'file', multiple: true, accept: 'image/*,video/*,audio/*', id: 'upload-input', 'aria-label': 'Choose photos and videos' });
-    const start = async () => {
-      const files = [...(input.files ?? [])];
+    const input = h('input', { type: 'file', multiple: true, accept: 'image/*,video/*,audio/*,.heic,.heif', id: 'upload-input', 'aria-label': 'Choose photos and videos' });
+    const folder = h('input', { type: 'file', multiple: true, id: 'upload-folder', 'aria-label': 'Choose a folder', hidden: true });
+    folder.setAttribute('webkitdirectory', '');
+    folder.addEventListener('change', () => void start(mediaFiles(folder.files ?? [])));
+    const start = async (picked?: File[]) => {
+      const files = picked ?? [...(input.files ?? [])];
       if (!files.length) return;
       const byName = new Map(pending.map((m) => [m.uri.split('/').pop()!, m.id]));
       const jobs = files.map((f) => ({ file: f, mediaId: byName.get(f.name) }));
@@ -488,9 +527,11 @@ async function renderProject(id: string, initialView?: View) {
         ? h('div', {},
           h('p', { class: 'muted' }, pending.length
             ? `${pending.length} item(s) are waiting for their original. Choose the matching files to finish the upload, or add new photos and videos (they go to Unassigned).`
-            : 'Add photos and videos. Originals upload unaltered, so capture time and location are kept. New items go to Unassigned.'),
-          input,
-          h('button', { class: 'primary', id: 'upload-start', onclick: () => void start() }, 'Upload'),
+            : 'Add photos and videos. Originals upload unaltered, so capture time and location are kept. Each item goes to the chapter its time falls in.'),
+          h('p', { class: 'small' }, h('a', { href: '/guide-contributors.html', target: '_blank', rel: 'noopener', id: 'guide-link' }, 'How to share originals from a phone or camera')),
+          dropZone(start),
+          h('div', { class: 'row' }, input, h('button', { class: 'primary', id: 'upload-start', onclick: () => void start() }, 'Upload')),
+          h('div', { class: 'row' }, folder, h('button', { id: 'upload-folder-btn', onclick: () => folder.click() }, 'Upload a whole folder…')),
           uploadProgress,
           pending.length ? h('ul', { class: 'pending' }, ...pending.slice(0, 50).map((m) => h('li', { class: 'muted' }, `${m.uri.split('/').pop()} · ${m.status}${m.error ? ` · ${m.error}` : ''}`))) : null)
         : h('p', { class: 'muted' }, 'Viewers cannot upload media.'));
@@ -553,16 +594,17 @@ async function renderProject(id: string, initialView?: View) {
   renderSide();
   update();
   setView(view);
-  window.tripalogue = { telemetry, player, session: s, itinerary, inset, state: () => player.state };
+  window.tripalogue = { telemetry, player, session: s, itinerary, media, inset, state: () => player.state };
   if (params.get('autoplay') === '1') {
     player.setMuted(true);
     player.play();
   }
   current = {
-    id, session: s, player, setView,
+    id, session: s, player, setView, view: () => view,
     dispose: () => {
       unsub();
       itinerary.dispose();
+      media.dispose();
       inset.dispose();
       ro.disconnect();
       removeEventListener('keydown', onKey);

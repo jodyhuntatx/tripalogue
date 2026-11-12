@@ -222,7 +222,9 @@ try {
   const goodProbe = app.cfg.ffprobe;
   app.cfg.ffprobe = path.join(dataDir, 'no-such-ffprobe');
   const broken = path.join(dataDir, 'IMG_0500.jpg');
-  await fs.copyFile(path.join(sampleDir, 'media/ch2-01-pena.jpg'), broken);
+  // A new photo (a copy of a sample photo would now be recognised as already uploaded and skipped).
+  await new Promise<void>((resolve, reject) => import('node:child_process').then(({ execFile }) =>
+    execFile('ffmpeg', ['-v', 'error', '-y', '-f', 'lavfi', '-i', 'color=c=olive:s=640x480', '-frames:v', '1', broken], (e) => (e ? reject(e) : resolve()))));
   await page.click('.tabs button[data-tab="Upload"]');
   await page.setInputFiles('#upload-input', broken);
   await page.click('#upload-start');
