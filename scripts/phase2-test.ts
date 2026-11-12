@@ -356,6 +356,30 @@ try {
   check('all fixes are saved and survive a reload', where('IMG_3001.jpg') === 'ch-porto' && where('Screenshot 2026-05-20.jpg') === 'ch-douro' && where('DSC_0102.jpg') === 'ch-sintra'
     && doc.sources.find((s) => s.id === src)!.clockOffsetSec === 3600 && !!doc.media.find((m) => m.uri === 'DSC_0102.jpg')!.location);
 
+  // ---- PE-5: a video plays in full by default and can be trimmed from either end ----
+  const boatCue = () => page.evaluate(() => { const st = window.tripalogue!.session!.state; const m = st.media.find((x) => x.uri.endsWith('ch3-05-boat.mp4'))!; return st.cues.find((c) => c.itemId === m.id)!; });
+  await tile('ch3-05-boat.mp4').click();
+  await page.waitForSelector('#trim-field');
+  const fullText = await page.textContent('#trim-summary');
+  check('a video plays its whole length by default (PE-5)', /Plays 20\.0 s \(the whole video\)/.test(fullText ?? '') && (await boatCue()).outPointSec === undefined, fullText ?? '');
+  await page.fill('#trim-start', '3');
+  await page.locator('#trim-start').dispatchEvent('change');
+  await settle();
+  await page.fill('#trim-end', '18');
+  await page.locator('#trim-end').dispatchEvent('change');
+  await saved(page);
+  await settle();
+  const trimmed = await boatCue();
+  const trimText = await page.textContent('#trim-summary');
+  check('it can be trimmed from the beginning and the end', trimmed.inPointSec === 3 && trimmed.outPointSec === 18 && /Plays 15\.0 s of 20\.0 s/.test(trimText ?? ''), `${trimmed.inPointSec}–${trimmed.outPointSec}: ${trimText}`);
+  await page.locator('#trim-field').screenshot({ path: path.join(outDir, '07-video-trim.png') });
+  await page.click('#trim-reset');
+  await saved(page);
+  await settle();
+  const reset = await boatCue();
+  check('"Play the whole video" removes the trim', reset.inPointSec === 0 && reset.outPointSec === undefined);
+  await tile('ch3-05-boat.mp4').click();
+
   // ---- removing media, the Removed bin, deleting for good, deleting the travelogue ----
   await page.waitForSelector('#media-grid .tile');
   const total = await page.evaluate(() => window.tripalogue!.session!.state.media.length);

@@ -44,6 +44,7 @@ export interface OutputSettings {
 
 export interface CueProfile {
   imageDurationSec: number;
+  /** Legacy: no longer applied. Videos play in full unless their cue trims them. */
   videoMaxSec: number;
   fadeInSec: number;
   fadeOutSec: number;

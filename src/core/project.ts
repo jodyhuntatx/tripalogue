@@ -51,7 +51,7 @@ export function defaultCue(item: MediaItem, profile: CueProfile, order: string):
     order,
     durationSec: item.kind === 'image' ? profile.imageDurationSec : undefined,
     inPointSec: isVideo ? 0 : undefined,
-    outPointSec: isVideo && item.durationSec !== undefined ? Math.min(item.durationSec, profile.videoMaxSec) : undefined,
+    // No out-point: a video plays to its end (PE-5 trims it from either end).
     placement: { mode: profile.defaultPlacement },
     entrance: { type: 'fade', durationSec: profile.fadeInSec },
     animation: { type: 'none' },

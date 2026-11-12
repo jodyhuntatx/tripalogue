@@ -57,7 +57,7 @@ describe('project file (F-1)', () => {
     assert.equal(img.durationSec, 4);
     assert.deepEqual(img.entrance, { type: 'fade', durationSec: 0.5 });
     const vid = defaultCue({ id: 'b', sourceId: 's', uri: 'b.mp4', kind: 'video', durationSec: 40, chapterId: null }, p.cueProfile, "i");
-    assert.equal(vid.outPointSec, 15);
+    assert.equal(vid.outPointSec, undefined, 'videos play to their end by default (PE-5)');
   });
 });
 
@@ -214,19 +214,19 @@ describe('autosave policy', () => {
 });
 
 describe('timeline and render model (F-3)', () => {
-  it('builds the sample timeline: 4 title cards + 19 playable items, 111 s', () => {
+  it('builds the sample timeline: 4 title cards + 19 playable items, 116 s', () => {
     const tl = buildTimeline(sample());
     assert.equal(tl.segments.length, 23);
     assert.equal(tl.segments.filter((s) => s.kind === 'title').length, 4);
-    assert.equal(tl.duration, 111);
+    assert.equal(tl.duration, 116);
     assert.ok(!tl.segments.some((s) => s.kind !== 'title' && s.item.id === 'm14'), 'excluded item never plays');
-    assert.deepEqual(tl.chapters.map((c) => [c.start, c.end]), [[0, 27], [27, 52], [52, 84], [84, 111]]);
+    assert.deepEqual(tl.chapters.map((c) => [c.start, c.end]), [[0, 27], [27, 52], [52, 89], [89, 116]]);
   });
 
-  it('applies out-points, in-points, speed and title-card overrides', () => {
+  it('plays untrimmed videos in full and applies, in-points, speed and title-card overrides', () => {
     const tl = buildTimeline(sample());
     const seg = (id: string) => tl.segments.find((s) => s.kind !== 'title' && s.item.id === id)!;
-    assert.equal(seg('m15').duration, 15, '20 s clip cut to 15 s');
+    assert.equal(seg('m15').duration, 20, '20 s clip with no out-point plays in full');
     assert.equal(seg('m20').duration, 5, '10 s of media at 2x');
     assert.equal(tl.segments.find((s) => s.kind === 'title' && s.chapterId === 'ch-porto')!.duration, 4);
     const sintra = tl.segments.filter((s) => s.chapterId === 'ch-sintra' && s.kind !== 'title').map((s) => (s.kind !== 'title' ? s.item.id : ''));

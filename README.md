@@ -186,8 +186,8 @@ survives a reload and can be undone. Report and screenshots: `docs/exit-test/`.
 | Check | Result |
 | --- | --- |
 | Upload and process 20 originals (10.1 MB) | all ready about 14 s after import |
-| Play 111 s of timeline at 1x | 111.2 s, all 23 segments in order, 0 of 6,669 frames waiting on media, 60 fps |
-| Frame checks (title, fit, custom rectangle, fill, trimmed clip, 2x clip) | 6 of 6 |
+| Play 116 s of timeline at 1x | 116.2 s, all 23 segments in order, 0 of 6,971 frames waiting on media, 60 fps |
+| Frame checks (title, fit, custom rectangle, fill, full-length clip, 2x clip) | 6 of 6 |
 | Edit → autosave → reload → undo, every change in the operation log | pass |
 | Map inset: whole trip on a title card, then the chapter being played | pass |
 | Hide the side panel: the player fills the width, the choice is remembered, P toggles it | pass |
@@ -250,6 +250,7 @@ Uploaded photos, videos and voice memos now land in the right chapter by themsel
 | MM-16 | The traveler behind each source, their initials on each item, and each person's items on their own | `src/web/media.ts` |
 | MM-17 | Per traveler: items without a capture time or a location, and items that look like reduced copies (stills of 2,048 px or less, 720p video, chat-app file names), with a ready-to-send note asking for the originals | `src/core/contributors.ts` |
 | MM-18 | A one-page guide to sharing originals, linked from invitations and the Upload tab | `src/web/guide-contributors.html` |
+| PE-5 (videos) | A video plays in full by default; trim it from the beginning and/or the end in the Media inspector | `src/core/media-edits.ts`, `src/web/media.ts` |
 | MM-22 | Remove items to a Removed bin, put them back, delete them for good; delete a whole travelogue | `src/core/remove.ts`, `src/server/deletion.ts` |
 | MV-2 | Media map: each located item around its chapter's pin; items far from their chapter flagged | `src/web/media.ts`, `src/web/map.ts` |
 
@@ -269,7 +270,15 @@ then has three travelers upload:
 In the Media view it then places the unassigned items, fixes the slow camera with the preview, finds Ben's
 stripped copies and drafts the note, sets locations three ways, and checks everything survives a reload. It also removes, puts back
 and deletes items for good, and deletes a whole travelogue. Report and screenshots: `docs/phase2-test/`.
-Result: 33 of 33 checks, with no browser console errors.
+It also trims a video from both ends and resets it. Result: 36 of 36 checks, with no browser console errors.
+
+### Video length
+
+A video plays its whole length by default. To shorten it, select it in the Media view: the inspector's **Play**
+field has a preview and **From … to …** seconds. Type the times, or scrub the preview and press **Start here** or
+**End here**; **Play the whole video** removes the trim. A trim is stored as the cue's in-point and out-point
+(PE-5); with no out-point the video plays to its end, so a clip whose length is only known after processing is
+never cut short. The cue profile's old `videoMaxSec` cap is no longer applied.
 
 ### Removing and deleting media
 
