@@ -261,6 +261,7 @@ async function renderProject(id: string, initialView?: View) {
       player.play();
     },
   });
+  if (s.role === 'owner') itinerary.el.querySelector('.itinerary-side')?.append(deleteProjectBox());
   const inset = mountInset(s, stageWrap, cfg.map);
   const media = mountMedia(s, {
     projectId: id,
@@ -431,6 +432,27 @@ async function renderProject(id: string, initialView?: View) {
   const uploadProgress = h('div', { class: 'progress-list', id: 'upload-progress' });
   let uploads: UploadProgress[] = [];
 
+  // The file pickers live across re-renders of the Upload tab: the panel redraws whenever the project changes
+  // (autosave, polling, processing), and a picker replaced while its file dialog was open lost the selection.
+  const uploadInput = h('input', { type: 'file', multiple: true, accept: 'image/*,video/*,audio/*,.heic,.heif', id: 'upload-input', 'aria-label': 'Choose photos and videos' });
+  const uploadFolder = h('input', { type: 'file', multiple: true, id: 'upload-folder', 'aria-label': 'Choose a folder', hidden: true });
+  uploadFolder.setAttribute('webkitdirectory', '');
+  uploadFolder.addEventListener('change', () => void startUpload(mediaFiles(uploadFolder.files ?? [])));
+  async function startUpload(picked?: File[]) {
+    const files = picked ?? [...(uploadInput.files ?? [])];
+    if (!files.length) return;
+    // Waiting for an original: uploading a file with the same name completes that item.
+    const pending = s.state.media.filter((m) => m.status === 'pending' || m.status === 'uploading' || (m.status === 'failed' && !m.storageKey));
+    const byName = new Map(pending.map((m) => [m.uri.split('/').pop()!, m.id]));
+    const jobs = files.map((f) => ({ file: f, mediaId: byName.get(f.name) }));
+    uploadInput.value = '';
+    uploadFolder.value = '';
+    uploads = jobs.map((j) => ({ file: j.file, sent: 0, total: j.file.size, state: 'queued' as const }));
+    renderProgress(uploadProgress, uploads);
+    await uploadAll(id, jobs, (all) => { uploads = all; renderProgress(uploadProgress, all); });
+    void s.poll();
+  }
+
   function renderSide() {
     tabBar.querySelectorAll<HTMLElement>('[role=tab]').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.tab === tab)));
     if (tab === 'Items') return renderItems();
@@ -509,20 +531,9 @@ async function renderProject(id: string, initialView?: View) {
         h('ul', { class: 'pending' }, ...failedProcessing.slice(0, 50).map((m) => h('li', { class: 'muted' }, `${m.uri.split('/').pop()}${m.error ? ` · ${m.error}` : ''}`))),
         mayUpload && h('button', { class: 'primary', id: 'retry-failed', onclick: () => void retry() }, `Retry processing (${failedProcessing.length})`))
       : null;
-    const input = h('input', { type: 'file', multiple: true, accept: 'image/*,video/*,audio/*,.heic,.heif', id: 'upload-input', 'aria-label': 'Choose photos and videos' });
-    const folder = h('input', { type: 'file', multiple: true, id: 'upload-folder', 'aria-label': 'Choose a folder', hidden: true });
-    folder.setAttribute('webkitdirectory', '');
-    folder.addEventListener('change', () => void start(mediaFiles(folder.files ?? [])));
-    const start = async (picked?: File[]) => {
-      const files = picked ?? [...(input.files ?? [])];
-      if (!files.length) return;
-      const byName = new Map(pending.map((m) => [m.uri.split('/').pop()!, m.id]));
-      const jobs = files.map((f) => ({ file: f, mediaId: byName.get(f.name) }));
-      uploads = jobs.map((j) => ({ file: j.file, sent: 0, total: j.file.size, state: 'queued' as const }));
-      renderProgress(uploadProgress, uploads);
-      await uploadAll(id, jobs, (all) => { uploads = all; renderProgress(uploadProgress, all); });
-      void s.poll();
-    };
+    const input = uploadInput;
+    const folder = uploadFolder;
+    const start = startUpload;
     side.replaceChildren(
       mayUpload
         ? h('div', {},
@@ -565,17 +576,23 @@ async function renderProject(id: string, initialView?: View) {
           msg.textContent = (err as Error).message;
         }
       } }, h('h3', {}, 'Invite someone'), email, role, h('button', { type: 'submit', class: 'primary' }, 'Send invite'), msg) : '',
-      h('p', { class: 'muted small' }, 'Editors change the travelogue (one at a time until live co-editing arrives). Contributors upload media. Viewers watch.'),
-      owner ? deleteProjectBox() : '');
+      h('p', { class: 'muted small' }, 'Editors change the travelogue (one at a time until live co-editing arrives). Contributors upload media. Viewers watch.'));
   }
 
-  /** The owner can delete the whole travelogue, with everything in it, after typing its title. */
+  /** The owner can delete the whole travelogue, with everything in it, after typing its title (Itinerary view). */
   function deleteProjectBox(): HTMLElement {
-    const title = s.state.title;
-    const confirmInput = h('input', { id: 'delete-confirm', 'aria-label': 'Type the travelogue’s title to confirm', placeholder: title, autocomplete: 'off' });
+    const confirmInput = h('input', { id: 'delete-confirm', 'aria-label': 'Type the travelogue’s title to confirm', autocomplete: 'off' });
     const go = h('button', { class: 'danger', id: 'delete-project', disabled: true }, 'Delete this travelogue');
     const msg = h('div', { class: 'form-msg', role: 'status' });
-    confirmInput.addEventListener('input', () => { go.disabled = confirmInput.value.trim() !== title.trim(); });
+    const prompt = h('label', { for: 'delete-confirm', class: 'small' });
+    // The title can change while the box is open, so read it each time.
+    const sync = () => {
+      const title = s.state.title;
+      confirmInput.placeholder = title;
+      prompt.textContent = `Type “${title}” to confirm`;
+      go.disabled = confirmInput.value.trim() !== title.trim();
+    };
+    confirmInput.addEventListener('input', sync);
     go.addEventListener('click', async () => {
       go.disabled = true;
       try {
@@ -589,9 +606,12 @@ async function renderProject(id: string, initialView?: View) {
         go.disabled = false;
       }
     });
-    return h('details', { class: 'danger-zone', id: 'danger-zone' }, h('summary', {}, 'Delete this travelogue'),
+    const box = h('details', { class: 'danger-zone card', id: 'danger-zone' }, h('summary', {}, 'Delete this travelogue'),
       h('p', { class: 'small' }, 'Deletes the travelogue for everyone: its chapters, every photo, video and audio file (originals included), its versions and its members. This cannot be undone.'),
-      h('label', { for: 'delete-confirm', class: 'small' }, `Type “${title}” to confirm`), confirmInput, go, msg);
+      prompt, confirmInput, go, msg);
+    box.addEventListener('toggle', sync);
+    sync();
+    return box;
   }
 
   async function renderVersions() {

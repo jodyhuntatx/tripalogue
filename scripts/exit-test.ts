@@ -147,6 +147,25 @@ try {
     onTitle.visible && onTitle.focus === 'trip' && inFirst.focus === find('m02').chapterId && inLater.focus === find('m09').chapterId,
     `title: ${onTitle.focus}; m02: ${inFirst.focus}; m09: ${inLater.focus}`);
 
+  // 4c. Photo locations as dots in the inset: this chapter's items shown so far joined by a trail, the current one
+  // marked, the rest still ahead; moving on to the next item animates the hop to it.
+  const storyAt = async (t: number, wait = 1800) => {
+    await page.evaluate((x) => window.tripalogue!.player!.seek(x), t);
+    await page.waitForTimeout(wait);
+    return page.evaluate(() => window.tripalogue!.inset!.map.story);
+  };
+  const st03 = await storyAt(find('m03').start + 1);
+  const state = (s: typeof st03, id: string) => s.dots.find((d) => d.id === id)?.state;
+  await page.locator('#map-inset').screenshot({ path: path.join(outDir, '08c-inset-dots.png') });
+  await page.evaluate((x) => { const p = window.tripalogue!.player!; p.seek(x); p.play(); }, find('m04').start - 0.3);
+  await page.waitForTimeout(500);
+  const hop = await page.evaluate(() => window.tripalogue!.inset!.map.story);
+  await page.evaluate(() => window.tripalogue!.player!.pause());
+  check('the inset shows where each photo was taken and moves through the chapter as it plays',
+    JSON.stringify(st03.trail) === JSON.stringify(['m01', 'm02', 'm03']) && state(st03, 'm03') === 'current' && state(st03, 'm04') === 'ahead' && state(st03, 'm01') === 'shown'
+      && state(st03, 'm06') === undefined && hop.trail.at(-1) === 'm04' && hop.animating,
+    `at m03: trail ${st03.trail.join('→')}; next item animated: ${hop.animating}`);
+
   // 5. Edit, autosave, reload, undo.
   await page.uncheck('li[data-item="m02"] input[type=checkbox]');
   await page.waitForFunction(() => window.tripalogue!.session!.unsaved === 0 && window.tripalogue!.session!.status === 'saved', null, { timeout: 10_000 });

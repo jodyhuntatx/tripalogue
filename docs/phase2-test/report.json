@@ -1,5 +1,5 @@
 {
-  "date": "2026-11-12T01:45:54.223Z",
+  "date": "2026-11-16T20:14:50.880Z",
   "browser": "153.0.8010.12",
   "checks": [
     {
@@ -65,7 +65,7 @@
     {
       "name": "applying it moves the slow camera’s photos to the right chapter, and nothing else",
       "pass": true,
-      "detail": "saved in 369 ms; the iPhone photo stays in Lisbon"
+      "detail": "saved in 351 ms; the iPhone photo stays in Lisbon"
     },
     {
       "name": "typing in the inspector survives unrelated updates",
@@ -100,12 +100,12 @@
     {
       "name": "a location can be set from the chapter, pasted from another item, or picked on the map (MM-9)",
       "pass": true,
-      "detail": "{\"lat\":38.8029,\"lng\":-9.3817} / picked {\"lat\":39.96243,\"lng\":-8.46375}"
+      "detail": "{\"lat\":38.8029,\"lng\":-9.3817} / picked {\"lat\":39.95475,\"lng\":-8.51445}"
     },
     {
       "name": "the media map shows a dot for every located item",
       "pass": true,
-      "detail": "6 of 32 items have a location · 2 far from their chapter (amber). Click a dot to select its item."
+      "detail": "25 of 32 items have a location · 2 far from their chapter (amber). Click a dot to select its item."
     },
     {
       "name": "a voice memo is filed by its recording time, with a waveform thumbnail (MM-15)",
@@ -121,6 +121,11 @@
       "name": "the contributor guide is linked from the Upload tab and served (MM-18)",
       "pass": true,
       "detail": ""
+    },
+    {
+      "name": "files chosen in the Upload tab stay chosen when the panel redraws",
+      "pass": true,
+      "detail": "1 file(s) still chosen"
     },
     {
       "name": "a whole folder uploads its media (subfolders included), skipping system files, text files and files already uploaded (MM-1, MM-7)",
@@ -141,6 +146,11 @@
       "name": "all fixes are saved and survive a reload",
       "pass": true,
       "detail": ""
+    },
+    {
+      "name": "the Media page shows Unassigned and the chapters side by side, each column scrolling on its own",
+      "pass": true,
+      "detail": "{\"side\":true,\"ok\":true,\"scrolled\":300,\"unMoved\":0,\"unassignedIn\":true,\"chaptersIn\":4}"
     },
     {
       "name": "a video plays its whole length by default (PE-5)",
@@ -170,7 +180,12 @@
     {
       "name": "Delete for good erases the original once nothing refers to it",
       "pass": true,
-      "detail": "originals/trv_utQIIVVug2eZ/m_8qRFv9zO.jpg: file erased, bin gone"
+      "detail": "originals/trv_m3p9Tie-8MrL/m_w2kUQ3aS.jpg: file erased, bin gone"
+    },
+    {
+      "name": "\"Delete this travelogue\" is on the Itinerary page, not in the Members tab",
+      "pass": true,
+      "detail": ""
     },
     {
       "name": "the owner deletes the travelogue after typing its title, and it is gone",

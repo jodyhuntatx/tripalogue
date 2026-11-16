@@ -245,3 +245,13 @@ button.danger-outline { background: none; border-color: #8f2a2a; color: #f19b9b;
 /* PE-5 video trim in the Media inspector */
 .trim-field .trim-video { width: 100%; max-height: 220px; background: #000; border-radius: 4px; margin: 4px 0; }
 .trim-field .row { gap: 6px; align-items: center; }
+
+/* Media view: Unassigned and the chapters side by side, each column scrolling on its own */
+.media-grid { display: grid; grid-template-columns: minmax(170px, 1fr) minmax(0, 2.6fr); gap: 12px; align-items: start; }
+.media-col { max-height: calc(100vh - 150px); overflow-y: auto; overscroll-behavior: contain; padding-right: 4px; scrollbar-gutter: stable; }
+.media-col > .media-chapter:last-child { margin-bottom: 0; }
+.media-col-unassigned .tiles { grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); }
+@media (max-width: 960px) {
+  .media-grid { grid-template-columns: 1fr; }
+  .media-col { max-height: none; overflow: visible; }
+}
