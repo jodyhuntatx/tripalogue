@@ -23,8 +23,14 @@ export interface MapDot {
   id: string;
   lat: number;
   lng: number;
-  /** selected: highlighted; far: taken far from its chapter (likely misassigned); unassigned: in no chapter. */
-  state?: 'selected' | 'far' | 'unassigned';
+  /**
+   * Media map: selected (highlighted), far (taken far from its chapter, likely misassigned), unassigned (in no chapter).
+   * Playback inset: past (an earlier chapter), shown (already played in this chapter), current (on screen now),
+   * ahead (still to come in this chapter).
+   */
+  state?: 'selected' | 'far' | 'unassigned' | 'past' | 'shown' | 'current' | 'ahead';
+  /** Inset: keep this dot in view when the chapter is focused. */
+  fit?: boolean;
 }
 
 export interface RouteMapOptions {
@@ -65,6 +71,9 @@ export class RouteMap {
   private ctx: CanvasRenderingContext2D;
   private pins: MapPin[] = [];
   private dots: MapDot[] = [];
+  /** Inset: located items played so far in this chapter, in order; the last may be the current one. */
+  private trail: string[] = [];
+  private hop: { t0: number; ms: number } | null = null;
   private selected: string | null = null;
   private picking = false;
   private z = 2;
@@ -174,7 +183,7 @@ export class RouteMap {
   /** Zoom and centre (normalised to zoom 0) for a focus target, or undefined when there is nothing to show. */
   private viewFor(target: MapFocus): { z: number; nx: number; ny: number } | undefined {
     const pad = this.o.inset ? 18 : 40;
-    const fitAll = (pins: MapPin[], maxZ: number) => {
+    const fitAll = (pins: { lat: number; lng: number }[], maxZ: number) => {
       let z = maxZ;
       for (; z > 0; z--) {
         const pts = pins.map((p) => project(p.lat, p.lng, z));
@@ -200,6 +209,10 @@ export class RouteMap {
       if (near.every((p) => { const q = project(p.lat, p.lng, z); return Math.abs(q.x - cc.x) <= this.w / 2 - pad && Math.abs(q.y - cc.y) <= this.h / 2 - pad; })) break;
     }
     z = Math.min(10, Math.max(z, trip + 2));
+    // A chapter with located photos is framed on them (and its pin), so the walk through the chapter reads
+    // clearly; the route to the neighbouring chapters then leads off the edge.
+    const keep = this.dots.filter((d) => d.fit);
+    if (keep.length) return fitAll([c, ...keep], 14);
     const c0 = project(c.lat, c.lng, 0);
     return { z, nx: c0.x, ny: c0.y };
   }
@@ -210,6 +223,23 @@ export class RouteMap {
     this.dots = dots;
     if (changed && !this.userMoved && !this.o.inset) this.fit();
     else this.redraw();
+  }
+
+  /**
+   * Inset: the path through the located items played so far in this chapter. With `animate`, the last leg is
+   * drawn travelling to the newest item, which then pulses as it arrives.
+   */
+  setTrail(ids: string[], animate: boolean) {
+    const same = ids.length === this.trail.length && ids.every((id, i) => id === this.trail[i]);
+    if (same) return;
+    this.trail = ids;
+    this.hop = animate && ids.length ? { t0: performance.now(), ms: 900 } : null;
+    this.redraw();
+  }
+
+  /** Inset dots and trail, for tests. */
+  get story(): { dots: { id: string; state?: MapDot['state'] }[]; trail: string[]; animating: boolean } {
+    return { dots: this.dots.map((d) => ({ id: d.id, state: d.state })), trail: [...this.trail], animating: !!this.hop };
   }
 
   setSelected(id: string | null) {
@@ -376,6 +406,12 @@ export class RouteMap {
       if (k >= 1) this.flight = null;
       else this.redraw();
     }
+    let hopK = 1;
+    if (this.hop) {
+      hopK = Math.min(1, (performance.now() - this.hop.t0) / this.hop.ms);
+      if (hopK >= 1) this.hop = null;
+      else this.redraw();
+    }
     const { ctx, w, h, z } = this;
     ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
     ctx.fillStyle = '#1b2230';
@@ -403,10 +439,25 @@ export class RouteMap {
       for (let gy = -((top % 64) + 64) % 64; gy < h; gy += 64) { ctx.beginPath(); ctx.moveTo(0, gy); ctx.lineTo(w, gy); ctx.stroke(); }
     }
     // Item dots (media map) under the route and pins: far-from-chapter in amber, unassigned hollow, selected large.
+    // Inset dots: earlier chapters faint, this chapter's items still ahead as rings, those already shown filled.
+    const at = (d: { lat: number; lng: number }) => { const q = project(d.lat, d.lng, this.z); return { x: q.x - this.cx + this.w / 2, y: q.y - this.cy + this.h / 2 }; };
     for (const d of this.dots) {
-      const w = project(d.lat, d.lng, this.z);
-      const x = w.x - this.cx + this.w / 2, y = w.y - this.cy + this.h / 2;
+      const { x, y } = at(d);
       if (x < -10 || y < -10 || x > this.w + 10 || y > this.h + 10) continue;
+      if (d.state === 'current') continue; // drawn on top, after the pins
+      if (d.state === 'past' || d.state === 'shown' || d.state === 'ahead') {
+        ctx.beginPath();
+        ctx.arc(x, y, d.state === 'past' ? 2.5 : d.state === 'shown' ? 3.5 : 3, 0, Math.PI * 2);
+        if (d.state === 'ahead') {
+          ctx.lineWidth = 1.5;
+          ctx.strokeStyle = 'rgba(155,200,255,0.6)';
+          ctx.stroke();
+        } else {
+          ctx.fillStyle = d.state === 'past' ? 'rgba(155,200,255,0.35)' : 'rgba(155,200,255,0.95)';
+          ctx.fill();
+        }
+        continue;
+      }
       const sel = d.state === 'selected';
       ctx.beginPath();
       ctx.arc(x, y, sel ? 6 : 4, 0, Math.PI * 2);
@@ -454,5 +505,48 @@ export class RouteMap {
       ctx.textBaseline = 'middle';
       ctx.fillText(String(p.index + 1), s.x, s.y + 0.5);
     }
+    this.drawTrail(hopK, at);
+  }
+
+  /** Inset: the path through this chapter's items so far, the leg to the newest one growing as it plays. */
+  private drawTrail(hopK: number, at: (d: { lat: number; lng: number }) => { x: number; y: number }) {
+    const byId = new Map(this.dots.map((d) => [d.id, d]));
+    const pts = this.trail.map((id) => byId.get(id)).filter((d): d is MapDot => !!d).map((d) => ({ d, ...at(d) }));
+    if (!pts.length) return;
+    const { ctx } = this;
+    const travel = Math.min(1, hopK / 0.6);
+    const ease = travel < 0.5 ? 2 * travel * travel : 1 - (-2 * travel + 2) ** 2 / 2;
+    const last = pts[pts.length - 1];
+    const prev = pts.length > 1 ? pts[pts.length - 2] : null;
+    const head = prev ? { x: prev.x + (last.x - prev.x) * ease, y: prev.y + (last.y - prev.y) * ease } : last;
+    if (pts.length > 1) {
+      ctx.lineWidth = 1.75;
+      ctx.lineJoin = 'round';
+      ctx.lineCap = 'round';
+      ctx.strokeStyle = 'rgba(255,255,255,0.75)';
+      ctx.beginPath();
+      ctx.moveTo(pts[0].x, pts[0].y);
+      for (let i = 1; i < pts.length - 1; i++) ctx.lineTo(pts[i].x, pts[i].y);
+      ctx.lineTo(head.x, head.y);
+      ctx.stroke();
+    }
+    if (last.d.state !== 'current') return;
+    // Arrival pulse once the hop has landed.
+    if (hopK < 1 && travel >= 1) {
+      const k = (hopK - 0.6) / 0.4;
+      ctx.beginPath();
+      ctx.arc(last.x, last.y, 5 + 12 * k, 0, Math.PI * 2);
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = `rgba(255,255,255,${(1 - k) * 0.8})`;
+      ctx.stroke();
+    }
+    const p = travel >= 1 ? last : head;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, 5, 0, Math.PI * 2);
+    ctx.fillStyle = '#ffffff';
+    ctx.fill();
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = '#4f9cf7';
+    ctx.stroke();
   }
 }

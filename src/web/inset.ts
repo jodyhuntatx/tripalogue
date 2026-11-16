@@ -5,12 +5,17 @@
  * being shown, with the chapters either side kept in view for context.
  * Chapters already shown are marked visited and the route ahead is dashed.
  *
- * Preview only for now: per-item locations, the animated travel transition,
+ * Photos and videos with a location are dots: the chapter's items still to come
+ * are rings, those already shown are filled and joined by a trail in play order,
+ * and the item on screen gets a marker that travels to it and pulses on arrival.
+ * Earlier chapters' items stay as faint dots.
+ *
+ * Preview only for now: the animated travel transition between chapters,
  * per-chapter and per-item overrides, and drawing the inset into exported
  * video come with the full map view in Phase 5.
  */
-import type { Frame, InsetCorner, MapViewSettings, Timeline, Travelogue } from '../core/index.js';
-import { RouteMap, type MapFocus, type MapPin } from './map.js';
+import { distanceKm, type Frame, type InsetCorner, type MapViewSettings, type Timeline, type Travelogue } from '../core/index.js';
+import { RouteMap, type MapDot, type MapFocus, type MapPin } from './map.js';
 import type { ProjectSession } from './session.js';
 
 export interface InsetView {
@@ -28,6 +33,30 @@ const CORNERS: [InsetCorner, string][] = [['topLeft', 'Top left'], ['topRight', 
 
 export function pinsFor(p: Travelogue): MapPin[] {
   return p.chapters.flatMap((c, i) => (c.coordinates ? [{ id: c.id, index: i, lat: c.coordinates.lat, lng: c.coordinates.lng, title: c.title }] : []));
+}
+
+/** Items further than this from their chapter's place are drawn but do not widen the chapter view. */
+const FIT_KM = 50;
+
+/** Inset dots and trail for the segment being played (exported for tests). */
+export function storyAt(p: Travelogue, timeline: Timeline, segmentIndex: number): { dots: MapDot[]; trail: string[] } {
+  const seg = timeline.segments[segmentIndex];
+  const chapterId = seg?.chapterId;
+  const order = new Map(p.chapters.map((c, i) => [c.id, i]));
+  const here = chapterId === undefined ? -1 : order.get(chapterId) ?? -1;
+  const place = p.chapters[here]?.coordinates;
+  const dots: MapDot[] = [];
+  const trail: string[] = [];
+  timeline.segments.forEach((g, i) => {
+    if (g.kind === 'title' || !g.item.location) return;
+    const { lat, lng } = g.item.location;
+    if (g.chapterId === chapterId) {
+      const state = i < segmentIndex ? 'shown' : i === segmentIndex ? 'current' : 'ahead';
+      dots.push({ id: g.item.id, lat, lng, state, fit: !place || distanceKm(place, g.item.location) <= FIT_KM });
+      if (state !== 'ahead') trail.push(g.item.id);
+    } else if ((order.get(g.chapterId) ?? Infinity) < here) dots.push({ id: g.item.id, lat, lng, state: 'past' });
+  });
+  return { dots, trail };
 }
 
 export function mountInset(s: ProjectSession, stage: HTMLElement, cfg: { tiles: boolean; attribution: string }): InsetView {
@@ -93,6 +122,7 @@ export function mountInset(s: ProjectSession, stage: HTMLElement, cfg: { tiles: 
   settings.append(summary, panel);
 
   let lastKey = '';
+  let lastSeg = -2;
   let lastPins = '';
   let mv: MapViewSettings = s.state.mapView;
 
@@ -129,6 +159,14 @@ export function mountInset(s: ProjectSession, stage: HTMLElement, cfg: { tiles: 
     map,
     onFrame(frame, timeline) {
       if (map.el.hidden) return;
+      if (frame.segmentIndex !== lastSeg) {
+        // Moving on to the next item animates the hop to it; a seek just redraws.
+        const next = frame.segmentIndex === lastSeg + 1;
+        lastSeg = frame.segmentIndex;
+        const story = storyAt(s.state, timeline, frame.segmentIndex);
+        map.setDots(story.dots);
+        map.setTrail(story.trail, next && mv.transitionAnimation && story.dots.some((d) => d.state === 'current'));
+      }
       const seg = timeline.segments[frame.segmentIndex];
       const chapterId = seg?.chapterId ?? timeline.chapters[frame.chapterIndex]?.chapterId;
       const onTitle = seg?.kind === 'title';
@@ -145,6 +183,7 @@ export function mountInset(s: ProjectSession, stage: HTMLElement, cfg: { tiles: 
     update(p) {
       const wasHidden = map.el.hidden;
       layout(p);
+      lastSeg = -2; // items may have moved or gained a place: rebuild the dots on the next frame
       if (wasHidden && !map.el.hidden) lastKey = ''; // refocus on the next frame
     },
     dispose() {

@@ -320,6 +320,14 @@ try {
   await page.click('#view-play');
   await page.click('.tabs button[data-tab="Upload"]');
   await page.locator('#drop-zone').screenshot({ path: path.join(outDir, '05-drop-zone.png') });
+  // The file picker keeps its selection when the panel redraws (it used to take two tries on first use).
+  await page.setInputFiles('#upload-input', [path.join(folder, 'IMG_9001.jpg')]);
+  await page.click('.tabs button[data-tab="Upload"]');
+  await page.evaluate(() => window.tripalogue!.session!.poll());
+  await settle();
+  const stillChosen = await page.evaluate(() => (document.getElementById('upload-input') as HTMLInputElement).files?.length ?? 0);
+  check('files chosen in the Upload tab stay chosen when the panel redraws', stillChosen === 1, `${stillChosen} file(s) still chosen`);
+  await page.evaluate(() => { (document.getElementById('upload-input') as HTMLInputElement).value = ''; });
   await page.setInputFiles('#upload-folder', folder);
   await page.waitForFunction(() => /already uploaded, skipped/.test(document.getElementById('upload-summary')?.textContent ?? '') && /2 of 2 files/.test(document.getElementById('upload-summary')?.textContent ?? ''), null, { timeout: 60_000 });
   const folderSummary = await page.textContent('#upload-summary');
@@ -355,6 +363,21 @@ try {
   const where = (n: string) => doc.media.find((m) => m.uri.endsWith(n))!.chapterId;
   check('all fixes are saved and survive a reload', where('IMG_3001.jpg') === 'ch-porto' && where('Screenshot 2026-05-20.jpg') === 'ch-douro' && where('DSC_0102.jpg') === 'ch-sintra'
     && doc.sources.find((s) => s.id === src)!.clockOffsetSec === 3600 && !!doc.media.find((m) => m.uri === 'DSC_0102.jpg')!.location);
+
+  // ---- Media layout: Unassigned and the chapters in columns, each scrolling on its own ----
+  const cols = await page.evaluate(() => {
+    const u = document.getElementById('media-col-unassigned')!, c = document.getElementById('media-col-chapters')!;
+    const ru = u.getBoundingClientRect(), rc = c.getBoundingClientRect();
+    c.scrollTop = 300;
+    const scrolled = c.scrollTop;
+    const unMoved = u.scrollTop;
+    const ok = getComputedStyle(u).overflowY === 'auto' && getComputedStyle(c).overflowY === 'auto';
+    return { side: ru.right <= rc.left && Math.abs(ru.top - rc.top) < 2, ok, scrolled, unMoved, unassignedIn: !!u.querySelector('.media-chapter.unassigned'), chaptersIn: c.querySelectorAll('.media-chapter').length };
+  });
+  check('the Media page shows Unassigned and the chapters side by side, each column scrolling on its own',
+    cols.side && cols.ok && cols.scrolled > 0 && cols.unMoved === 0 && cols.unassignedIn && cols.chaptersIn === 4, JSON.stringify(cols));
+  await page.screenshot({ path: path.join(outDir, '08-media-columns.png') });
+  await page.evaluate(() => { document.getElementById('media-col-chapters')!.scrollTop = 0; });
 
   // ---- PE-5: a video plays in full by default and can be trimmed from either end ----
   const boatCue = () => page.evaluate(() => { const st = window.tripalogue!.session!.state; const m = st.media.find((x) => x.uri.endsWith('ch3-05-boat.mp4'))!; return st.cues.find((c) => c.itemId === m.id)!; });
@@ -409,7 +432,11 @@ try {
 
   await page.click('#view-play');
   await page.click('.tabs button[data-tab="Members"]');
-  await page.click('#danger-zone summary');
+  await page.waitForSelector('.members li');
+  const inMembers = await page.locator('.side-body #danger-zone').count();
+  await page.click('#view-itinerary');
+  await page.click('#itinerary #danger-zone summary');
+  check('"Delete this travelogue" is on the Itinerary page, not in the Members tab', inMembers === 0 && await page.locator('#itinerary #danger-zone').count() === 1);
   const title = await page.evaluate(() => window.tripalogue!.session!.state.title);
   const goDisabled = await page.isDisabled('#delete-project');
   await page.fill('#delete-confirm', title);

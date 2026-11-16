@@ -64,7 +64,10 @@ export function mountMedia(s: ProjectSession, ctx: { projectId: string; play: (i
 
   const summary = h('div', { class: 'media-summary', id: 'media-summary', role: 'status' });
   const filterBar = h('div', { class: 'media-filters', role: 'radiogroup', 'aria-label': 'Show' });
-  const grid = h('div', { class: 'media-grid', id: 'media-grid' });
+  // Two columns that scroll on their own: Unassigned (and the Removed bin) beside the itinerary's chapters.
+  const unassignedCol = h('div', { class: 'media-col media-col-unassigned', id: 'media-col-unassigned', 'aria-label': 'Unassigned media' });
+  const chaptersCol = h('div', { class: 'media-col media-col-chapters', id: 'media-col-chapters', 'aria-label': 'Chapters' });
+  const grid = h('div', { class: 'media-grid', id: 'media-grid' }, unassignedCol, chaptersCol);
   const inspector = h('aside', { class: 'media-inspector card', id: 'media-inspector' });
   const sourcesBox = h('section', { class: 'media-sources', id: 'media-sources' });
   const contribBox = h('section', { class: 'media-contributors', id: 'media-contributors' });
@@ -162,33 +165,38 @@ export function mountMedia(s: ProjectSession, ctx: { projectId: string; play: (i
     }, label)));
 
     const sections: HTMLElement[] = [];
+    let unassignedSec: HTMLElement | null = null;
     const groups: [Id | null, string, string][] = [[null, 'Unassigned', 'Not in any chapter: no time, or a time outside every chapter'],
       ...p.chapters.map((c, i) => [c.id, `${i + 1}. ${c.title || 'Untitled chapter'}`, `${c.start.replace('T', ' ')} – ${c.end.replace('T', ' ')} · ${c.timeZone}`] as [Id, string, string])];
     for (const [cid, title, sub] of groups) {
       const all = (byChapter.get(cid) ?? []).slice().sort((a, b) => ((order.get(a.id) ?? '~') < (order.get(b.id) ?? '~') ? -1 : 1));
-      if (cid === null && !all.length && filter === 'all') continue;
       const shown = all.filter((m) => visible(p, m) && (!focus || focus.ids.has(m.id)));
-      if ((filter !== 'all' || focus) && !shown.length) continue;
+      if (cid !== null && (filter !== 'all' || focus) && !shown.length) continue;
       const body = h('div', { class: 'tiles' }, ...shown.map((m) => tileFor(p, m)));
-      if (!shown.length) body.append(h('p', { class: 'muted empty' }, cid === null ? '' : 'No media yet. Drag items here to put them in this chapter.'));
+      if (!shown.length) body.append(h('p', { class: 'muted empty' }, cid !== null ? 'No media yet. Drag items here to put them in this chapter.'
+        : all.length ? 'None match this filter.' : 'Nothing unassigned: every item is in a chapter.'));
       const sec = h('section', { class: `media-chapter${cid === null ? ' unassigned' : ''}`, 'data-chapter': cid ?? '' },
         h('header', {}, h('h3', {}, title, h('span', { class: 'count' }, ` ${all.length}`)), h('span', { class: 'muted' }, sub)),
         body);
       if (cid !== null) dropTarget(sec, cid);
-      sections.push(sec);
+      if (cid === null) unassignedSec = sec;
+      else sections.push(sec);
     }
     if (!p.chapters.length) sections.unshift(h('p', { class: 'banner info' }, 'Add chapters in the Itinerary view first: media is sorted into chapters by time.'));
     // The Removed bin, last and folded: put items back, or delete them for good.
     const binned = (p.removed ?? []).slice().sort((a, b) => (a.removedAt < b.removedAt ? 1 : -1));
+    let binEl: HTMLElement | null = null;
     if (binned.length) {
-      const binEl = h('details', { class: 'media-chapter removed-bin', id: 'removed-bin', ...(binOpen ? { open: true } : {}) },
+      binEl = h('details', { class: 'media-chapter removed-bin', id: 'removed-bin', ...(binOpen ? { open: true } : {}) },
         h('summary', {}, h('h3', {}, 'Removed', h('span', { class: 'count' }, ` ${binned.length}`)),
           h('span', { class: 'muted' }, ` Not in the travelogue. Each is deleted for good ${ctx.purgeAfterDays} days after it was removed.`)),
         h('div', { class: 'tiles' }, ...binned.map((r) => tileFor(p, r.item))));
-      binEl.addEventListener('toggle', () => { binOpen = binEl.open; });
-      sections.push(binEl);
+      const bin = binEl as HTMLDetailsElement;
+      bin.addEventListener('toggle', () => { binOpen = bin.open; });
     }
-    grid.replaceChildren(...sections);
+    // The columns themselves stay, so each keeps its scroll position across updates.
+    fill(unassignedCol, unassignedSec, binEl);
+    fill(chaptersCol, ...sections);
     const ids = new Set([...p.media.map((m) => m.id), ...binned.map((r) => r.item.id)]);
     for (const [id, t] of tiles) {
       if (!ids.has(id)) tiles.delete(id);

@@ -190,10 +190,11 @@ survives a reload and can be undone. Report and screenshots: `docs/exit-test/`.
 | Frame checks (title, fit, custom rectangle, fill, full-length clip, 2x clip) | 6 of 6 |
 | Edit → autosave → reload → undo, every change in the operation log | pass |
 | Map inset: whole trip on a title card, then the chapter being played | pass |
+| Map inset: photo locations as dots, a trail through the chapter so far, the marker hopping to each new item | pass |
 | Hide the side panel: the player fills the width, the choice is remembered, P toggles it | pass |
 | A HEIC photo uploads through the browser, gets a full-size JPG, and shows upright | pass |
 | A broken ffmpeg is reported in the Upload tab, and Retry processes failed uploads once fixed | pass |
-| Total | 23 of 23 checks |
+| Total | 24 of 24 checks |
 
 ## Phase 1: Itinerary editor
 
@@ -211,7 +212,7 @@ keeps the same session.
 | IT-7 | Split a chapter at a time (media moves by timestamp) and merge with the next | `splitChapter`, `mergeChapters` |
 | IT-8 | Place search, or drop a pin by clicking the map | `src/server/geo.ts`, `src/web/map.ts` |
 | MV-1 | Route map: numbered pins joined in order; selecting a pin selects its chapter and the reverse | `src/web/map.ts` |
-| MV-9 | Basic playback inset: a corner map in Play that shows the whole trip on each title card, then flies in to the chapter being played; visited chapters marked, route ahead dashed; on/off, corner, size and shape under **Map** in the player controls | `src/web/inset.ts` |
+| MV-9 | Basic playback inset: a corner map in Play that shows the whole trip on each title card, then flies in to the chapter being played; visited chapters marked, route ahead dashed; photos and videos with a location as dots, with a trail through the chapter so far and a marker that hops to each item as it plays; on/off, corner, size and shape under **Map** in the player controls | `src/web/inset.ts` |
 
 Moving a start past its end (or an end before its start) keeps the chapter's length, so an edit never leaves an
 invalid chapter. Numeric dates in pasted text are read month/day/year.
@@ -220,20 +221,25 @@ In Play, **Hide panel** (or the P key) folds away the Items, Upload, Members and
 uses the whole width; the browser remembers the choice.
 
 The inset is on for new travelogues. For a travelogue made before it existed, open **Map** next to Mute in the
-Play view and tick **Show map inset**. It is preview only: per-photo locations, the animated travel
-transition, per-chapter settings and drawing it into exported video come with the full map view in Phase 5.
+Play view and tick **Show map inset**. While a chapter plays, the inset frames that chapter's located photos and
+videos: those still to come are rings, those already shown are filled and joined by a trail in play order, and
+the marker travels to each new item and pulses as it arrives (unless **Animate between views** is off). Items
+more than 50 km from the chapter's place are drawn but don't widen the view. It is preview only: the animated travel
+transition between chapters, per-chapter settings and drawing it into exported video come with the full map view in Phase 5.
 
 `scripts/phase1-test.ts` scripts the G1 usability tasks in headless Chromium against a stand-in map provider:
 create a travelogue, paste six lines (one bad) and add five chapters from the preview, add three more by hand
 with place search, drop a pin on the map, split a three-day chapter, find and fix a planted overlap, undo and
 redo, reload, play the nine title cards, and check the map inset (trip view on title cards, chapter view,
 moving, hiding and undo). Report and screenshots: `docs/phase1-test/`. Result: 20 of 20 checks, with no
-browser console errors. The Phase 0 exit test, now 23 checks, adds the inset following the sample's chapters, the hideable side panel, a HEIC upload, and recovery from a broken ffmpeg.
+browser console errors. The Phase 0 exit test, now 24 checks, adds the inset following the sample's chapters and its photo locations, the hideable side panel, a HEIC upload, and recovery from a broken ffmpeg.
 
 ## Phase 2: Media manager
 
 Uploaded photos, videos and voice memos now land in the right chapter by themselves, and the **Media** view
 (between Itinerary and Play) is where the sort gets fixed. A travelogue opens there while anything is unassigned.
+Unassigned items (with the Removed bin below them) and the itinerary's chapters sit in two columns that scroll
+independently, so you can drag from one to the other without losing your place.
 
 | PRD | Requirement | Where |
 | --- | --- | --- |
@@ -270,7 +276,8 @@ then has three travelers upload:
 In the Media view it then places the unassigned items, fixes the slow camera with the preview, finds Ben's
 stripped copies and drafts the note, sets locations three ways, and checks everything survives a reload. It also removes, puts back
 and deletes items for good, and deletes a whole travelogue. Report and screenshots: `docs/phase2-test/`.
-It also trims a video from both ends and resets it. Result: 36 of 36 checks, with no browser console errors.
+It also trims a video from both ends and resets it, checks the two scrolling columns, the file picker keeping its
+selection, and the delete box's new place. Result: 39 of 39 checks, with no browser console errors.
 
 ### Video length
 
@@ -290,7 +297,7 @@ never cut short. The cue profile's old `videoMaxSec` cap is no longer applied.
   deletes anything that has been in the bin for 30 days (`TRIPALOGUE_PURGE_AFTER_DAYS`). Deleting first takes the
   items out of the travelogue and out of every saved version, records their ids so no edit can bring them back,
   and only then erases the original and derived files.
-- **Delete a travelogue:** the owner can, in the Members tab, type the travelogue's title and press **Delete this
+- **Delete a travelogue:** the owner can, at the bottom of the Itinerary page, type the travelogue's title and press **Delete this
   travelogue**. Its database rows, operation log, versions, media files and unfinished uploads are all erased.
 
 ## Layout

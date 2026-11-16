@@ -1,12 +1,12 @@
 {
-  "date": "2026-11-12T01:52:21.382Z",
+  "date": "2026-11-16T20:14:03.262Z",
   "rate": 1,
   "browser": "153.0.8010.12",
   "timelineSec": 116,
-  "wallSec": 116.173,
-  "uploadSec": 0.404,
-  "readySec": 13.414,
-  "framesDrawn": 6968,
+  "wallSec": 116.086,
+  "uploadSec": 0.581,
+  "readySec": 16.105,
+  "framesDrawn": 6970,
   "placeholderFrames": 0,
   "checks": [
     {
@@ -17,7 +17,7 @@
     {
       "name": "imports and uploads all 20 originals through the browser",
       "pass": true,
-      "detail": "10.1 MB uploaded in 0.4 s; all processed after 13.4 s"
+      "detail": "10.1 MB uploaded in 0.6 s; all processed after 16.1 s"
     },
     {
       "name": "originals are stored byte for byte",
@@ -27,7 +27,7 @@
     {
       "name": "plays to the end",
       "pass": true,
-      "detail": "116 s of timeline in 116.2 s at 1x"
+      "detail": "116 s of timeline in 116.1 s at 1x"
     },
     {
       "name": "enters all 23 segments (4 title cards + 19 items) in order",
@@ -42,7 +42,7 @@
     {
       "name": "media ready in time (under 2% of frames waited on loading)",
       "pass": true,
-      "detail": "0 of 6968 frames"
+      "detail": "0 of 6970 frames"
     },
     {
       "name": "draws smoothly (30 fps or better)",
@@ -83,6 +83,11 @@
       "name": "the map inset shows the whole trip on a title card, then the chapter being played",
       "pass": true,
       "detail": "title: trip; m02: ch-lisbon; m09: ch-sintra"
+    },
+    {
+      "name": "the inset shows where each photo was taken and moves through the chapter as it plays",
+      "pass": true,
+      "detail": "at m03: trail m01→m02→m03; next item animated: true"
     },
     {
       "name": "an edit autosaves and survives a reload",
