@@ -1,9 +1,10 @@
-# TripAlogue — Phase 2: Media manager (web)
+# TripAlogue — Phase 3: Presentation editor (web)
 
 TripAlogue is a web application for building travelogues from a trip's itinerary, photos and videos, and
 (from Phase 7) for building them together with the people who were on the trip. This is Phase 0 of the PRD:
 the foundations every later phase plugs into, plus Phase 1: the itinerary editor
-(see [Phase 1](#phase-1-itinerary-editor)) and Phase 2: the media manager (see [Phase 2](#phase-2-media-manager)).
+(see [Phase 1](#phase-1-itinerary-editor)), Phase 2: the media manager (see [Phase 2](#phase-2-media-manager)) and
+Phase 3: the presentation editor, with narration and music lanes (see [Phase 3](#phase-3-presentation-editor)).
 
 **Exit criterion met:** a hand-written project with 20 media items is imported into an account, its originals
 are uploaded through the browser, and it plays end to end in the browser from cloud storage
@@ -136,6 +137,7 @@ npm test            # 131 tests: model, order keys, operations, history, itinera
 npm run test:e2e    # Phase 0 browser exit test (needs Playwright's Chromium: npx playwright install chromium)
 npm run test:phase1 # Phase 1 browser test of the G1 tasks (no internet needed: it uses a stand-in map provider)
 npm run test:phase2 # Phase 2 browser test of the G2 tasks (three travelers, a slow camera, WhatsApp copies, a folder upload)
+npm run test:phase3 # Phase 3 browser test of the G3 tasks (cut a 12-minute draft to 5, place portraits, lay music) and a 300-item playback
 ```
 
 ## How it works
@@ -300,17 +302,59 @@ never cut short. The cue profile's old `videoMaxSec` cap is no longer applied.
 - **Delete a travelogue:** the owner can, at the bottom of the Itinerary page, type the travelogue's title and press **Delete this
   travelogue**. Its database rows, operation log, versions, media files and unfinished uploads are all erased.
 
+## Phase 3: Presentation editor
+
+The **Edit** view (between Media and Play) turns the auto-sorted draft into a cut. It is the player with a timeline
+under it and a **Clip** tab beside it; every change is an ordinary edit (undoable, autosaved, in the operation log).
+
+| PRD | Requirement | Where |
+| --- | --- | --- |
+| PE-1 | Timeline of the whole travelogue: chapter bands with their runtime, title cards, one clip per picture or video as wide as it plays, zoom | `src/web/editor.ts` |
+| PE-2 | Play, pause, scrub (click or drag the ruler), **▶ Chapter** (plays it and stops at its end), **▶ From selection** | `src/web/editor.ts` |
+| PE-3 | Drag clips to reorder, one or a selection, within a chapter or into another; across chapters it asks: **Change the time to fit** (as in the Media view), or **Keep the time** (the item is held in that chapter by hand until its time changes) | `src/core/presentation.ts` |
+| PE-4 | Delete (or **Exclude**) takes clips out of the cut; they wait in the **Excluded** tray, and **Restore** puts them back where they were | same |
+| PE-5 | Drag a clip's right edge: an image's duration, or a video's end; or type seconds. Video trims as before (Media inspector, or here) | same |
+| PE-6 | With one picture selected, a frame on the stage: drag to move, drag a corner to resize (keeping its shape); it snaps to the centre and thirds of the frame, with guide lines (hold Alt to place freely). Fit, fill and custom in the Clip tab | `src/web/stage-edit.ts` |
+| PE-7 | **Reset to defaults** for the selection, or **Reset chapter to defaults** (click a chapter band): durations, trims, placement and fades go back to the cue profile; order and exclusions are kept | `src/core/presentation.ts` |
+| PE-8 | Ctrl/Cmd-click and Shift-click select several; set their duration (videos are trimmed to it), placement, inclusion or reset them together | same |
+| PE-9 | Runtime in total and per chapter, against a target length (type `5:00`); the bar turns amber past the target | `src/web/editor.ts` |
+| AU-1 | Narration and Music lanes under the pictures. Audio items (voice memos, songs) wait in **Audio to place**; drag one onto a lane at any point | `src/core/presentation.ts` |
+| AU-2 | Narration anchors to the picture it starts on and moves with it (a lead-in before it is allowed); music anchors to its time in the chapter; switch either way in the Clip tab, keeping where it plays. A clip stops at the end of its chapter | `src/core/timeline.ts` |
+| AU-3 | Trim an audio clip's start and end, its volume and fades, whether it ducks the others; per lane volume, mute and solo, including the clip sound inside videos | `src/core/presentation.ts` |
+| AU-4 | One mix for preview and (Phase 4) export: clip volume × lane volume × fades × ducking (narration lowers music and clip sound by 12 dB, 0.3 s ramps). The player plays narration and music in step with the pictures. Waveforms on the lanes | `src/core/render-model.ts`, `src/player/player.ts` |
+
+New in the file format (all optional, so older files still load): `targetSec` on the travelogue, `solo` on an audio
+lane, `chapterLocked` on a media item, and audio clips' anchors may have a negative offset (a lead-in).
+
+Notes:
+- **Excluded vs Removed.** Excluding (Edit view) keeps the item in the travelogue, out of the cut. Removing
+  (Media view) takes it out of the travelogue into the Removed bin, to be deleted for good.
+- **Preview volume.** Levels above 100% (clip or lane volume up to 200%) play at full volume in the browser
+  preview; export will apply them.
+- **Music across chapters, cross-fades, Ken Burns and editable fades** are Phase 5.
+
+`scripts/phase3-test.ts` scripts the G3 tasks in headless Chromium. It builds a 12-minute draft (the sample plus
+150 generated photos, 30 of them portrait), imports it with a 90 s song and a 6 s voice memo, then: sets a 5:00
+target, sets every clip to 2.5 s in one go, excludes a run of 60 clips with Delete, drags a clip's edge, reorders
+by drag within a chapter and into the next one (answering "Keep the time"), restores a clip (11:56 → 4:51); moves
+three portrait photos on the stage to the thirds and centre and shrinks them; drops the song on the Music lane
+under Porto and the memo on a picture, then reorders and trims around it (the memo stays on its picture to the
+millisecond); checks the mix (music at 70%, ducked 12 dB under the memo; mute), real playback of the song in step
+with the clock, play-this-chapter, reset-chapter, an edit reaching the preview in about 60 ms, a reload, a viewer's
+read-only Edit view, and a 300-item travelogue playing through at 4x with no frames waiting on media. Report and
+screenshots: `docs/phase3-test/`. Result: 26 of 26 checks, with no browser console errors.
+
 ## Layout
 
 ```text
-src/core/     platform-neutral model: schema, validation, migrations, order keys, operations, history, autosave, timeline, render model, telemetry, itinerary, assignment, media edits, contributors, sample hash
+src/core/     platform-neutral model: schema, validation, migrations, order keys, operations, history, autosave, timeline (with audio clips), render model and audio mix, telemetry, itinerary, assignment, media edits, presentation edits, contributors, sample hash
 src/server/   web server: config, database, object storage, auth, projects and operation log, uploads, media jobs (with HEIC conversion, photo orientation, capture metadata), mailer, geo proxy
-src/web/      browser app: API client, project session (sync, autosave, lock), resumable uploader, itinerary view, media view, route map, playback inset, UI
-src/player/   canvas player and media pool
+src/web/      browser app: API client, project session (sync, autosave, lock), resumable uploader, itinerary view, media view, edit view (timeline, clip inspector, stage placement), route map, playback inset, UI
+src/player/   canvas player (pictures, video and the audio mix) and media pool
 src/node/     command line (serve, worker, import, validate, info, new) and file helpers
 samples/      hand-written 20-item project (schema v1) and its synthetic media generator
 test/         unit and API tests (node:test)
-scripts/      build, sample media, exit test, Phase 1 and Phase 2 tests
+scripts/      build, sample media, exit test, Phase 1, 2 and 3 tests
 ```
 
 ## Not built yet
@@ -320,6 +364,5 @@ scripts/      build, sample media, exit test, Phase 1 and Phase 2 tests
   file-system driver ships).
 - A production map provider (see Configuration).
 - Google sign-in is built but untested against Google: it needs a Google OAuth client (see Configuration).
-- The presentation editor (cues, order, transitions), export to MP4, the full inset map, audio lanes, Google
-  Photos and upload links, and live co-editing are later phases; their data already has a place in the schema.
-- Audio items are imported and placed, but not yet played: narration and music lanes come in a later phase.
+- Export to MP4, editable transitions and Ken Burns, music across chapters, the full inset map, Google Photos and
+  upload links, and live co-editing are later phases; their data already has a place in the schema.

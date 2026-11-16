@@ -1,0 +1,136 @@
+{
+  "date": "2026-11-16T22:09:48.216Z",
+  "browser": "153.0.8010.12",
+  "checks": [
+    {
+      "name": "the Edit view shows the whole travelogue as a timeline grouped by chapter, each clip as long as it plays (PE-1)",
+      "pass": true,
+      "detail": "169 clips in 4 chapters, 11:56 draft"
+    },
+    {
+      "name": "clip widths follow their durations",
+      "pass": true,
+      "detail": "95 px for 4 s, 143 px for 6 s"
+    },
+    {
+      "name": "a 5:00 target is set and the runtime shows against it (PE-9)",
+      "pass": true,
+      "detail": "Runtime 11:56"
+    },
+    {
+      "name": "select every clip with Shift-click and set them all to 2.5 s; videos are trimmed to it (PE-8, PE-5)",
+      "pass": true,
+      "detail": "169 selected; now 7:16"
+    },
+    {
+      "name": "Delete takes the selected clips out of the cut; they wait in the Excluded tray (PE-4)",
+      "pass": true,
+      "detail": "61 excluded; now 4:46"
+    },
+    {
+      "name": "dragging a clip's right edge changes how long it shows (PE-5)",
+      "pass": true,
+      "detail": "5 s"
+    },
+    {
+      "name": "dragging a clip reorders it within its chapter (PE-3)",
+      "pass": true,
+      "detail": "m04 m01 m02 m03"
+    },
+    {
+      "name": "zoomed out, the end of Lisbon and the start of Sintra are both in view",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "moving a clip into another chapter asks whether to change its time; \"Keep the time\" holds it there (PE-3)",
+      "pass": true,
+      "detail": "Move gen-140.jpg to Sintra?; now 2nd in Sintra, held by hand"
+    },
+    {
+      "name": "an excluded clip is restored from the Excluded tray, back in its place (PE-4)",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "the 12-minute draft is cut to about 5 minutes",
+      "pass": true,
+      "detail": "11:56 → 4:51 (target 5:00)"
+    },
+    {
+      "name": "three portrait photos are moved on the stage, their centres snapping to a third or the centre (PE-6)",
+      "pass": true,
+      "detail": "0.333, 0.667, 0.500"
+    },
+    {
+      "name": "…and resized from a corner, keeping the photo's portrait shape",
+      "pass": true,
+      "detail": "0.378×0.896, 0.374×0.887, 0.378×0.895"
+    },
+    {
+      "name": "a song dragged onto the Music lane plays under the chapter, from its time in the chapter to the chapter's end (AU-1, AU-2)",
+      "pass": true,
+      "detail": "3:44–4:03 (Porto 3:44–4:03)"
+    },
+    {
+      "name": "a voice memo dropped on the Narration lane is anchored to the picture it starts on (AU-2)",
+      "pass": true,
+      "detail": "{\"type\":\"item\",\"itemId\":\"g002\",\"offsetSec\":0.325}"
+    },
+    {
+      "name": "after a reorder and a trim, the memo still starts on its picture, within one frame (acceptance)",
+      "pass": true,
+      "detail": "picture now at 231.50 s, memo at 231.82 s"
+    },
+    {
+      "name": "music plays at 70% and ducks 12 dB under narration; muting the narration lane silences it and lifts the music (AU-3, AU-4)",
+      "pass": true,
+      "detail": "music 0.176, memo 1.00; muted: music 0.70"
+    },
+    {
+      "name": "audio clips show their waveforms on the lanes (AU-4)",
+      "pass": true,
+      "detail": "url(\"http://127.0.0.1:33277/api/projects/trv_fihZcL7xfJjb/me"
+    },
+    {
+      "name": "in playback the song plays alongside the pictures, kept to the timeline clock",
+      "pass": true,
+      "detail": "drift 0.038 s"
+    },
+    {
+      "name": "\"Play this chapter\" plays the chapter and stops at its end (PE-2)",
+      "pass": true,
+      "detail": "stopped at 223.50 s; Sintra ends at 223.50 s"
+    },
+    {
+      "name": "\"Reset chapter to defaults\" puts its pictures back to the cue profile (PE-7)",
+      "pass": true,
+      "detail": "44 items back to 4 s"
+    },
+    {
+      "name": "an edit shows in the preview in under 200 ms (acceptance)",
+      "pass": true,
+      "detail": "63 ms from Delete to the player and timeline"
+    },
+    {
+      "name": "the cut, placements and audio survive a reload",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "a viewer sees the cut in the Edit view but cannot change it (no drag handles)",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "a 300-item travelogue plays without stalls (acceptance)",
+      "pass": true,
+      "detail": "300 items, 5:09 at 4x in 77 s; 0 of 4657 frames waited (0.00%); timeline drawn in 5 ms"
+    },
+    {
+      "name": "no errors in the browser console",
+      "pass": true,
+      "detail": ""
+    }
+  ]
+}

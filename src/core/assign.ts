@@ -116,7 +116,7 @@ export function reassign(p: Travelogue, only?: Set<Id>): Travelogue {
   const moves = new Map<Id, Id | null>();
   for (const m of p.media) {
     if (only && !only.has(m.id)) continue;
-    if (!hasTimestamp(m)) continue;
+    if (!hasTimestamp(m) || m.chapterLocked) continue;
     const { chapterId } = place(m, src.get(m.sourceId), wins);
     if (chapterId !== m.chapterId) moves.set(m.id, chapterId);
   }

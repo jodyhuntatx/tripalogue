@@ -255,3 +255,82 @@ button.danger-outline { background: none; border-color: #8f2a2a; color: #f19b9b;
   .media-grid { grid-template-columns: 1fr; }
   .media-col { max-height: none; overflow: visible; }
 }
+
+/* ---------------- Phase 3: presentation editor (Edit view) ---------------- */
+.editor-host { margin-top: 10px; }
+.project:not(.editing) .editor-host { display: none; }
+.pe { padding: 10px 12px; display: grid; gap: 8px; }
+.pe-toolbar { gap: 6px; }
+.pe-toolbar .spacer { flex: 1; }
+.pe-toolbar .num { width: 64px; padding: 4px 6px; }
+.pe-total { font-variant-numeric: tabular-nums; font-weight: 600; }
+.pe-total[data-over="true"] { color: var(--warn); }
+.pe-bar { width: 90px; height: 6px; border-radius: 3px; background: #262c36; overflow: hidden; }
+.pe-bar .fill { height: 100%; background: var(--ok); }
+.pe-bar.over .fill { background: var(--warn); }
+.pe-tracks { display: grid; grid-template-columns: 132px minmax(0, 1fr); border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: #0f1217; }
+.pe-heads { display: grid; grid-auto-rows: min-content; border-right: 1px solid var(--line); background: var(--panel); }
+.pe-head { display: flex; align-items: center; gap: 4px; padding: 0 6px; font-size: 12px; border-bottom: 1px solid #1e232b; overflow: hidden; }
+.pe-head .name { flex: 1; min-width: 0; }
+.pe-head .icon { padding: 0 5px; font-size: 11px; line-height: 18px; }
+.pe-head .icon.on { background: #1f4f8a; border-color: #2c64a8; }
+.pe-head .pe-vol { width: 100%; grid-column: 1 / -1; margin: 0; }
+.pe-head.lane { display: grid; grid-template-columns: 1fr auto auto; align-content: center; row-gap: 0; }
+.pe-scroller { overflow-x: auto; overflow-y: hidden; position: relative; }
+.pe-content { position: relative; min-height: 100%; }
+.pe-row { position: relative; border-bottom: 1px solid #1e232b; }
+.pe-head.ruler, .pe-ruler { height: 20px; }
+.pe-head.chapters, .pe-chapters { height: 24px; }
+.pe-head.visual, .pe-visual { height: 58px; }
+.pe-head.lane, .pe-lane { height: 44px; }
+.pe-clipsound, .pe-heads > .pe-head:last-child { height: 44px; }
+.pe-ruler { cursor: ew-resize; }
+.pe-ruler .tick { position: absolute; top: 2px; font-size: 10px; color: var(--muted); padding-left: 3px; border-left: 1px solid #2a303a; height: 16px; }
+.pe-chapter { position: absolute; top: 2px; height: 20px; padding: 0 6px; font-size: 11px; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; border-radius: 4px; background: #172334; border-color: #24364f; }
+.pe-chapter.selected { border-color: var(--accent); background: #1d3554; }
+.pe-clip { position: absolute; top: 4px; bottom: 4px; border-radius: 4px; background: #1d2633 center / cover no-repeat; border: 1px solid #2f3a49; overflow: hidden; cursor: grab; user-select: none; touch-action: none; }
+.pe-clip .label { position: absolute; left: 3px; bottom: 2px; font-size: 10px; padding: 0 3px; border-radius: 3px; background: rgba(0,0,0,.65); color: #fff; white-space: nowrap; pointer-events: none; }
+.pe-clip.title { background: linear-gradient(135deg, #10233a, #1d1430); cursor: default; }
+.pe-clip.title span { position: absolute; left: 4px; top: 4px; font-size: 10px; color: var(--muted); }
+.pe-clip.video { border-color: #3a4a6a; }
+.pe-clip.selected { outline: 2px solid var(--accent); outline-offset: -1px; z-index: 2; }
+.pe-clip:focus-visible { outline: 2px solid var(--accent); }
+.pe-clip .edge { position: absolute; right: 0; top: 0; bottom: 0; width: 7px; cursor: ew-resize; background: rgba(79,156,247,.0); }
+.pe-clip:hover .edge, .pe-clip.selected .edge { background: rgba(79,156,247,.55); }
+.pe-clip.audio { top: 5px; bottom: 5px; background-color: #1a2a22; background-repeat: no-repeat; border-color: #2f5a44; }
+.pe-clip.audio .label { top: 2px; bottom: auto; }
+.pe-clip.audio.anchored { border-style: solid; border-left-width: 3px; }
+.pe-lane.drop-on { background: #13233a; }
+.pe-clipsound-span { position: absolute; top: 14px; height: 14px; background: #1a2230; border: 1px solid #2a3647; border-radius: 3px; }
+.pe-playhead { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: #ff5a5a; pointer-events: none; z-index: 5; }
+.pe-marker { position: absolute; top: 44px; height: 58px; width: 3px; background: var(--accent); z-index: 6; pointer-events: none; }
+.pe.dragging .pe-clip { cursor: grabbing; }
+.pe-ghost { position: fixed; z-index: 1000; pointer-events: none; padding: 3px 8px; font-size: 12px; border-radius: 4px; background: #1f4f8a; color: #fff; }
+.pe-tray .row { gap: 6px; }
+.pe-tray summary { cursor: pointer; }
+.pe-tray .count { color: var(--muted); }
+.pe-chip { display: inline-flex; align-items: center; gap: 6px; padding: 2px 6px; font-size: 12px; border: 1px solid var(--line); border-radius: 6px; background: #121721; cursor: pointer; user-select: none; touch-action: none; }
+.pe-chip img { width: 28px; height: 20px; object-fit: cover; border-radius: 2px; }
+.pe-chip.audio { border-color: #2f5a44; background: #14211b; cursor: grab; }
+.pe-chip.selected { border-color: var(--accent); }
+.pe-inspector h3 { margin: 0 0 6px; font-size: 15px; overflow-wrap: anywhere; }
+.pe-inspector .field { display: grid; gap: 4px; margin: 10px 0; }
+.pe-inspector .field > label { font-size: 13px; }
+.pe-inspector .num { width: 70px; padding: 4px 6px; }
+.pe-inspector input[type=range] { width: 100%; }
+.pe-dialog { background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 10px; max-width: 460px; }
+.pe-dialog::backdrop { background: rgba(0,0,0,.5); }
+.pe-dialog h3 { margin: 0 0 6px; }
+/* PE-6: the picture's frame on the stage */
+.stage-box { position: absolute; border: 2px solid var(--accent); box-shadow: 0 0 0 1px rgba(0,0,0,.6); cursor: move; touch-action: none; z-index: 3; }
+.stage-box .handle { position: absolute; width: 12px; height: 12px; background: #fff; border: 2px solid var(--accent); border-radius: 2px; }
+.stage-box .nw { left: -1px; top: -1px; cursor: nwse-resize; }
+.stage-box .ne { right: -1px; top: -1px; cursor: nesw-resize; }
+.stage-box .sw { left: -1px; bottom: -1px; cursor: nesw-resize; }
+.stage-box .se { right: -1px; bottom: -1px; cursor: nwse-resize; }
+.stage-guides { position: absolute; inset: 0; pointer-events: none; z-index: 2; }
+.stage-guides .guide { position: absolute; background: #ff4fd8; }
+.stage-guides .guide.v { top: 0; bottom: 0; width: 1px; }
+.stage-guides .guide.h { left: 0; right: 0; height: 1px; }
+.pe-clip.narrow .edge { display: none; }
+#pe-excluded > .row { max-height: 132px; overflow-y: auto; }

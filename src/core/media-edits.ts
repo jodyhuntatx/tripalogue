@@ -21,7 +21,7 @@ const r3 = (n: number) => Math.round(n * 1000) / 1000;
  */
 export function setVideoTrim(p: Travelogue, itemId: Id, inSec: number, outSec: number | null): Travelogue {
   const m = p.media.find((x) => x.id === itemId);
-  if (!m || m.kind !== 'video' || !Number.isFinite(inSec)) return p;
+  if (!m || (m.kind !== 'video' && m.kind !== 'audio') || !Number.isFinite(inSec)) return p;
   const len = m.durationSec;
   let a = r3(Math.max(0, inSec));
   if (len !== undefined) a = Math.min(a, r3(Math.max(0, len - MIN_CLIP_SEC)));
@@ -45,6 +45,13 @@ export function itemInstant(p: Travelogue, m: MediaItem): number {
   return effectiveInstant(m, p.sources.find((s) => s.id === m.sourceId), zoneOf(p, m));
 }
 
+/** A changed time hands the item back to the assignment rule (PE-3 chapter lock released). */
+const unlock = (m: MediaItem): MediaItem => {
+  if (!m.chapterLocked) return m;
+  const { chapterLocked: _l, ...rest } = m;
+  return rest;
+};
+
 const iso = (ms: number) => new Date(ms).toISOString().replace('.000Z', 'Z');
 
 /**
@@ -56,7 +63,7 @@ export function setUserTime(p: Travelogue, ids: Id[], instant: number | null): T
   const want = new Set(ids);
   const picked = p.media.filter((m) => want.has(m.id));
   if (!picked.length) return p;
-  if (instant === null) return { ...p, media: p.media.map((m) => (want.has(m.id) && m.userTimestamp ? { ...m, userTimestamp: undefined } : m)) };
+  if (instant === null) return { ...p, media: p.media.map((m) => (want.has(m.id) && (m.userTimestamp || m.chapterLocked) ? { ...unlock(m), userTimestamp: undefined } : m)) };
   const times = new Map(picked.map((m) => [m.id, itemInstant(p, m)]));
   const known = [...times.values()].filter((t) => !Number.isNaN(t));
   const first = known.length ? Math.min(...known) : NaN;
@@ -66,7 +73,7 @@ export function setUserTime(p: Travelogue, ids: Id[], instant: number | null): T
       if (!want.has(m.id)) return m;
       const t = times.get(m.id)!;
       const at = Number.isNaN(t) || Number.isNaN(first) ? instant : instant + (t - first);
-      return { ...m, userTimestamp: iso(at) };
+      return { ...unlock(m), userTimestamp: iso(at) };
     }),
   };
 }
@@ -79,7 +86,7 @@ export function shiftUserTime(p: Travelogue, ids: Id[], deltaMs: number): Travel
     media: p.media.map((m) => {
       if (!want.has(m.id)) return m;
       const t = itemInstant(p, m);
-      return Number.isNaN(t) ? m : { ...m, userTimestamp: iso(t + deltaMs) };
+      return Number.isNaN(t) ? m : { ...unlock(m), userTimestamp: iso(t + deltaMs) };
     }),
   };
 }

@@ -3,10 +3,10 @@
  * layers on a canvas at the project's aspect ratio. The timeline clock is the
  * master; video elements follow it and are corrected when they drift.
  */
-import { frameAt, type Frame, type Layer, type Size } from '../core/render-model.js';
+import { frameAt, mixAt, type Frame, type Layer, type Size, type Voice } from '../core/render-model.js';
 import { buildTimeline, type MediaSegment, type Timeline } from '../core/timeline.js';
-import type { Travelogue } from '../core/schema.js';
-import { MediaPool } from './media-pool.js';
+import type { AudioLane, Travelogue } from '../core/schema.js';
+import { MediaPool, type MediaKindToLoad } from './media-pool.js';
 
 export type PlayerState = 'loading' | 'ready' | 'playing' | 'paused' | 'ended' | 'error';
 
@@ -25,7 +25,7 @@ export interface PlayerStats {
 export interface PlayerOptions {
   canvas: HTMLCanvasElement;
   project: Travelogue;
-  urlFor: (itemId: string, kind: 'image' | 'video') => string;
+  urlFor: (itemId: string, kind: MediaKindToLoad) => string;
   /** Playback-rate multiplier (tests use 4 to 8). */
   rate?: number;
   onState?: (s: PlayerState) => void;
@@ -49,9 +49,13 @@ export class Player {
   private rate: number;
   private muted = false;
   private needsDraw = true;
+  private lanes: AudioLane[];
+  /** The sounds of the last drawn frame, with their levels (AU-4; tests read it). */
+  mix: Voice[] = [];
 
   constructor(private readonly o: PlayerOptions) {
     this.timeline = buildTimeline(o.project);
+    this.lanes = o.project.audioLanes;
     this.rate = o.rate ?? 1;
     const ctx = o.canvas.getContext('2d', { alpha: false });
     if (!ctx) throw new Error('Canvas 2D is not available');
@@ -133,6 +137,11 @@ export class Player {
   setProject(project: Travelogue): void {
     const before = new Map(this.timeline.segments.flatMap((s) => (s.kind === 'title' ? [] : [[s.item.id, s.item] as const])));
     this.timeline = buildTimeline(project);
+    this.lanes = project.audioLanes;
+    for (const c of this.timeline.audio) {
+      const old = this.pool.get(c.item.id);
+      if (old?.failed) this.pool.forget(c.item.id);
+    }
     for (const s of this.timeline.segments) {
       if (s.kind === 'title') continue;
       const old = before.get(s.item.id);
@@ -144,6 +153,11 @@ export class Player {
     this.lastSegment = -1;
     this.needsDraw = true;
     this.preload(this.t);
+  }
+
+  /** The loaded media element for an item, if any (tests check audio sync with it). */
+  elementFor(itemId: string): HTMLImageElement | HTMLMediaElement | undefined {
+    return this.pool.get(itemId)?.el;
   }
 
   /** Re-render the current frame now (after a canvas resize). */
@@ -181,6 +195,15 @@ export class Player {
         }
       }
     }
+    // Narration and music starting soon, parked on their in-points.
+    for (const c of this.timeline.audio) {
+      if (c.start > horizon || c.start + c.duration <= t) continue;
+      const e = this.pool.ensure(c.item.id, 'audio');
+      if (e.el instanceof HTMLMediaElement) {
+        e.el.muted = this.muted;
+        if (c.start > t) this.parkVideo(e.el, c.inPointSec);
+      }
+    }
   }
 
   private loop(now: number) {
@@ -205,14 +228,11 @@ export class Player {
   private render(): Frame {
     const c = this.o.canvas;
     const size: Size = { w: c.width, h: c.height };
-    const segs = this.timeline.segments;
     const frame = frameAt(this.timeline, this.t, size, (seg: MediaSegment) => this.naturalSize(seg));
     if (frame.segmentIndex !== this.lastSegment && frame.segmentIndex >= 0) {
       this.lastSegment = frame.segmentIndex;
       this.stats.segmentsEntered.push(frame.segmentIndex);
       this.preload(this.t);
-      const seg = segs[frame.segmentIndex];
-      this.pool.pauseAllExcept(seg.kind === 'video' ? seg.item.id : undefined);
     }
     const ctx = this.ctx;
     ctx.globalAlpha = 1;
@@ -221,13 +241,38 @@ export class Player {
     for (const layer of frame.layers) this.drawLayer(layer, size);
     ctx.globalAlpha = 1;
     this.stats.framesDrawn += 1;
+    this.playMix(frame);
     return frame;
+  }
+
+  /** AU-4: set every sound's level from the shared mix, keep audio clips in step, and silence the rest. */
+  private playMix(frame: Frame) {
+    const voices = mixAt(this.timeline, this.lanes, this.t);
+    this.mix = voices;
+    const keep = new Set<string>();
+    const seg = this.timeline.segments[frame.segmentIndex];
+    if (seg && seg.kind === 'video') keep.add(seg.item.id);
+    for (const v of voices) {
+      keep.add(v.itemId);
+      const e = v.kind === 'video' ? this.pool.get(v.itemId) : this.pool.ensure(v.itemId, 'audio');
+      if (!e || e.failed || !(e.el instanceof HTMLMediaElement)) continue;
+      // Element volume tops out at 1; levels above 100% play at full volume in the preview.
+      const vol = Math.max(0, Math.min(1, v.gain));
+      if (Math.abs(e.el.volume - vol) > 0.004) e.el.volume = vol;
+      if (v.kind === 'audio') {
+        e.el.muted = this.muted;
+        if (e.el.readyState >= 1) this.syncMedia(e.el, v.mediaTimeSec, 1, 0.12);
+        else this.needsDraw = true;
+      }
+    }
+    this.pool.pauseAllExcept(keep);
   }
 
   private naturalSize(seg: MediaSegment): Size | undefined {
     const e = this.pool.get(seg.item.id);
     if (e?.ready) {
       const el = e.el;
+      if (el instanceof HTMLAudioElement) return undefined;
       const w = el instanceof HTMLVideoElement ? el.videoWidth : el.naturalWidth;
       const h = el instanceof HTMLVideoElement ? el.videoHeight : el.naturalHeight;
       if (w && h) return { w, h };
@@ -247,7 +292,7 @@ export class Player {
       this.drawPlaceholder(layer.dst, 'Media not found');
       return;
     }
-    if (layer.kind === 'video' && e.el instanceof HTMLVideoElement) this.syncVideo(e.el, layer.mediaTimeSec, layer.speed);
+    if (layer.kind === 'video' && e.el instanceof HTMLVideoElement) this.syncMedia(e.el, layer.mediaTimeSec, layer.speed, 0.3);
     const drawable = e.ready && (!(e.el instanceof HTMLVideoElement) || e.el.readyState >= 2);
     if (!drawable) {
       this.stats.placeholderFrames += 1;
@@ -257,10 +302,11 @@ export class Player {
       return;
     }
     const { src, dst } = layer;
+    if (e.el instanceof HTMLAudioElement) return;
     ctx.drawImage(e.el, src.x, src.y, src.w, src.h, dst.x, dst.y, dst.w, dst.h);
   }
 
-  private parkVideo(v: HTMLVideoElement, at: number) {
+  private parkVideo(v: HTMLMediaElement, at: number) {
     if (!v.paused) return;
     const go = () => {
       if (v.paused && Math.abs(v.currentTime - at) > 0.05) v.currentTime = at;
@@ -269,12 +315,12 @@ export class Player {
     else v.addEventListener('loadedmetadata', go, { once: true });
   }
 
-  private syncVideo(v: HTMLVideoElement, mediaTime: number, speed: number) {
+  private syncMedia(v: HTMLMediaElement, mediaTime: number, speed: number, playingTolerance: number) {
     const playing = this.stateValue === 'playing';
     const targetRate = Math.min(16, speed * this.rate);
     if (Math.abs(v.playbackRate - targetRate) > 0.01) v.playbackRate = targetRate;
     const drift = Math.abs(v.currentTime - mediaTime);
-    const tolerance = playing ? 0.3 * Math.max(1, this.rate) : 0.04;
+    const tolerance = playing ? playingTolerance * Math.max(1, this.rate) : 0.04;
     if (drift > tolerance && !v.seeking) {
       v.currentTime = mediaTime;
       this.stats.videoSeeks += 1;
