@@ -20,7 +20,7 @@ export interface Size {
 }
 
 export type Layer =
-  | { kind: 'title'; opacity: number; title: string; subtitle: string; chapterIndex: number }
+  | { kind: 'title'; opacity: number; title: string; subtitle: string; description: string; chapterIndex: number }
   | { kind: 'image' | 'video'; opacity: number; itemId: string; src: Rect; dst: Rect; mediaTimeSec: number; speed: number };
 
 export interface Frame {
@@ -81,7 +81,7 @@ export function frameAt(tl: Timeline, t: number, frame: Size, sizeOf: (seg: Medi
   if (seg.kind === 'title') {
     return {
       t, segmentIndex: i, chapterIndex: seg.chapterIndex,
-      layers: [{ kind: 'title', opacity: fadeOpacity(local, seg.duration, seg.entrance, seg.exit), title: seg.title, subtitle: seg.subtitle, chapterIndex: seg.chapterIndex }],
+      layers: [{ kind: 'title', opacity: fadeOpacity(local, seg.duration, seg.entrance, seg.exit), title: seg.title, subtitle: seg.subtitle, description: seg.description, chapterIndex: seg.chapterIndex }],
     };
   }
   const size = sizeOf(seg) ?? frame;

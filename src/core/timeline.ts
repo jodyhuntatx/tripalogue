@@ -15,6 +15,8 @@ export interface TitleSegment {
   duration: number;
   title: string;
   subtitle: string;
+  /** The chapter's "What happened here" text; empty when there is none. */
+  description: string;
   entrance: Transition;
   exit: Transition;
 }
@@ -82,6 +84,7 @@ export function buildTimeline(p: Travelogue): Timeline {
           kind: 'title', chapterId: ch.id, chapterIndex, start: t, duration,
           title: ch.title,
           subtitle: [ch.locationName, formatDateRange(ch)].filter(Boolean).join(' · '),
+          description: ch.description.trim(),
           entrance: { type: 'fade', durationSec: p.cueProfile.fadeInSec },
           exit: { type: 'fade', durationSec: p.cueProfile.fadeOutSec },
         });

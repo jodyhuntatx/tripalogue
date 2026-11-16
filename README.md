@@ -207,7 +207,7 @@ keeps the same session.
 | IT-2 | Add, insert, reorder, sort by date, delete (media moves to Unassigned) | same |
 | IT-3 | Timeline of chapters in lanes, linked to the cards and the map | `src/web/itinerary.ts` |
 | IT-4 | Overlap, gap and order checks in plain words; back-to-back chapters are not flagged | `analyzeItinerary` |
-| IT-5 | Chapter title cards (on or off, seconds) and a Play button that runs them | `src/web/main.ts` |
+| IT-5 | Chapter title cards (on or off, seconds) showing the title, place, dates and the chapter's description ("What happened here", wrapped to four lines), and a Play button that runs them | `src/web/main.ts`, `src/player/player.ts` |
 | IT-6 | Paste lines or choose a CSV, preview, then add (undoable); consecutive days in one place fold into one chapter | `parseItinerary` |
 | IT-7 | Split a chapter at a time (media moves by timestamp) and merge with the next | `splitChapter`, `mergeChapters` |
 | IT-8 | Place search, or drop a pin by clicking the map | `src/server/geo.ts`, `src/web/map.ts` |

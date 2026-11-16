@@ -239,7 +239,7 @@ export class Player {
     const ctx = this.ctx;
     ctx.globalAlpha = layer.opacity;
     if (layer.kind === 'title') {
-      this.drawTitle(layer.title, layer.subtitle, layer.chapterIndex, size);
+      this.drawTitle(layer.title, layer.subtitle, layer.description, layer.chapterIndex, size);
       return;
     }
     const e = this.pool.ensure(layer.itemId, layer.kind);
@@ -295,7 +295,7 @@ export class Player {
     ctx.fillText(label, r.x + r.w / 2, r.y + r.h / 2);
   }
 
-  private drawTitle(title: string, subtitle: string, chapterIndex: number, size: Size) {
+  private drawTitle(title: string, subtitle: string, description: string, chapterIndex: number, size: Size) {
     const ctx = this.ctx;
     const g = ctx.createLinearGradient(0, 0, size.w, size.h);
     g.addColorStop(0, '#10233a');
@@ -305,14 +305,53 @@ export class Player {
     const u = Math.min(size.w, size.h);
     ctx.textAlign = 'center';
     ctx.textBaseline = 'alphabetic';
+    // The chapter's description ("What happened here") goes under the place and dates, wrapped to at most
+    // four lines; the whole block moves up to stay centred.
+    const descFont = `italic 400 ${Math.round(u * 0.036)}px system-ui, sans-serif`;
+    ctx.font = descFont;
+    const lines = description ? wrapText(ctx, description, size.w * 0.78, 4) : [];
+    const lineH = u * 0.036 * 1.4;
+    const lift = lines.length ? (size.h * 0.05 + lines.length * lineH) / 2 : 0;
     ctx.fillStyle = 'rgba(255,255,255,0.6)';
     ctx.font = `600 ${Math.round(u * 0.035)}px system-ui, sans-serif`;
-    ctx.fillText(`CHAPTER ${chapterIndex + 1}`, size.w / 2, size.h * 0.42);
+    ctx.fillText(`CHAPTER ${chapterIndex + 1}`, size.w / 2, size.h * 0.42 - lift);
     ctx.fillStyle = '#fff';
     ctx.font = `700 ${Math.round(u * 0.085)}px system-ui, sans-serif`;
-    ctx.fillText(title, size.w / 2, size.h * 0.54, size.w * 0.9);
+    ctx.fillText(title, size.w / 2, size.h * 0.54 - lift, size.w * 0.9);
     ctx.fillStyle = 'rgba(255,255,255,0.75)';
     ctx.font = `400 ${Math.round(u * 0.04)}px system-ui, sans-serif`;
-    ctx.fillText(subtitle, size.w / 2, size.h * 0.63, size.w * 0.9);
+    ctx.fillText(subtitle, size.w / 2, size.h * 0.63 - lift, size.w * 0.9);
+    if (!lines.length) return;
+    ctx.fillStyle = 'rgba(255,255,255,0.88)';
+    ctx.font = descFont;
+    const top = size.h * 0.63 - lift + size.h * 0.05 + lineH * 0.75;
+    lines.forEach((line, i) => ctx.fillText(line, size.w / 2, top + i * lineH, size.w * 0.9));
   }
+}
+
+/**
+ * Break text into lines no wider than maxWidth (in the context's current font), keeping the author's own line
+ * breaks; past maxLines the last line ends with an ellipsis.
+ */
+export function wrapText(ctx: Pick<CanvasRenderingContext2D, 'measureText'>, text: string, maxWidth: number, maxLines: number): string[] {
+  const fits = (s: string) => ctx.measureText(s).width <= maxWidth;
+  const out: string[] = [];
+  for (const para of text.split(/\r?\n/).map((p) => p.trim()).filter(Boolean)) {
+    let line = '';
+    for (const word of para.split(/\s+/)) {
+      const next = line ? `${line} ${word}` : word;
+      if (fits(next) || !line) line = next;
+      else {
+        out.push(line);
+        line = word;
+      }
+    }
+    if (line) out.push(line);
+  }
+  if (out.length <= maxLines) return out;
+  const kept = out.slice(0, maxLines);
+  let last = kept[maxLines - 1];
+  while (last && !fits(`${last}…`)) last = last.replace(/\s*\S+$/, '');
+  kept[maxLines - 1] = `${last}…`;
+  return kept;
 }
