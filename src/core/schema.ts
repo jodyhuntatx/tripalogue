@@ -137,6 +137,11 @@ export interface MediaItem extends Attribution {
   durationSec?: number;
   /** null = Unassigned bin. */
   chapterId: Id | null;
+  /**
+   * PE-3: moved to its chapter by hand without changing its time. The assignment rule leaves it there until its
+   * time is changed.
+   */
+  chapterLocked?: boolean;
 }
 
 export type PlacementMode = 'fit' | 'fill' | 'custom';
@@ -156,10 +161,16 @@ export interface Transition {
 
 export type Animation = { type: 'none' } | { type: 'kenBurns'; from: NormRect; to: NormRect };
 
+/** offsetSec: seconds after the anchor; an item anchor may be negative (the clip leads in before its item). */
 export type AudioAnchor =
   | { type: 'item'; itemId: Id; offsetSec: number }
   | { type: 'chapterTime'; chapterId: Id; offsetSec: number };
 
+/**
+ * An audio item placed on a lane (AU-1). The clip starts at its anchor plus offsetSec: a visual item's start
+ * (it moves with that item) or a time from the start of a chapter (AU-2). Its cue's inPointSec, outPointSec and
+ * volume trim and level it (AU-3).
+ */
 export interface AudioCue {
   laneId: Id;
   anchor: AudioAnchor;
@@ -203,6 +214,8 @@ export interface AudioLane {
   kind: AudioLaneKind;
   volume: number;
   mute: boolean;
+  /** AU-3: when any lane is soloed, only soloed lanes are heard. */
+  solo?: boolean;
   /** Lanes this lane lowers while it plays, and by how many dB. */
   ducks: { laneId: Id; db: number }[];
 }
@@ -236,6 +249,8 @@ export interface Travelogue {
   annotations: Annotation[];
   audioLanes: AudioLane[];
   mapView: MapViewSettings;
+  /** PE-9: the length the user is aiming for, in seconds; runtime is shown against it. */
+  targetSec?: number;
   /**
    * The Removed bin: items taken out of the travelogue, with the cue they had, so they can be put back. They are
    * deleted for good (and their files erased) by hand or a set number of days after removal.

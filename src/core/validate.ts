@@ -161,6 +161,7 @@ export function validate(raw: unknown): ValidationIssue[] {
     oneOf(m, 'status', path, ['pending', 'uploading', 'processing', 'ready', 'failed'], true);
     num(m, 'sizeBytes', path, 0, 1e13, true);
     str(m, 'userTimestamp', path, true);
+    if (m.chapterLocked !== undefined && typeof m.chapterLocked !== 'boolean') err(`${path}.chapterLocked`, 'must be a boolean');
     oneOf(m, 'timestampConfidence', path, ['high', 'low'], true);
     num(m, 'width', path, 1, 100000, true);
     num(m, 'height', path, 1, 100000, true);
@@ -170,6 +171,17 @@ export function validate(raw: unknown): ValidationIssue[] {
       err(`${path}.uri`, 'must not contain ".."; paths are relative to the source root');
     }
   });
+
+  const laneIds = new Set<string>();
+  arr('audioLanes').forEach((l, i) => {
+    const path = `$.audioLanes[${i}]`;
+    str(l, 'id', path);
+    if (typeof l.id === 'string') laneIds.add(l.id);
+    oneOf(l, 'kind', path, ['narration', 'music', 'clipSound']);
+    num(l, 'volume', path, 0, 2);
+    if (l.solo !== undefined && typeof l.solo !== 'boolean') err(`${path}.solo`, 'must be a boolean');
+  });
+  if (p.targetSec !== undefined) num(p, 'targetSec', '$', 1, 360000);
 
   // Cues
   const cueItems = new Set<string>();
@@ -201,6 +213,25 @@ export function validate(raw: unknown): ValidationIssue[] {
       rect(c.animation.to, `${path}.animation.to`);
     } else if (c.animation.type !== 'none') err(`${path}.animation.type`, 'must be none or kenBurns');
     const item = typeof c.itemId === 'string' ? mediaIds.get(c.itemId) : undefined;
+    if (c.audio !== undefined) {
+      const a = c.audio;
+      if (!isObj(a)) err(`${path}.audio`, 'must be an object');
+      else {
+        if (item && item.kind !== 'audio') err(`${path}.audio`, 'only audio items go on audio lanes');
+        if (typeof a.laneId !== 'string' || !laneIds.has(a.laneId)) err(`${path}.audio.laneId`, 'must reference an audio lane');
+        num(a, 'fadeInSec', `${path}.audio`, 0, 60);
+        num(a, 'fadeOutSec', `${path}.audio`, 0, 60);
+        if (typeof a.duck !== 'boolean') err(`${path}.audio.duck`, 'must be a boolean');
+        const an = a.anchor;
+        if (!isObj(an)) err(`${path}.audio.anchor`, 'must be an object');
+        else {
+          num(an, 'offsetSec', `${path}.audio.anchor`, an.type === 'item' ? -3600 : 0, 86400);
+          if (an.type === 'item') { if (typeof an.itemId !== 'string' || !mediaIds.has(an.itemId)) warn(`${path}.audio.anchor.itemId`, 'anchored to a missing item; the clip will not play'); }
+          else if (an.type === 'chapterTime') { if (typeof an.chapterId !== 'string' || !chapterIds.has(an.chapterId)) warn(`${path}.audio.anchor.chapterId`, 'anchored to a missing chapter; the clip will not play'); }
+          else err(`${path}.audio.anchor.type`, 'must be item or chapterTime');
+        }
+      }
+    }
     if (item?.kind === 'image' && c.durationSec === undefined) err(`${path}.durationSec`, 'image cues need a duration');
     if (item?.kind === 'video' && isNum(item.durationSec) && isNum(c.outPointSec) && c.outPointSec > item.durationSec + 0.05) {
       err(`${path}.outPointSec`, `is past the end of the clip (${item.durationSec}s)`);
@@ -225,14 +256,6 @@ export function validate(raw: unknown): ValidationIssue[] {
   }
 
   arr('annotations');
-  const laneIds = new Set<string>();
-  arr('audioLanes').forEach((l, i) => {
-    const path = `$.audioLanes[${i}]`;
-    str(l, 'id', path);
-    if (typeof l.id === 'string') laneIds.add(l.id);
-    oneOf(l, 'kind', path, ['narration', 'music', 'clipSound']);
-    num(l, 'volume', path, 0, 2);
-  });
   if (!isObj(p.mapView)) err('$.mapView', 'must be an object');
   else num(p.mapView, 'size', '$.mapView', 0.1, 0.3);
 

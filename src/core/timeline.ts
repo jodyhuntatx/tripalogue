@@ -1,8 +1,9 @@
 /**
  * Builds the playable timeline from a project: chapters in itinerary order,
  * each opened by its title card, followed by its included visual cues in cue
- * order. Unassigned and excluded items do not play. Audio items are placed on
- * lanes in Phase 3 and are skipped here.
+ * order. Unassigned and excluded items do not play. Audio items play when
+ * placed on a lane (AU-1): each clip is timed from its anchor, a visual item's
+ * start or a time in a chapter, and stops at the end of its chapter.
  */
 import { defaultCue } from './project.js';
 import type { Chapter, Cue, MediaItem, Transition, Travelogue } from './schema.js';
@@ -36,6 +37,26 @@ export interface MediaSegment {
 
 export type Segment = TitleSegment | MediaSegment;
 
+/** A narration or music clip on an audio lane, timed on the travelogue's clock. */
+export interface AudioClip {
+  item: MediaItem;
+  cue: Cue;
+  laneId: string;
+  chapterId: string;
+  chapterIndex: number;
+  start: number;
+  duration: number;
+  /** Media time at the clip's start (its in-point). */
+  inPointSec: number;
+  /** The visual item it moves with (AU-2), when anchored to one. */
+  anchorItemId?: string;
+  fadeInSec: number;
+  fadeOutSec: number;
+  duck: boolean;
+  /** Seconds cut off the end because the chapter ends first. */
+  cutSec: number;
+}
+
 export interface ChapterSpan {
   chapterId: string;
   index: number;
@@ -48,6 +69,8 @@ export interface Timeline {
   segments: Segment[];
   chapters: ChapterSpan[];
   duration: number;
+  /** Narration and music placed on lanes, in start order. */
+  audio: AudioClip[];
   /** Items that cannot play yet, with the reason (e.g. unknown video length). */
   skipped: { itemId: string; reason: string }[];
 }
@@ -115,7 +138,66 @@ export function buildTimeline(p: Travelogue): Timeline {
     chapters.push({ chapterId: ch.id, index: chapterIndex, title: ch.title, start: chStart, end: t });
   });
 
-  return { segments, chapters, duration: t, skipped };
+  const audio = buildAudio(p, segments, chapters, skipped);
+  return { segments, chapters, duration: t, audio, skipped };
+}
+
+/** Clips shorter than this (after cutting at the chapter end) are not played. */
+const MIN_AUDIO_SEC = 0.05;
+
+function buildAudio(p: Travelogue, segments: Segment[], chapters: ChapterSpan[], skipped: Timeline['skipped']): AudioClip[] {
+  const media = new Map(p.media.map((m) => [m.id, m]));
+  const segOf = new Map(segments.flatMap((s) => (s.kind === 'title' ? [] : [[s.item.id, s] as const])));
+  const spanOf = new Map(chapters.map((c) => [c.chapterId, c]));
+  const out: AudioClip[] = [];
+  for (const cue of p.cues) {
+    const a = cue.audio;
+    const item = media.get(cue.itemId);
+    if (!a || !item || item.kind !== 'audio' || !cue.included) continue;
+    if (item.status !== undefined && item.status !== 'ready') {
+      skipped.push({ itemId: item.id, reason: `not ready yet (${item.status})` });
+      continue;
+    }
+    let anchorStart: number;
+    let span: ChapterSpan | undefined;
+    if (a.anchor.type === 'item') {
+      const seg = segOf.get(a.anchor.itemId);
+      if (!seg) {
+        skipped.push({ itemId: item.id, reason: 'anchored to an item that is not playing' });
+        continue;
+      }
+      anchorStart = seg.start;
+      span = spanOf.get(seg.chapterId);
+    } else {
+      span = spanOf.get(a.anchor.chapterId);
+      if (!span) {
+        skipped.push({ itemId: item.id, reason: 'its chapter no longer exists' });
+        continue;
+      }
+      anchorStart = span.start;
+    }
+    if (!span) continue;
+    const inPt = cue.inPointSec ?? 0;
+    const outPt = cue.outPointSec ?? item.durationSec;
+    if (outPt === undefined) {
+      skipped.push({ itemId: item.id, reason: 'audio length unknown' });
+      continue;
+    }
+    // An item anchor may lead in before its item (negative offset), but never before the chapter starts.
+    const start = Math.max(span.start, anchorStart + (a.anchor.type === 'item' ? a.anchor.offsetSec : Math.max(0, a.anchor.offsetSec)));
+    const full = Math.max(0, outPt - inPt);
+    const duration = Math.min(full, span.end - start);
+    if (!(duration > MIN_AUDIO_SEC)) {
+      skipped.push({ itemId: item.id, reason: 'starts after its chapter ends' });
+      continue;
+    }
+    out.push({
+      item, cue, laneId: a.laneId, chapterId: span.chapterId, chapterIndex: span.index, start, duration, inPointSec: inPt,
+      anchorItemId: a.anchor.type === 'item' ? a.anchor.itemId : undefined,
+      fadeInSec: a.fadeInSec, fadeOutSec: a.fadeOutSec, duck: a.duck, cutSec: full - duration,
+    });
+  }
+  return out.sort((x, y) => x.start - y.start);
 }
 
 /** Binary search for the segment playing at time t (end-exclusive; the last segment owns t = duration). */

@@ -5,7 +5,7 @@
  * video frames, which is what makes preview/export parity testable.
  */
 import { segmentIndexAt, type MediaSegment, type Segment, type Timeline } from './timeline.js';
-import type { NormRect, Placement, Transition } from './schema.js';
+import type { AudioLane, NormRect, Placement, Transition } from './schema.js';
 
 export interface Rect {
   x: number;
@@ -99,4 +99,75 @@ export function frameAt(tl: Timeline, t: number, frame: Size, sizeOf: (seg: Medi
 
 function defaultSize(seg: MediaSegment): Size | undefined {
   return seg.item.width && seg.item.height ? { w: seg.item.width, h: seg.item.height } : undefined;
+}
+
+// ---------------------------------------------------------------- audio mix (AU-4)
+
+/** One sound playing at a moment: a video's own sound or an audio clip, with its level. */
+export interface Voice {
+  itemId: string;
+  kind: 'video' | 'audio';
+  laneId: string;
+  /** Where in the media file playback should be. */
+  mediaTimeSec: number;
+  /** Linear gain, 0..2 (clip volume × lane volume × fades × ducking). */
+  gain: number;
+  speed: number;
+}
+
+/** Ducking ramps in and out over this long at the edges of the clip that causes it. */
+export const DUCK_RAMP_SEC = 0.3;
+
+const clamp01 = (x: number) => Math.max(0, Math.min(1, x));
+
+function edgeFade(local: number, duration: number, fin: number, fout: number): number {
+  let g = 1;
+  if (fin > 0) g = Math.min(g, local / fin);
+  if (fout > 0) g = Math.min(g, (duration - local) / fout);
+  return clamp01(g);
+}
+
+/**
+ * The mix at time t: the shared audio model the preview plays and the export will render. Narration, music and
+ * clip sound each take their lane's volume (muted or not soloed = silent); a clip on a lane that ducks others
+ * lowers them by the lane's dB while it plays, ramping over DUCK_RAMP_SEC.
+ */
+export function mixAt(tl: Timeline, lanes: AudioLane[], t: number): Voice[] {
+  const byId = new Map(lanes.map((l) => [l.id, l]));
+  const anySolo = lanes.some((l) => l.solo);
+  const laneGain = (id: string) => {
+    const l = byId.get(id);
+    if (!l) return 1;
+    return l.mute || (anySolo && !l.solo) ? 0 : l.volume;
+  };
+  const active = tl.audio.filter((c) => t >= c.start && t < c.start + c.duration);
+  const duckDb = new Map<string, number>();
+  for (const c of active) {
+    const lane = byId.get(c.laneId);
+    if (!lane || !c.duck || !lane.ducks.length || laneGain(c.laneId) === 0) continue;
+    const amount = clamp01(Math.min((t - c.start) / DUCK_RAMP_SEC, (c.start + c.duration - t) / DUCK_RAMP_SEC));
+    for (const d of lane.ducks) duckDb.set(d.laneId, Math.min(duckDb.get(d.laneId) ?? 0, d.db * amount));
+  }
+  const duck = (laneId: string) => 10 ** ((duckDb.get(laneId) ?? 0) / 20);
+  const voices: Voice[] = [];
+  const i = segmentIndexAt(tl, t);
+  const seg = i >= 0 ? tl.segments[i] : undefined;
+  if (seg && seg.kind === 'video') {
+    const clipLane = lanes.find((l) => l.kind === 'clipSound')?.id ?? 'lane-clip';
+    const local = Math.min(Math.max(t - seg.start, 0), seg.duration);
+    voices.push({
+      itemId: seg.item.id, kind: 'video', laneId: clipLane, speed: seg.speed,
+      mediaTimeSec: seg.inPointSec + local * seg.speed,
+      gain: seg.cue.volume * laneGain(clipLane) * fadeOpacity(local, seg.duration, seg.cue.entrance, seg.cue.exit) * duck(clipLane),
+    });
+  }
+  for (const c of active) {
+    const local = t - c.start;
+    voices.push({
+      itemId: c.item.id, kind: 'audio', laneId: c.laneId, speed: 1,
+      mediaTimeSec: c.inPointSec + local,
+      gain: c.cue.volume * laneGain(c.laneId) * edgeFade(local, c.duration, c.fadeInSec, c.fadeOutSec) * duck(c.laneId),
+    });
+  }
+  return voices;
 }

@@ -3,7 +3,8 @@
  * images and video elements, preloading the segments just ahead of the
  * playhead so playback does not stall on segment boundaries.
  */
-export type MediaEl = HTMLImageElement | HTMLVideoElement;
+export type MediaEl = HTMLImageElement | HTMLVideoElement | HTMLAudioElement;
+export type MediaKindToLoad = 'image' | 'video' | 'audio';
 
 export interface PoolEntry {
   el: MediaEl;
@@ -18,7 +19,7 @@ export class MediaPool {
   onReady: (itemId: string) => void = () => {};
 
   constructor(
-    private readonly urlFor: (itemId: string, kind: 'image' | 'video') => string,
+    private readonly urlFor: (itemId: string, kind: MediaKindToLoad) => string,
     private readonly capacity = 16,
   ) {}
 
@@ -28,7 +29,7 @@ export class MediaPool {
     return e;
   }
 
-  ensure(itemId: string, kind: 'image' | 'video'): PoolEntry {
+  ensure(itemId: string, kind: MediaKindToLoad): PoolEntry {
     const existing = this.get(itemId);
     if (existing) return existing;
     let entry: PoolEntry;
@@ -49,9 +50,9 @@ export class MediaPool {
       };
       img.src = this.urlFor(itemId, kind);
     } else {
-      const v = document.createElement('video');
+      const v = kind === 'audio' ? document.createElement('audio') : document.createElement('video');
       v.preload = 'auto';
-      v.playsInline = true;
+      if (v instanceof HTMLVideoElement) v.playsInline = true;
       v.crossOrigin = 'anonymous';
       entry = { el: v, ready: false, failed: false, lastUsed: performance.now() };
       v.addEventListener('loadeddata', () => {
@@ -76,7 +77,7 @@ export class MediaPool {
     const e = this.entries.get(itemId);
     if (!e) return;
     this.entries.delete(itemId);
-    if (e.el instanceof HTMLVideoElement) {
+    if (e.el instanceof HTMLMediaElement) {
       e.el.pause();
       e.el.removeAttribute('src');
       e.el.load();
@@ -92,15 +93,16 @@ export class MediaPool {
     if (this.entries.get(itemId)?.failed) this.forget(itemId);
   }
 
-  /** Pause every video except the one playing now. */
-  pauseAllExcept(itemId?: string): void {
+  /** Pause every video and audio element except the ones playing now. */
+  pauseAllExcept(keep?: string | Set<string>): void {
+    const has = (id: string) => (typeof keep === 'string' ? id === keep : !!keep?.has(id));
     for (const [id, e] of this.entries) {
-      if (id !== itemId && e.el instanceof HTMLVideoElement && !e.el.paused) e.el.pause();
+      if (!has(id) && e.el instanceof HTMLMediaElement && !e.el.paused) e.el.pause();
     }
   }
 
   setMuted(muted: boolean): void {
-    for (const e of this.entries.values()) if (e.el instanceof HTMLVideoElement) e.el.muted = muted;
+    for (const e of this.entries.values()) if (e.el instanceof HTMLMediaElement) e.el.muted = muted;
   }
 
   private evict(keep: string): void {
@@ -112,7 +114,7 @@ export class MediaPool {
     for (const [id, e] of victims) {
       // Delete first: releasing the source fires an error event, which must not count as a media failure.
       this.entries.delete(id);
-      if (e.el instanceof HTMLVideoElement) {
+      if (e.el instanceof HTMLMediaElement) {
         e.el.pause();
         e.el.removeAttribute('src');
         e.el.load();

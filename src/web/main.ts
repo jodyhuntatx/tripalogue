@@ -11,13 +11,15 @@ import { Api, ApiError, type MediaToolStatus, type Role, type User } from './api
 import { mountInset, type InsetView } from './inset.js';
 import { mountItinerary, type ItineraryView } from './itinerary.js';
 import { mountMedia, type MediaView } from './media.js';
+import { mountEditor, type EditorView } from './editor.js';
+import { mountStageEditor } from './stage-edit.js';
 import { ProjectSession } from './session.js';
 import { filesFromDrop, mediaFiles, uploadAll, type UploadProgress } from './uploader.js';
 import { fill, h, type Child } from './dom.js';
 
 declare global {
   interface Window {
-    tripalogue?: { player?: Player; session?: ProjectSession; itinerary?: ItineraryView; media?: MediaView; inset?: InsetView; state?: () => PlayerState | undefined; telemetry: Telemetry };
+    tripalogue?: { player?: Player; session?: ProjectSession; itinerary?: ItineraryView; media?: MediaView; editor?: EditorView; inset?: InsetView; state?: () => PlayerState | undefined; telemetry: Telemetry };
   }
 }
 
@@ -34,7 +36,7 @@ const ago = (t: number) => {
 const telemetry = new Telemetry();
 window.tripalogue = { telemetry };
 let me: User | undefined;
-type View = 'itinerary' | 'media' | 'play';
+type View = 'itinerary' | 'media' | 'edit' | 'play';
 let current: { id: string; session: ProjectSession; player: Player; setView: (v: View) => void; view: () => View; dispose: () => void } | undefined;
 
 function setTelemetry(endpoint: string | null) {
@@ -56,7 +58,7 @@ function banner(text: string, kind: 'info' | 'error' = 'info') {
 
 async function route() {
   const hash = location.hash || '#/projects';
-  const pm = /^#\/p\/([^/?]+)(?:\/(itinerary|media|play))?/.exec(hash);
+  const pm = /^#\/p\/([^/?]+)(?:\/(itinerary|media|edit|play))?/.exec(hash);
   // Switching views inside the open project keeps the session (and its edit lock) alive.
   // Same project: switch to the view in the link, or stay on the current one when the link names none.
   if (current && pm && decodeURIComponent(pm[1]) === current.id) return current.setView((pm[2] as View | undefined) ?? current.view());
@@ -225,7 +227,7 @@ async function renderProject(id: string, initialView?: View) {
   const redoBtn = h('button', { id: 'redo', onclick: () => s.redo() }, 'Redo');
   const meta = h('div', { id: 'meta', class: 'muted' });
   const side = h('div', { class: 'side-body' });
-  const tabs = ['Items', 'Upload', 'Members', 'Versions'] as const;
+  const tabs = ['Clip', 'Items', 'Upload', 'Members', 'Versions'] as const;
   let tab: (typeof tabs)[number] = 'Items';
   const tabBar = h('div', { class: 'tabs', role: 'tablist' }, ...tabs.map((t) => h('button', { role: 'tab', 'data-tab': t, onclick: () => { tab = t; renderSide(); } }, t)));
 
@@ -238,6 +240,7 @@ async function renderProject(id: string, initialView?: View) {
   const viewTabs = h('nav', { class: 'view-tabs', 'aria-label': 'Views' },
     h('a', { href: `#/p/${encodeURIComponent(id)}/itinerary`, 'data-view': 'itinerary', id: 'view-itinerary' }, 'Itinerary'),
     h('a', { href: `#/p/${encodeURIComponent(id)}/media`, 'data-view': 'media', id: 'view-media' }, 'Media'),
+    h('a', { href: `#/p/${encodeURIComponent(id)}/edit`, 'data-view': 'edit', id: 'view-edit' }, 'Edit'),
     h('a', { href: `#/p/${encodeURIComponent(id)}/play`, 'data-view': 'play', id: 'view-play' }, 'Play'));
   const cfg = await Api.config().catch(() => ({ map: { tiles: false, search: false, attribution: '' }, media: undefined as MediaToolStatus | undefined, purgeAfterDays: 30 }));
   let mediaTools: MediaToolStatus | undefined = cfg.media;
@@ -274,6 +277,7 @@ async function renderProject(id: string, initialView?: View) {
       player.play();
     },
   });
+  const editorHost = h('div', { class: 'editor-host' });
   const playMain = h('main', { class: 'project' },
       h('section', {},
         stageWrap,
@@ -283,7 +287,7 @@ async function renderProject(id: string, initialView?: View) {
           h('button', { id: 'next', 'aria-label': 'Next chapter', onclick: () => player.seekChapter(1) }, '⏭'),
           h('div', { class: 'scrub-wrap' }, scrub, marks),
           time, muteBtn, inset.settings),
-        chapterLabel, meta),
+        chapterLabel, meta, editorHost),
       h('aside', { class: 'side card', id: 'side-panel' }, tabBar, side));
 
   // The side panel (Items, Upload, Members, Versions) folds away so playback can use the whole width.
@@ -304,13 +308,25 @@ async function renderProject(id: string, initialView?: View) {
   app.replaceChildren(topbar(viewTabs, titleInput, statusChip, undoBtn, redoBtn, s.mayEdit && exportLink), itinerary.el, media.el, playMain);
 
   function setView(v: View) {
+    const was = view;
     view = v;
     itinerary.el.hidden = v !== 'itinerary';
     media.el.hidden = v !== 'media';
     if (v === 'media') media.update();
-    playMain.hidden = v !== 'play';
+    playMain.hidden = v !== 'play' && v !== 'edit';
+    // The Edit view is the player with the timeline under it and the Clip tab beside it (Phase 3).
+    const editing = v === 'edit';
+    playMain.classList.toggle('editing', editing);
+    editor.el.hidden = !editing;
+    tabBar.querySelector<HTMLElement>('[data-tab="Clip"]')!.hidden = !editing;
+    if (editing && was !== 'edit') tab = 'Clip';
+    else if (!editing && tab === 'Clip') tab = 'Items';
+    stageWrap.style.maxWidth = `calc((100vh - ${editing ? 470 : 190}px) * ${s.state.output.width / s.state.output.height})`;
+    editor.setActive(editing);
+    stage.setActive(editing);
+    renderSide();
     viewTabs.querySelectorAll<HTMLElement>('a').forEach((a) => (a.dataset.view === v ? a.setAttribute('aria-current', 'page') : a.removeAttribute('aria-current')));
-    if (v !== 'play') player.pause();
+    if (v !== 'play' && v !== 'edit') player.pause();
     else player.redraw();
     const want = `#/p/${encodeURIComponent(id)}/${v}`;
     if (location.hash !== want) history.replaceState(null, '', want);
@@ -330,10 +346,15 @@ async function renderProject(id: string, initialView?: View) {
       chapterLabel.textContent = ch ? `${ch.index + 1}. ${ch.title}` : '';
       marks.querySelectorAll<HTMLElement>('.chapter-mark').forEach((el) => el.classList.toggle('current', Number(el.dataset.index) === frame.chapterIndex));
       inset.onFrame(frame, player.timeline);
+      editor.onTime(t);
+      stage.refresh();
     },
     onEvent: (name, props) => telemetry.track(`player_${name}`, props ?? {}),
   });
   document.body.dataset.state = player.state;
+  const editor = mountEditor(s, { projectId: id, player, onSelect: (ids) => stage.setSelection(ids) });
+  const stage = mountStageEditor(s, player, stageWrap, canvas);
+  editorHost.append(editor.el);
   stageWrap.style.aspectRatio = `${s.state.output.width} / ${s.state.output.height}`;
   // Keep the frame's shape when the window is wider than the available height allows.
   stageWrap.style.maxWidth = `calc((100vh - 190px) * ${s.state.output.width / s.state.output.height})`;
@@ -364,7 +385,8 @@ async function renderProject(id: string, initialView?: View) {
       if (e.shiftKey) s.redo(); else s.undo();
       return;
     }
-    if (typing || view !== 'play') return;
+    if (typing || (view !== 'play' && view !== 'edit')) return;
+    if (view === 'edit' && editor.handleKey(e)) return;
     if (e.key === ' ' || e.key === 'k') { e.preventDefault(); player.toggle(); }
     else if (e.key === 'ArrowLeft') player.seek(player.time - 5);
     else if (e.key === 'ArrowRight') player.seek(player.time + 5);
@@ -385,7 +407,8 @@ async function renderProject(id: string, initialView?: View) {
   let refresh = 0;
   const unsub = s.subscribe(() => {
     clearTimeout(refresh);
-    refresh = window.setTimeout(update, 120);
+    // Short: an edit should show in the preview within 200 ms (Phase 3 acceptance).
+    refresh = window.setTimeout(update, 40);
   });
 
   function renderMarks() {
@@ -425,6 +448,8 @@ async function renderProject(id: string, initialView?: View) {
     if (tab === 'Items' || tab === 'Upload') renderSide();
     itinerary.update();
     if (view === 'media') media.update();
+    if (view === 'edit') editor.update();
+    stage.refresh();
     inset.update(p);
   }
 
@@ -455,6 +480,7 @@ async function renderProject(id: string, initialView?: View) {
 
   function renderSide() {
     tabBar.querySelectorAll<HTMLElement>('[role=tab]').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.tab === tab)));
+    if (tab === 'Clip') return void side.replaceChildren(editor.inspector);
     if (tab === 'Items') return renderItems();
     if (tab === 'Upload') return renderUpload();
     if (tab === 'Members') return void renderMembers();
@@ -641,7 +667,7 @@ async function renderProject(id: string, initialView?: View) {
   renderSide();
   update();
   setView(view);
-  window.tripalogue = { telemetry, player, session: s, itinerary, media, inset, state: () => player.state };
+  window.tripalogue = { telemetry, player, session: s, itinerary, media, editor, inset, state: () => player.state };
   if (params.get('autoplay') === '1') {
     player.setMuted(true);
     player.play();
@@ -652,6 +678,7 @@ async function renderProject(id: string, initialView?: View) {
       unsub();
       itinerary.dispose();
       media.dispose();
+      editor.dispose();
       inset.dispose();
       ro.disconnect();
       removeEventListener('keydown', onKey);
