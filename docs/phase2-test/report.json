@@ -1,5 +1,5 @@
 {
-  "date": "2026-11-17T17:24:33.732Z",
+  "date": "2026-11-17T19:27:06.755Z",
   "browser": "153.0.8010.12",
   "checks": [
     {
@@ -65,7 +65,7 @@
     {
       "name": "applying it moves the slow camera’s photos to the right chapter, and nothing else",
       "pass": true,
-      "detail": "saved in 372 ms; the iPhone photo stays in Lisbon"
+      "detail": "saved in 361 ms; the iPhone photo stays in Lisbon"
     },
     {
       "name": "typing in the inspector survives unrelated updates",
@@ -180,7 +180,7 @@
     {
       "name": "Delete for good erases the original once nothing refers to it",
       "pass": true,
-      "detail": "originals/trv__ePYVkF-bzAU/m__aRmRu_O.jpg: file erased, bin gone"
+      "detail": "originals/trv_-AuXQAiZdoS4/m_xUWlG6YZ.jpg: file erased, bin gone"
     },
     {
       "name": "\"Delete this travelogue\" is on the Itinerary page, not in the Members tab",

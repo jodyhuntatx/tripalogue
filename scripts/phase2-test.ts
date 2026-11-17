@@ -114,6 +114,11 @@ class Traveler {
 const app = await startApp({ dataDir, port: 0, log: () => {}, geo: geoConfigFromEnv(dataDir, { tileUrl: '', geocoderUrl: '' }) });
 const browser = await chromium.launch();
 const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
+/** Upload, Members and Versions live in the Itinerary view's travelogue panel (lower right). */
+const panelTab = async (t: 'Upload' | 'Members' | 'Versions') => {
+  await page.click('#view-itinerary');
+  await page.click(`#project-panel button[data-tab="${t}"]`);
+};
 const consoleErrors: string[] = [];
 page.on('console', (m) => { if (m.type() === 'error') consoleErrors.push(m.text()); });
 page.on('pageerror', (e) => consoleErrors.push(e.stack ?? e.message));
@@ -142,7 +147,7 @@ try {
 
   // The traveler's phone: upload the extra files from the Upload tab (in the Mix view's side panel).
   await page.click('#view-mix');
-  await page.click('.tabs button[data-tab="Upload"]');
+  await panelTab('Upload');
   await page.setInputFiles('#upload-input', [afterTrip, screenshot, dupe, ...slow, phone]);
   await page.click('#upload-start');
   await page.waitForFunction(() => /1 already uploaded, skipped/.test(document.getElementById('upload-summary')?.textContent ?? '') && window.tripalogue!.session!.state.media.length === 26
@@ -165,7 +170,7 @@ try {
     await t.signInFromLink(invite);
     for (const f of list) await t.upload(pid, f);
   }
-  await page.click('.tabs button[data-tab="Upload"]');
+  await panelTab('Upload');
   await page.setInputFiles('#upload-input', [memo]);
   await page.click('#upload-start');
   await app.jobs.idle();
@@ -319,11 +324,12 @@ try {
   await fs.writeFile(path.join(folder, 'notes.txt'), 'packing list');
   const before = await page.evaluate(() => window.tripalogue!.session!.state.media.length);
   await page.click('#view-mix');
-  await page.click('.tabs button[data-tab="Upload"]');
+  await panelTab('Upload');
   await page.locator('#drop-zone').screenshot({ path: path.join(outDir, '05-drop-zone.png') });
+  await page.screenshot({ path: path.join(outDir, '09-itinerary-travelogue-panel.png') });
   // The file picker keeps its selection when the panel redraws (it used to take two tries on first use).
   await page.setInputFiles('#upload-input', [path.join(folder, 'IMG_9001.jpg')]);
-  await page.click('.tabs button[data-tab="Upload"]');
+  await panelTab('Upload');
   await page.evaluate(() => window.tripalogue!.session!.poll());
   await settle();
   const stillChosen = await page.evaluate(() => (document.getElementById('upload-input') as HTMLInputElement).files?.length ?? 0);
@@ -432,7 +438,7 @@ try {
   check('Delete for good erases the original once nothing refers to it', !blobLeft && !binLeft, `${shotKey}: file ${blobLeft ? 'still there' : 'erased'}, bin ${binLeft ? 'still shown' : 'gone'}`);
 
   await page.click('#view-mix');
-  await page.click('.tabs button[data-tab="Members"]');
+  await panelTab('Members');
   await page.waitForSelector('.members li');
   const inMembers = await page.locator('.side-body #danger-zone').count();
   await page.click('#view-itinerary');

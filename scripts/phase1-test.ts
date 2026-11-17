@@ -218,6 +218,8 @@ try {
   await shot('03-overlap-flagged');
   await card(3).locator('input[aria-label="Start"]').fill('2026-05-04T00:00');
   await card(3).locator('input[aria-label="Start"]').press('Tab');
+  // The edit lands on the change event; wait for it before waiting for the save.
+  await page.waitForFunction(() => !document.querySelector('#itinerary-issues .issue'), null, { timeout: 5000 }).catch(() => {});
   await saved(page);
   check('fixing the date clears the warning', analyzeItinerary(serverDoc(pid)).length === 0 && (await page.locator('#itinerary-issues .issue').count()) === 0);
 

@@ -400,6 +400,9 @@ export function mountEditor(s: ProjectSession, ctx: EditorContext): EditorView {
 
   content.addEventListener('pointerdown', (e) => {
     if (e.button !== 0) return;
+    // Leave any field in the inspector, so keys (Delete, Escape) go to the timeline from here on.
+    const focused = document.activeElement as HTMLElement | null;
+    if (focused?.matches('input, textarea, select')) focused.blur();
     const target = e.target as HTMLElement;
     const clip = target.closest<HTMLElement>('.pe-clip[data-item]');
     if (target.closest('.pe-ruler') || (!clip && !target.closest('.pe-chapter'))) {

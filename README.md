@@ -70,7 +70,7 @@ The server checks ffmpeg and ffprobe at startup, including the codecs processing
 plain words. The project's **Upload** tab shows the same warning. After installing or fixing ffmpeg, press
 **Check again** in that warning (restart the server if ffmpeg still isn't found, so it picks up the new PATH).
 Items that failed while ffmpeg was missing keep their uploaded originals: press **Retry processing** in the
-Upload tab, or **Retry** next to an item in the Items list, to process them again without re-uploading.
+Upload tab (Itinerary view, lower right), or **Retry** next to an item in the Items list, to process them again without re-uploading.
 
 ### Configuration
 
@@ -193,7 +193,7 @@ survives a reload and can be undone. Report and screenshots: `docs/exit-test/`.
 | Edit → autosave → reload → undo, every change in the operation log | pass |
 | Map inset: whole trip on a title card, then the chapter being played | pass |
 | Map inset: photo locations as dots, a trail through the chapter so far, the marker hopping to each new item | pass |
-| Hide the side panel: the player fills the width, the choice is remembered, P toggles it | pass |
+| Preview has no side panel and is wider than Mix; Mix's panel hides, is remembered, P toggles it | pass |
 | A HEIC photo uploads through the browser, gets a full-size JPG, and shows upright | pass |
 | A broken ffmpeg is reported in the Upload tab, and Retry processes failed uploads once fixed | pass |
 | Total | 24 of 24 checks |
@@ -221,8 +221,10 @@ the old `/edit` and `/play` views still open Mix and Preview.
 Moving a start past its end (or an end before its start) keeps the chapter's length, so an edit never leaves an
 invalid chapter. Numeric dates in pasted text are read month/day/year.
 
-**Preview** is just the player at full width. The side panel (Clip, Items, Upload, Members, Versions) is in **Mix**,
-where **Hide panel** (or the P key) folds it away; the browser remembers the choice.
+**Preview** is just the player at full width. **Mix** has a side panel with the selected **Clip** and the **Items**
+list; **Hide panel** (or the P key) folds it away, and the browser remembers the choice. The travelogue panel —
+**Upload**, **Members** and **Versions** — sits in the **Itinerary** view's lower right, under the map and the chapter
+timeline, with **Delete this travelogue** (owner only) below it.
 
 The inset is on for new travelogues. For a travelogue made before it existed, open **Map** next to Mute in
 Preview and tick **Show map inset**. While a chapter plays, the inset frames that chapter's located photos and
