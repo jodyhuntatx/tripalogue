@@ -52,6 +52,8 @@ export class Player {
   private lanes: AudioLane[];
   /** The sounds of the last drawn frame, with their levels (AU-4; tests read it). */
   mix: Voice[] = [];
+  /** The playhead time the mix above was computed for. */
+  private mixT = 0;
 
   constructor(private readonly o: PlayerOptions) {
     this.timeline = buildTimeline(o.project);
@@ -209,9 +211,10 @@ export class Player {
   private loop(now: number) {
     this.raf = requestAnimationFrame(this.loop);
     if (this.stateValue === 'playing') {
-      const dt = Math.min(0.25, (now - this.lastTick) / 1000) * this.rate;
+      // Wall-clock time, so a dropped frame does not slow the playhead; long gaps (a hidden tab) are capped.
+      const dt = Math.min(1, Math.max(0, now - this.lastTick) / 1000) * this.rate;
       this.lastTick = now;
-      this.t = Math.min(this.duration, this.t + dt);
+      this.t = Math.min(this.duration, this.t + dt + this.clockCorrection(dt));
       this.needsDraw = true;
     }
     if (!this.needsDraw) return;
@@ -223,6 +226,28 @@ export class Player {
       this.setState('ended');
       this.o.onEvent?.('ended', { framesDrawn: this.stats.framesDrawn, placeholderFrames: this.stats.placeholderFrames });
     }
+  }
+
+  /**
+   * Follow the sound that is playing: the playhead is nudged toward the media
+   * element's own clock (an audio clip first, else the video on screen), so
+   * picture and sound stay together without re-seeking the media. Bounded to
+   * half a frame's step so time never runs backwards.
+   */
+  private clockCorrection(dt: number): number {
+    if (dt <= 0) return 0;
+    const pick = this.mix.find((v) => v.kind === 'audio' && this.steady(v.itemId)) ?? this.mix.find((v) => v.kind === 'video' && this.steady(v.itemId));
+    if (!pick) return 0;
+    const el = this.pool.get(pick.itemId)!.el as HTMLMediaElement;
+    const mediaT = this.mixT + (el.currentTime - pick.mediaTimeSec) / (pick.speed || 1);
+    const ahead = mediaT - (this.t + dt);
+    if (Math.abs(ahead) > 0.5) return 0; // far apart: let syncMedia re-seek the element instead
+    return Math.max(-dt / 2, Math.min(dt / 2, ahead * 0.2));
+  }
+
+  private steady(itemId: string): boolean {
+    const e = this.pool.get(itemId);
+    return !!e && !e.failed && e.el instanceof HTMLMediaElement && !e.el.paused && !e.el.seeking && e.el.readyState >= 3;
   }
 
   private render(): Frame {
@@ -249,6 +274,7 @@ export class Player {
   private playMix(frame: Frame) {
     const voices = mixAt(this.timeline, this.lanes, this.t);
     this.mix = voices;
+    this.mixT = this.t;
     const keep = new Set<string>();
     const seg = this.timeline.segments[frame.segmentIndex];
     if (seg && seg.kind === 'video') keep.add(seg.item.id);
@@ -261,7 +287,7 @@ export class Player {
       if (Math.abs(e.el.volume - vol) > 0.004) e.el.volume = vol;
       if (v.kind === 'audio') {
         e.el.muted = this.muted;
-        if (e.el.readyState >= 1) this.syncMedia(e.el, v.mediaTimeSec, 1, 0.12);
+        if (e.el.readyState >= 1) this.syncMedia(e.el, v.mediaTimeSec, 1, 0.25);
         else this.needsDraw = true;
       }
     }
@@ -326,7 +352,15 @@ export class Player {
       this.stats.videoSeeks += 1;
       this.needsDraw = true;
     }
-    if (playing && v.paused) v.play().catch(() => { v.muted = true; this.muted = true; void v.play().catch(() => {}); });
+    if (playing && v.paused) {
+      v.play().catch((err: DOMException) => {
+        // Only a browser autoplay block calls for muting; an interrupted play() (a pause or seek) is routine.
+        if (err?.name !== 'NotAllowedError' || this.stateValue !== 'playing') return;
+        v.muted = true;
+        this.muted = true;
+        void v.play().catch(() => {});
+      });
+    }
     if (!playing && !v.paused) v.pause();
   }
 
