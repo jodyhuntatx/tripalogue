@@ -36,7 +36,10 @@ const ago = (t: number) => {
 const telemetry = new Telemetry();
 window.tripalogue = { telemetry };
 let me: User | undefined;
-type View = 'itinerary' | 'media' | 'edit' | 'play';
+// The workflow, left to right: plan the itinerary, sort the media into it, mix (cut and audio), preview.
+type View = 'itinerary' | 'media' | 'mix' | 'preview';
+/** Older links (#/p/<id>/edit, /play) still open the renamed views. */
+const VIEW_ALIASES: Record<string, View> = { edit: 'mix', play: 'preview' };
 let current: { id: string; session: ProjectSession; player: Player; setView: (v: View) => void; view: () => View; dispose: () => void } | undefined;
 
 function setTelemetry(endpoint: string | null) {
@@ -58,10 +61,11 @@ function banner(text: string, kind: 'info' | 'error' = 'info') {
 
 async function route() {
   const hash = location.hash || '#/projects';
-  const pm = /^#\/p\/([^/?]+)(?:\/(itinerary|media|edit|play))?/.exec(hash);
+  const pm = /^#\/p\/([^/?]+)(?:\/(itinerary|media|mix|preview|edit|play))?/.exec(hash);
+  const named = pm?.[2] ? VIEW_ALIASES[pm[2]] ?? (pm[2] as View) : undefined;
   // Switching views inside the open project keeps the session (and its edit lock) alive.
   // Same project: switch to the view in the link, or stay on the current one when the link names none.
-  if (current && pm && decodeURIComponent(pm[1]) === current.id) return current.setView((pm[2] as View | undefined) ?? current.view());
+  if (current && pm && decodeURIComponent(pm[1]) === current.id) return current.setView(named ?? current.view());
   if (current) {
     current.dispose();
     current = undefined;
@@ -74,7 +78,7 @@ async function route() {
     }
   }
   if (!me || hash.startsWith('#/signin')) return renderSignIn();
-  if (pm) return renderProject(decodeURIComponent(pm[1]), pm[2] as View | undefined);
+  if (pm) return renderProject(decodeURIComponent(pm[1]), named);
   return renderProjects();
 }
 
@@ -236,12 +240,12 @@ async function renderProject(id: string, initialView?: View) {
 
   // Start where the work is: chapters first, then sorting media (while anything is unassigned), then watching.
   let view: View = initialView ?? (s.state.chapters.length === 0 || s.state.media.length === 0 ? 'itinerary'
-    : s.state.media.some((m) => m.chapterId === null) ? 'media' : 'play');
+    : s.state.media.some((m) => m.chapterId === null) ? 'media' : 'preview');
   const viewTabs = h('nav', { class: 'view-tabs', 'aria-label': 'Views' },
     h('a', { href: `#/p/${encodeURIComponent(id)}/itinerary`, 'data-view': 'itinerary', id: 'view-itinerary' }, 'Itinerary'),
     h('a', { href: `#/p/${encodeURIComponent(id)}/media`, 'data-view': 'media', id: 'view-media' }, 'Media'),
-    h('a', { href: `#/p/${encodeURIComponent(id)}/edit`, 'data-view': 'edit', id: 'view-edit' }, 'Edit'),
-    h('a', { href: `#/p/${encodeURIComponent(id)}/play`, 'data-view': 'play', id: 'view-play' }, 'Play'));
+    h('a', { href: `#/p/${encodeURIComponent(id)}/mix`, 'data-view': 'mix', id: 'view-mix', title: 'Cut, order and time the clips; lay narration and music' }, 'Mix'),
+    h('a', { href: `#/p/${encodeURIComponent(id)}/preview`, 'data-view': 'preview', id: 'view-preview', title: 'Watch the travelogue' }, 'Preview'));
   const cfg = await Api.config().catch(() => ({ map: { tiles: false, search: false, attribution: '' }, media: undefined as MediaToolStatus | undefined, purgeAfterDays: 30 }));
   let mediaTools: MediaToolStatus | undefined = cfg.media;
   // Process failed items again from their stored originals (all of them, or the ids given).
@@ -258,7 +262,7 @@ async function renderProject(id: string, initialView?: View) {
   const itinerary = mountItinerary(s, {
     map: cfg.map,
     preview: (chapterId) => {
-      location.hash = `#/p/${encodeURIComponent(id)}/play`;
+      location.hash = `#/p/${encodeURIComponent(id)}/preview`;
       const ch = player.timeline.chapters.find((c) => c.chapterId === chapterId);
       player.seek(ch?.start ?? 0);
       player.play();
@@ -271,7 +275,7 @@ async function renderProject(id: string, initialView?: View) {
     map: cfg.map,
     purgeAfterDays: cfg.purgeAfterDays ?? 30,
     play: (itemId) => {
-      location.hash = `#/p/${encodeURIComponent(id)}/play`;
+      location.hash = `#/p/${encodeURIComponent(id)}/preview`;
       const seg = player.timeline.segments.find((x) => x.kind !== 'title' && x.item.id === itemId);
       player.seek(seg?.start ?? 0);
       player.play();
@@ -313,20 +317,22 @@ async function renderProject(id: string, initialView?: View) {
     itinerary.el.hidden = v !== 'itinerary';
     media.el.hidden = v !== 'media';
     if (v === 'media') media.update();
-    playMain.hidden = v !== 'play' && v !== 'edit';
-    // The Edit view is the player with the timeline under it and the Clip tab beside it (Phase 3).
-    const editing = v === 'edit';
+    playMain.hidden = v !== 'preview' && v !== 'mix';
+    // Mix is the player with the timeline under it and the side panel beside it (Phase 3); Preview is just the
+    // player, using the whole width.
+    const editing = v === 'mix';
     playMain.classList.toggle('editing', editing);
+    playMain.classList.toggle('previewing', v === 'preview');
     editor.el.hidden = !editing;
     tabBar.querySelector<HTMLElement>('[data-tab="Clip"]')!.hidden = !editing;
-    if (editing && was !== 'edit') tab = 'Clip';
+    if (editing && was !== 'mix') tab = 'Clip';
     else if (!editing && tab === 'Clip') tab = 'Items';
     stageWrap.style.maxWidth = `calc((100vh - ${editing ? 470 : 190}px) * ${s.state.output.width / s.state.output.height})`;
     editor.setActive(editing);
     stage.setActive(editing);
     renderSide();
     viewTabs.querySelectorAll<HTMLElement>('a').forEach((a) => (a.dataset.view === v ? a.setAttribute('aria-current', 'page') : a.removeAttribute('aria-current')));
-    if (v !== 'play' && v !== 'edit') player.pause();
+    if (v !== 'preview' && v !== 'mix') player.pause();
     else player.redraw();
     const want = `#/p/${encodeURIComponent(id)}/${v}`;
     if (location.hash !== want) history.replaceState(null, '', want);
@@ -352,7 +358,14 @@ async function renderProject(id: string, initialView?: View) {
     onEvent: (name, props) => telemetry.track(`player_${name}`, props ?? {}),
   });
   document.body.dataset.state = player.state;
-  const editor = mountEditor(s, { projectId: id, player, onSelect: (ids) => stage.setSelection(ids) });
+  const editor = mountEditor(s, {
+    projectId: id, player,
+    onSelect: (ids) => {
+      stage.setSelection(ids);
+      // Picking a clip shows its details, whichever side tab was open.
+      if (tab !== 'Clip') { tab = 'Clip'; renderSide(); }
+    },
+  });
   const stage = mountStageEditor(s, player, stageWrap, canvas);
   editorHost.append(editor.el);
   stageWrap.style.aspectRatio = `${s.state.output.width} / ${s.state.output.height}`;
@@ -385,8 +398,8 @@ async function renderProject(id: string, initialView?: View) {
       if (e.shiftKey) s.redo(); else s.undo();
       return;
     }
-    if (typing || (view !== 'play' && view !== 'edit')) return;
-    if (view === 'edit' && editor.handleKey(e)) return;
+    if (typing || (view !== 'preview' && view !== 'mix')) return;
+    if (view === 'mix' && editor.handleKey(e)) return;
     if (e.key === ' ' || e.key === 'k') { e.preventDefault(); player.toggle(); }
     else if (e.key === 'ArrowLeft') player.seek(player.time - 5);
     else if (e.key === 'ArrowRight') player.seek(player.time + 5);
@@ -394,7 +407,7 @@ async function renderProject(id: string, initialView?: View) {
     else if (e.key === 'End') player.seek(player.duration);
     else if (e.key === '[') player.seekChapter(-1);
     else if (e.key === ']') player.seekChapter(1);
-    else if (e.key.toLowerCase() === 'p' && !e.metaKey && !e.ctrlKey && !e.altKey) panelBtn.click();
+    else if (view === 'mix' && e.key.toLowerCase() === 'p' && !e.metaKey && !e.ctrlKey && !e.altKey) panelBtn.click();
   };
   addEventListener('keydown', onKey);
   const onHide = () => {
@@ -448,7 +461,7 @@ async function renderProject(id: string, initialView?: View) {
     if (tab === 'Items' || tab === 'Upload') renderSide();
     itinerary.update();
     if (view === 'media') media.update();
-    if (view === 'edit') editor.update();
+    if (view === 'mix') editor.update();
     stage.refresh();
     inset.update(p);
   }

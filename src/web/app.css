@@ -334,3 +334,7 @@ button.danger-outline { background: none; border-color: #8f2a2a; color: #f19b9b;
 .stage-guides .guide.h { left: 0; right: 0; height: 1px; }
 .pe-clip.narrow .edge { display: none; }
 #pe-excluded > .row { max-height: 132px; overflow-y: auto; }
+
+/* Preview: just the player, using the whole width (the side panel belongs to Mix). */
+.project.previewing { grid-template-columns: minmax(0, 1fr); }
+.project.previewing > .side, .project.previewing #toggle-panel { display: none; }

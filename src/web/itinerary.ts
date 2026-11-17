@@ -19,7 +19,7 @@ import { h } from './dom.js';
 
 export interface ItineraryContext {
   map: { tiles: boolean; search: boolean; attribution: string };
-  /** Switch to the Play view at a time (seconds). */
+  /** Switch to the Preview view at a time (seconds). */
   preview: (chapterId: string) => void;
 }
 

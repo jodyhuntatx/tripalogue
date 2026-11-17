@@ -166,11 +166,16 @@ try {
       && state(st03, 'm06') === undefined && hop.trail.at(-1) === 'm04' && hop.animating,
     `at m03: trail ${st03.trail.join('→')}; next item animated: ${hop.animating}`);
 
-  // 5. Edit, autosave, reload, undo.
+  // 5. Edit, autosave, reload, undo (in the Mix view's Items tab).
+  const previewWidth = await page.evaluate(() => document.getElementById('stage-wrap')!.getBoundingClientRect().width);
+  const previewSide = await page.evaluate(() => !!document.getElementById('side-panel')!.getClientRects().length);
+  await page.click('#view-mix');
+  await page.click('.tabs button[data-tab="Items"]');
   await page.uncheck('li[data-item="m02"] input[type=checkbox]');
   await page.waitForFunction(() => window.tripalogue!.session!.unsaved === 0 && window.tripalogue!.session!.status === 'saved', null, { timeout: 10_000 });
   const savedOnServer = app.projects.load(pid).doc.cues.find((c) => c.itemId === 'm02')!.included === false;
   await page.reload();
+  await page.click('.tabs button[data-tab="Items"]');
   await page.waitForSelector('li[data-item="m02"]');
   const afterReload = await page.isChecked('li[data-item="m02"] input[type=checkbox]');
   check('an edit autosaves and survives a reload', savedOnServer && !afterReload);
@@ -182,7 +187,7 @@ try {
   check('undo reverts the change on the server too', undone);
   const log = app.projects.opsSince(pid, 0);
   check('every change is in the operation log with its author', log.length > 0 && log.every((o) => o.author), `${log.length} revisions`);
-  // 6. The side panel folds away so playback can use the whole width, and the choice is remembered.
+  // 6. Preview is just the player at full width; in Mix the side panel folds away, and the choice is remembered.
   const layout = () => page.evaluate(() => ({
     stage: document.getElementById('stage-wrap')!.getBoundingClientRect().width,
     side: !!document.getElementById('side-panel')!.getClientRects().length,
@@ -200,10 +205,10 @@ try {
   await page.keyboard.press('p');
   await page.waitForTimeout(300);
   const back = await layout();
-  check('the side panel hides so the player fills the width, is remembered, and P brings it back',
-    open.side && !folded.side && folded.stage > open.stage + 200 && !remembered.side && back.side && Math.abs(back.stage - open.stage) < 2,
-    `player ${Math.round(open.stage)} px wide with the panel, ${Math.round(folded.stage)} px without`);
-  await page.click('#toggle-panel');
+  check('Preview has no side panel and the player uses the width; in Mix the panel hides, is remembered, and P brings it back',
+    !previewSide && previewWidth > open.stage + 100 && open.side && !folded.side && !remembered.side && back.side,
+    `player ${Math.round(previewWidth)} px wide in Preview, ${Math.round(open.stage)} px in Mix with the panel`);
+  await page.click('#view-preview');
   await page.evaluate(() => window.tripalogue!.player!.seek(1.5)); // t = 0 is the title card's fade from black
   await page.waitForTimeout(1800);
   const lit = await page.evaluate(() => {
@@ -214,8 +219,8 @@ try {
     return on / n;
   });
   check('the wider player redraws its frame', lit > 0.5, `${Math.round(lit * 100)}% of the frame lit`);
-  await page.screenshot({ path: path.join(outDir, '10-panel-hidden.png') });
-  await page.click('#toggle-panel');
+  await page.screenshot({ path: path.join(outDir, '10-preview-full-width.png') });
+  await page.click('#view-mix');
 
   // 7. A phone's HEIC photo uploads, gets a full-size JPG, and shows upright.
   const heic = path.join(dataDir, 'IMG_0420.HEIC');
