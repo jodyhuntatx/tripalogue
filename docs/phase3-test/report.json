@@ -1,5 +1,5 @@
 {
-  "date": "2026-11-17T17:28:30.183Z",
+  "date": "2026-11-17T19:26:20.543Z",
   "browser": "153.0.8010.12",
   "checks": [
     {
@@ -45,7 +45,7 @@
     {
       "name": "moving a clip into another chapter asks whether to change its time; \"Keep the time\" holds it there (PE-3)",
       "pass": true,
-      "detail": "Move gen-140.jpg to Sintra?; now 2nd in Sintra, held by hand"
+      "detail": "Move gen-140.jpg to Sintra?; chapter ch-sintra, held true, time unchanged, Sintra starts m06 g140 m07"
     },
     {
       "name": "an excluded clip is restored from the Excluded tray, back in its place (PE-4)",
@@ -90,7 +90,7 @@
     {
       "name": "audio clips show their waveforms on the lanes (AU-4)",
       "pass": true,
-      "detail": "url(\"http://127.0.0.1:43249/api/projects/trv_xG5Bh2Ac-dUo/me"
+      "detail": "url(\"http://127.0.0.1:37537/api/projects/trv_SmNPay5gTxPn/me"
     },
     {
       "name": "in playback the song plays alongside the pictures, kept to the timeline clock",
@@ -100,7 +100,7 @@
     {
       "name": "\"Play this chapter\" plays the chapter and stops at its end (PE-2)",
       "pass": true,
-      "detail": "stopped at 223.53 s; Sintra ends at 223.50 s"
+      "detail": "stopped at 223.50 s; Sintra ends at 223.50 s"
     },
     {
       "name": "\"Reset chapter to defaults\" puts its pictures back to the cue profile (PE-7)",
@@ -110,7 +110,7 @@
     {
       "name": "an edit shows in the preview in under 200 ms (acceptance)",
       "pass": true,
-      "detail": "57 ms from Delete to the player and timeline"
+      "detail": "53 ms from Delete to the player and timeline"
     },
     {
       "name": "the cut, placements and audio survive a reload",
@@ -125,7 +125,7 @@
     {
       "name": "a 300-item travelogue plays without stalls (acceptance)",
       "pass": true,
-      "detail": "300 items, 5:09 at 4x in 77 s; 0 of 4665 frames waited (0.00%); timeline drawn in 4 ms"
+      "detail": "300 items, 5:09 at 4x in 77 s; 0 of 4659 frames waited (0.00%); timeline drawn in 3 ms"
     },
     {
       "name": "no errors in the browser console",

@@ -338,3 +338,7 @@ button.danger-outline { background: none; border-color: #8f2a2a; color: #f19b9b;
 /* Preview: just the player, using the whole width (the side panel belongs to Mix). */
 .project.previewing { grid-template-columns: minmax(0, 1fr); }
 .project.previewing > .side, .project.previewing #toggle-panel { display: none; }
+
+/* Itinerary: the travelogue panel (Upload, Members, Versions) under the map and timeline */
+.project-panel { padding: 0; display: flex; flex-direction: column; }
+.project-panel .project-panel-body { max-height: 42vh; overflow: auto; }

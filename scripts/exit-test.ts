@@ -48,6 +48,16 @@ const dataDir = mkdtempSync(path.join(os.tmpdir(), 'tripalogue-exit-'));
 const app = await startApp({ dataDir, port: 0, log: () => {}, geo: geoConfigFromEnv(dataDir, { tileUrl: '', geocoderUrl: '' }) });
 const browser = await chromium.launch({ args: ['--autoplay-policy=no-user-gesture-required'] });
 const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+/** Upload, Members and Versions live in the Itinerary view's travelogue panel (lower right). */
+const panelTab = async (t: 'Upload' | 'Members' | 'Versions') => {
+  await page.click('#view-itinerary');
+  await page.click(`#project-panel button[data-tab="${t}"]`);
+};
+/** The item list is a tab of the Mix view's side panel. */
+const itemsTab = async () => {
+  await page.click('#view-mix');
+  await page.click('#side-panel button[data-tab="Items"]');
+};
 const consoleErrors: string[] = [];
 page.on('console', (m) => { if (m.type() === 'error') consoleErrors.push(m.text()); });
 page.on('pageerror', (e) => consoleErrors.push(e.message));
@@ -170,12 +180,12 @@ try {
   const previewWidth = await page.evaluate(() => document.getElementById('stage-wrap')!.getBoundingClientRect().width);
   const previewSide = await page.evaluate(() => !!document.getElementById('side-panel')!.getClientRects().length);
   await page.click('#view-mix');
-  await page.click('.tabs button[data-tab="Items"]');
+  await itemsTab();
   await page.uncheck('li[data-item="m02"] input[type=checkbox]');
   await page.waitForFunction(() => window.tripalogue!.session!.unsaved === 0 && window.tripalogue!.session!.status === 'saved', null, { timeout: 10_000 });
   const savedOnServer = app.projects.load(pid).doc.cues.find((c) => c.itemId === 'm02')!.included === false;
   await page.reload();
-  await page.click('.tabs button[data-tab="Items"]');
+  await itemsTab();
   await page.waitForSelector('li[data-item="m02"]');
   const afterReload = await page.isChecked('li[data-item="m02"] input[type=checkbox]');
   check('an edit autosaves and survives a reload', savedOnServer && !afterReload);
@@ -225,11 +235,11 @@ try {
   // 7. A phone's HEIC photo uploads, gets a full-size JPG, and shows upright.
   const heic = path.join(dataDir, 'IMG_0420.HEIC');
   await writeHeic(heic, { width: 320, height: 240, tile: 128, rotateCcw: 90, capturedAt: '2026:05:03 14:22:10', exifOrientation: 6 });
-  await page.click('.tabs button[data-tab="Upload"]');
+  await panelTab('Upload');
   await page.setInputFiles('#upload-input', heic);
   await page.click('#upload-start');
   await page.waitForFunction(() => window.tripalogue!.session!.state.media.some((m) => m.uri.endsWith('IMG_0420.HEIC') && m.status === 'ready'), null, { timeout: 60_000 });
-  await page.click('.tabs button[data-tab="Items"]');
+  await itemsTab();
   const row = page.locator('li[data-item]', { hasText: 'IMG_0420.HEIC' });
   await row.locator('img').waitFor();
   await page.waitForFunction(() => [...document.querySelectorAll<HTMLImageElement>('li[data-item] img')].some((i) => i.closest('li')!.textContent!.includes('IMG_0420') && i.naturalWidth > 0));
@@ -249,20 +259,20 @@ try {
   // A new photo (a copy of a sample photo would now be recognised as already uploaded and skipped).
   await new Promise<void>((resolve, reject) => import('node:child_process').then(({ execFile }) =>
     execFile('ffmpeg', ['-v', 'error', '-y', '-f', 'lavfi', '-i', 'color=c=olive:s=640x480', '-frames:v', '1', broken], (e) => (e ? reject(e) : resolve()))));
-  await page.click('.tabs button[data-tab="Upload"]');
+  await panelTab('Upload');
   await page.setInputFiles('#upload-input', broken);
   await page.click('#upload-start');
   await page.waitForFunction(() => window.tripalogue!.session!.state.media.some((m) => m.uri.endsWith('IMG_0500.jpg') && m.status === 'failed'), null, { timeout: 60_000 });
-  await page.click('.tabs button[data-tab="Items"]');
+  await itemsTab();
   const retryBtn = page.locator('button.retry[aria-label="Retry processing IMG_0500.jpg"]');
   await retryBtn.waitFor();
-  await page.click('.tabs button[data-tab="Upload"]');
+  await panelTab('Upload');
   await page.waitForSelector('#retry-failed');
   // The banner shows once the page knows about the problem (the page loaded before ffprobe broke): ask again.
   const recheck = await page.evaluate(async () => (await fetch('/api/media-tools?recheck=1')).json());
   await page.reload();
   await page.waitForFunction(() => !!window.tripalogue?.session);
-  await page.click('.tabs button[data-tab="Upload"]');
+  await panelTab('Upload');
   const banner = await page.locator('#media-problems').textContent({ timeout: 10_000 }).catch(() => '');
   await page.screenshot({ path: path.join(outDir, '12-media-problems.png') });
   app.cfg.ffprobe = goodProbe; // "install" ffprobe

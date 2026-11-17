@@ -231,9 +231,16 @@ async function renderProject(id: string, initialView?: View) {
   const redoBtn = h('button', { id: 'redo', onclick: () => s.redo() }, 'Redo');
   const meta = h('div', { id: 'meta', class: 'muted' });
   const side = h('div', { class: 'side-body' });
-  const tabs = ['Clip', 'Items', 'Upload', 'Members', 'Versions'] as const;
-  let tab: (typeof tabs)[number] = 'Items';
+  // Mix's side panel: the selected clip and the item list.
+  const tabs = ['Clip', 'Items'] as const;
+  let tab: (typeof tabs)[number] = 'Clip';
   const tabBar = h('div', { class: 'tabs', role: 'tablist' }, ...tabs.map((t) => h('button', { role: 'tab', 'data-tab': t, onclick: () => { tab = t; renderSide(); } }, t)));
+  // The travelogue panel, in the Itinerary view's lower right: uploads, who is on the trip, saved versions.
+  const ptabs = ['Upload', 'Members', 'Versions'] as const;
+  let ptab: (typeof ptabs)[number] = 'Upload';
+  const projBody = h('div', { class: 'side-body project-panel-body' });
+  const ptabBar = h('div', { class: 'tabs', role: 'tablist' }, ...ptabs.map((t) => h('button', { role: 'tab', 'data-tab': t, onclick: () => { ptab = t; renderProjectPanel(); } }, t)));
+  const projectPanel = h('section', { class: 'project-panel card', id: 'project-panel', 'aria-label': 'Uploads, members and versions' }, ptabBar, projBody);
 
   titleInput.addEventListener('input', () => s.edit('Rename travelogue', (p) => setTitle(p, titleInput.value), { coalesceKey: 'title' }));
   const exportLink = h('a', { class: 'button', href: `/api/projects/${encodeURIComponent(id)}/export`, download: '' }, 'Export file');
@@ -258,6 +265,7 @@ async function renderProject(id: string, initialView?: View) {
       alert((e as ApiError).message);
     }
     renderSide();
+    renderProjectPanel();
   };
   const itinerary = mountItinerary(s, {
     map: cfg.map,
@@ -268,6 +276,7 @@ async function renderProject(id: string, initialView?: View) {
       player.play();
     },
   });
+  itinerary.el.querySelector('.itinerary-side')?.append(projectPanel);
   if (s.role === 'owner') itinerary.el.querySelector('.itinerary-side')?.append(deleteProjectBox());
   const inset = mountInset(s, stageWrap, cfg.map);
   const media = mountMedia(s, {
@@ -294,7 +303,7 @@ async function renderProject(id: string, initialView?: View) {
         chapterLabel, meta, editorHost),
       h('aside', { class: 'side card', id: 'side-panel' }, tabBar, side));
 
-  // The side panel (Items, Upload, Members, Versions) folds away so playback can use the whole width.
+  // Mix's side panel (Clip, Items) folds away so the player and timeline can use the whole width.
   // Remembered per browser; storage can be unavailable, so it is best effort.
   const PANEL_KEY = 'tripalogue.panelCollapsed';
   const panelBtn = h('button', { id: 'toggle-panel', 'aria-controls': 'side-panel', title: 'Show or hide the side panel (P)' });
@@ -324,9 +333,7 @@ async function renderProject(id: string, initialView?: View) {
     playMain.classList.toggle('editing', editing);
     playMain.classList.toggle('previewing', v === 'preview');
     editor.el.hidden = !editing;
-    tabBar.querySelector<HTMLElement>('[data-tab="Clip"]')!.hidden = !editing;
     if (editing && was !== 'mix') tab = 'Clip';
-    else if (!editing && tab === 'Clip') tab = 'Items';
     stageWrap.style.maxWidth = `calc((100vh - ${editing ? 470 : 190}px) * ${s.state.output.width / s.state.output.height})`;
     editor.setActive(editing);
     stage.setActive(editing);
@@ -458,7 +465,8 @@ async function renderProject(id: string, initialView?: View) {
     meta.dataset.ready = String(ready);
     meta.dataset.total = String(p.media.length);
     renderMarks();
-    if (tab === 'Items' || tab === 'Upload') renderSide();
+    if (tab === 'Items') renderSide();
+    if (ptab === 'Upload') renderProjectPanel();
     itinerary.update();
     if (view === 'media') media.update();
     if (view === 'mix') editor.update();
@@ -494,9 +502,13 @@ async function renderProject(id: string, initialView?: View) {
   function renderSide() {
     tabBar.querySelectorAll<HTMLElement>('[role=tab]').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.tab === tab)));
     if (tab === 'Clip') return void side.replaceChildren(editor.inspector);
-    if (tab === 'Items') return renderItems();
-    if (tab === 'Upload') return renderUpload();
-    if (tab === 'Members') return void renderMembers();
+    return renderItems();
+  }
+
+  function renderProjectPanel() {
+    ptabBar.querySelectorAll<HTMLElement>('[role=tab]').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.tab === ptab)));
+    if (ptab === 'Upload') return renderUpload();
+    if (ptab === 'Members') return void renderMembers();
     return void renderVersions();
   }
 
@@ -562,7 +574,7 @@ async function renderProject(id: string, initialView?: View) {
       ? h('div', { class: 'banner error', id: 'media-problems', role: 'alert' },
         h('strong', {}, 'Media processing is not working on this server.'),
         h('ul', {}, ...mediaTools.problems.map((t) => h('li', {}, t))),
-        h('button', { id: 'media-recheck', onclick: async () => { mediaTools = await Api.mediaTools(true).catch(() => mediaTools); renderSide(); } }, 'Check again'))
+        h('button', { id: 'media-recheck', onclick: async () => { mediaTools = await Api.mediaTools(true).catch(() => mediaTools); renderProjectPanel(); } }, 'Check again'))
       : null;
     const failedBlock = failedProcessing.length
       ? h('div', { class: 'failed-processing' },
@@ -573,7 +585,7 @@ async function renderProject(id: string, initialView?: View) {
     const input = uploadInput;
     const folder = uploadFolder;
     const start = startUpload;
-    side.replaceChildren(
+    projBody.replaceChildren(
       mayUpload
         ? h('div', {},
           h('p', { class: 'muted' }, pending.length
@@ -586,18 +598,18 @@ async function renderProject(id: string, initialView?: View) {
           uploadProgress,
           pending.length ? h('ul', { class: 'pending' }, ...pending.slice(0, 50).map((m) => h('li', { class: 'muted' }, `${m.uri.split('/').pop()} · ${m.status}${m.error ? ` · ${m.error}` : ''}`))) : null)
         : h('p', { class: 'muted' }, 'Viewers cannot upload media.'));
-    if (failedBlock) side.append(failedBlock);
-    if (toolsBanner) side.prepend(toolsBanner);
+    if (failedBlock) projBody.append(failedBlock);
+    if (toolsBanner) projBody.prepend(toolsBanner);
   }
 
   async function renderMembers() {
     const { members } = await Api.members(id).catch(() => ({ members: [] as { userId: string; name: string; email: string; role: Role; joinedAt: number }[] }));
-    if (tab !== 'Members') return;
+    if (ptab !== 'Members') return;
     const owner = s.role === 'owner';
     const email = h('input', { type: 'email', placeholder: 'friend@example.com', 'aria-label': 'Email to invite', required: true });
     const role = h('select', { 'aria-label': 'Role' }, ...(['editor', 'contributor', 'viewer'] as const).map((r) => h('option', { value: r }, r)));
     const msg = h('div', { class: 'form-msg', role: 'status' });
-    side.replaceChildren(
+    projBody.replaceChildren(
       h('ul', { class: 'members' }, ...members.map((m) => h('li', {},
         h('span', {}, `${m.name} `, h('span', { class: 'muted' }, m.email)),
         owner && m.role !== 'owner'
@@ -655,10 +667,10 @@ async function renderProject(id: string, initialView?: View) {
 
   async function renderVersions() {
     const { versions } = await Api.versions(id).catch(() => ({ versions: [] as { id: string; rev: number; author: string; at: number; label: string; auto: boolean }[] }));
-    if (tab !== 'Versions') return;
+    if (ptab !== 'Versions') return;
     const label = h('input', { placeholder: 'e.g. Before trimming Porto', 'aria-label': 'Version name', required: true });
     const msg = h('div', { class: 'form-msg', role: 'status' });
-    side.replaceChildren(
+    projBody.replaceChildren(
       s.mayEdit ? h('form', { class: 'row', onsubmit: async (e: Event) => { e.preventDefault(); await s.flush().catch(() => {}); await Api.saveVersion(id, label.value); void renderVersions(); } },
         label, h('button', { type: 'submit' }, 'Save version')) : '',
       h('ul', { class: 'versions' }, ...versions.map((v) => h('li', {},
@@ -678,6 +690,7 @@ async function renderProject(id: string, initialView?: View) {
   }
 
   renderSide();
+  renderProjectPanel();
   update();
   setView(view);
   window.tripalogue = { telemetry, player, session: s, itinerary, media, editor, inset, state: () => player.state };

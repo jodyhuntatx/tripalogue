@@ -51,7 +51,7 @@ export function mountItinerary(s: ProjectSession, ctx: ItineraryContext): Itiner
   const addBtn = h('button', { class: 'primary', id: 'add-chapter', onclick: () => addChapter() }, '+ Add chapter');
   const importBtn = h('button', { id: 'open-import', onclick: () => toggleImport() }, 'Paste or import itinerary');
   const sortBtn = h('button', { id: 'sort-chapters', onclick: () => s.edit('Sort chapters by date', sortChapters, { structural: true }) }, 'Sort by date');
-  const playBtn = h('button', { id: 'play-title-cards', onclick: () => s.state.chapters[0] && ctx.preview(s.state.chapters[0].id) }, '▶ Play');
+  const playBtn = h('button', { id: 'play-title-cards', onclick: () => s.state.chapters[0] && ctx.preview(s.state.chapters[0].id) }, '▶ Preview');
   const timeline = h('div', { class: 'itinerary-timeline', id: 'itinerary-timeline', 'aria-label': 'Chapter timeline' });
 
   const map = new RouteMap({

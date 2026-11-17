@@ -1,12 +1,12 @@
 {
-  "date": "2026-11-17T17:21:11.264Z",
+  "date": "2026-11-17T19:06:14.988Z",
   "rate": 1,
   "browser": "153.0.8010.12",
   "timelineSec": 116,
-  "wallSec": 116.05,
-  "uploadSec": 0.495,
-  "readySec": 16.005,
-  "framesDrawn": 6970,
+  "wallSec": 116.186,
+  "uploadSec": 0.84,
+  "readySec": 13.852,
+  "framesDrawn": 6969,
   "placeholderFrames": 0,
   "checks": [
     {
@@ -17,7 +17,7 @@
     {
       "name": "imports and uploads all 20 originals through the browser",
       "pass": true,
-      "detail": "10.1 MB uploaded in 0.5 s; all processed after 16.0 s"
+      "detail": "10.1 MB uploaded in 0.8 s; all processed after 13.9 s"
     },
     {
       "name": "originals are stored byte for byte",
@@ -27,7 +27,7 @@
     {
       "name": "plays to the end",
       "pass": true,
-      "detail": "116 s of timeline in 116.0 s at 1x"
+      "detail": "116 s of timeline in 116.2 s at 1x"
     },
     {
       "name": "enters all 23 segments (4 title cards + 19 items) in order",
@@ -42,7 +42,7 @@
     {
       "name": "media ready in time (under 2% of frames waited on loading)",
       "pass": true,
-      "detail": "0 of 6970 frames"
+      "detail": "0 of 6969 frames"
     },
     {
       "name": "draws smoothly (30 fps or better)",

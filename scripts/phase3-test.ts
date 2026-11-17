@@ -116,6 +116,11 @@ writeFileSync(bigFile, serializeProject(bigProject));
 const app = await startApp({ dataDir, port: 0, log: () => {}, geo: geoConfigFromEnv(dataDir, { tileUrl: '', geocoderUrl: '' }) });
 const browser = await chromium.launch();
 const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
+/** Upload, Members and Versions live in the Itinerary view's travelogue panel (lower right). */
+const panelTab = async (t: 'Upload' | 'Members' | 'Versions') => {
+  await page.click('#view-itinerary');
+  await page.click(`#project-panel button[data-tab="${t}"]`);
+};
 const consoleErrors: string[] = [];
 page.on('console', (m) => { if (m.type() === 'error') consoleErrors.push(m.text()); });
 page.on('pageerror', (e) => consoleErrors.push(e.stack ?? e.message));
@@ -160,7 +165,7 @@ try {
 
   // The song and the memo, from the Upload tab.
   await page.click('#view-mix');
-  await page.click('.tabs button[data-tab="Upload"]');
+  await panelTab('Upload');
   await page.setInputFiles('#upload-input', [song, memo]);
   await page.click('#upload-start');
   await page.waitForFunction(() => { const m = window.tripalogue!.session!.state.media.filter((x) => x.kind === 'audio'); return m.length === 2 && m.every((x) => x.status === 'ready'); }, null, { timeout: 60_000 });
@@ -256,12 +261,13 @@ try {
   await page.locator('#pe-move-dialog').screenshot({ path: path.join(outDir, '03-move-across-chapters.png') });
   const question = await page.textContent('#pe-move-dialog h3');
   await page.click('#pe-move-dialog [data-answer="keep"]');
+  await page.waitForFunction((id) => window.tripalogue!.session!.state.media.find((m) => m.id === id)!.chapterId === 'ch-sintra', mover, { timeout: 5000 }).catch(() => {});
   await saved(page);
   const moved = (await state()).media.find((m) => m.id === mover)!;
   const sin = (await tl()).segs.filter((s) => s.chapterId === 'ch-sintra');
   check('moving a clip into another chapter asks whether to change its time; "Keep the time" holds it there (PE-3)',
     /Move .* to Sintra/.test(question ?? '') && moved.chapterId === 'ch-sintra' && moved.chapterLocked === true && !moved.userTimestamp && sin[1].id === mover,
-    `${question}; now 2nd in Sintra, held by hand`);
+    `${question}; chapter ${moved.chapterId}, held ${moved.chapterLocked}, time ${moved.userTimestamp ?? 'unchanged'}, Sintra starts ${sin.slice(0, 3).map((x) => x.id).join(' ')}`);
 
   // Restore one excluded clip from the tray.
   await page.click('#pe-excluded summary');
