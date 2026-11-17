@@ -1,7 +1,7 @@
 /**
  * A project open in the browser: local undo history, the operation queue that
  * saves edits to the server, the edit lock, and polling for changes made
- * elsewhere (uploads finishing, media processed, other members).
+ * elsewhere (uploads finishing, media processed).
  *
  * Every local edit becomes operations (diff of the before and after states),
  * queued and sent within about a second (autosave). If the connection drops,

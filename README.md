@@ -1,25 +1,25 @@
-# TripAlogue — Phase 3: Presentation editor (web)
+# TripAlogue — Phase 3: Presentation editor
 
-TripAlogue is a web application for building travelogues from a trip's itinerary, photos and videos, and
-(from Phase 7) for building them together with the people who were on the trip. This is Phase 0 of the PRD:
+TripAlogue builds travelogues from a trip's itinerary, photos and videos. It is a standalone app for one person:
+installed on your computer, run from your browser, with no account and no sign-in. Nothing leaves your computer
+except place searches and map tiles. This is Phase 0 of the PRD:
 the foundations every later phase plugs into, plus Phase 1: the itinerary editor
 (see [Phase 1](#phase-1-itinerary-editor)), Phase 2: the media manager (see [Phase 2](#phase-2-media-manager)) and
 Phase 3: the presentation editor, with narration and music lanes (see [Phase 3](#phase-3-presentation-editor)).
 
-**Exit criterion met:** a hand-written project with 20 media items is imported into an account, its originals
-are uploaded through the browser, and it plays end to end in the browser from cloud storage
-(see [Exit test](#exit-test)).
+**Exit criterion met:** a hand-written project with 20 media items is imported, its originals are added through
+the browser, and it plays end to end from the app's media store (see [Exit test](#exit-test)).
 
 | PRD | Requirement | Where |
 | --- | --- | --- |
-| F-1 | Project stored on the server, autosaved, with version history and JSON export and import | `src/server/projects.ts`, `src/web/session.ts`, `src/core/` |
-| F-2 | Undo and redo across all edits, at least 100 steps, without undoing other people's changes | `src/core/history.ts` (`rebase`) |
+| F-1 | Project stored by the local server, autosaved, with version history and JSON export and import | `src/server/projects.ts`, `src/web/session.ts`, `src/core/` |
+| F-2 | Undo and redo across all edits, at least 100 steps, without undoing changes the server made (uploads, processing) | `src/core/history.ts` (`rebase`) |
 | F-3 | Player at the project's aspect ratio, drawing the shared render model | `src/core/render-model.ts`, `src/player/` |
 | F-4 | Media processing jobs: probe, thumbnails, 720p proxies in object storage; HEIC to JPG; startup check of ffmpeg; retry after a failure | `src/server/media.ts`, `heic.ts`, `heif.ts`, `toolcheck.ts` |
 | F-5 | Opt-in telemetry hooks for usability sessions | `src/core/telemetry.ts`, `POST /api/telemetry` |
-| F-6 | Accounts: email-link sign-in, optional Google sign-in, sessions | `src/server/auth.ts` |
+| F-6 | One local user, no sign-in; the app answers only on this computer | `src/server/auth.ts`, `src/server/app.ts` |
 | F-7 | Resumable uploads of unaltered originals | `src/server/uploads.ts`, `src/web/uploader.ts` |
-| F-8 | Sharing basics: invitations, roles, one editor at a time | `src/server/projects.ts` |
+| F-8 | One window edits at a time (an edit lock) | `src/server/projects.ts` |
 | F-9 | Operation log: every edit stored with author, time and origin | `src/core/ops.ts`, `src/server/projects.ts` |
 
 ## Quick start
@@ -30,16 +30,18 @@ Requires Node 22.13 or later (it uses the built-in `node:sqlite`) and `ffmpeg`/`
 ```sh
 npm install
 npm run build
-node --no-warnings dist/node/cli.js serve --data data      # http://127.0.0.1:5173
+npm start           # opens http://127.0.0.1:5173 in your browser; Ctrl+C stops it
 ```
 
-Sign in with any email address. Until an email provider is configured, sign-in and invitation links are
-printed in the server console and written to `data/outbox/`.
+There is nothing to sign in to: the app runs for you, on this computer, and keeps everything in `./data`
+(travelogues, your original files, thumbnails). It listens on 127.0.0.1 only, so other computers on your network
+cannot reach it. `node --no-warnings dist/node/cli.js serve --data <folder>` runs it without opening the browser,
+with the data kept elsewhere.
 
-To load the sample trip into your account without clicking through the import screen:
+To load the sample trip without clicking through the import screen:
 
 ```sh
-node --no-warnings dist/node/cli.js import samples/hand-written-20/trip.travelogue.json --email you@example.com --data data
+node --no-warnings dist/node/cli.js import samples/hand-written-20/trip.travelogue.json --data data
 ```
 
 Or use **Import a project file** on the home page and choose `samples/hand-written-20/trip.travelogue.json`
@@ -76,11 +78,10 @@ Upload tab (Itinerary view, lower right), or **Retry** next to an item in the It
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `TRIPALOGUE_DATA_DIR` / `--data` | `./data` | Database, object storage, upload temp files, outbox |
-| `PORT` / `--port` | `5173` | Listen port |
-| `TRIPALOGUE_BASE_URL` / `--base-url` | `http://127.0.0.1:<port>` | Public URL used in links; `https://` turns on Secure cookies |
+| `TRIPALOGUE_DATA_DIR` / `--data` | `./data` | Database, media store, upload temp files |
+| `PORT` / `--port` | `5173` | Listen port (always on 127.0.0.1) |
+| `--open` | off (`npm start` turns it on) | Open the app in your default browser |
 | `TRIPALOGUE_SECRET` | generated into `<data>/secret` | Key for signed media links |
-| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | unset | Turn on "Sign in with Google" (redirect URI: `<base>/api/auth/google/callback`) |
 | `TRIPALOGUE_MAX_UPLOAD_BYTES` | 10 GB | Per-file upload limit |
 | `TRIPALOGUE_TELEMETRY_DIR` | unset | Turn on the opt-in telemetry endpoint |
 | `TRIPALOGUE_HEIC_CONVERTER` | `auto` | HEIC photo converter: `auto`, `off`, or one of `ffmpeg`, `heif-dec`, `heif-convert`, `sips`, `magick`, `convert` |
@@ -91,9 +92,8 @@ Upload tab (Itinerary view, lower right), or **Retry** next to an item in the It
 | `TRIPALOGUE_CONTACT_EMAIL` | unset | Added to the User-Agent sent to the geocoder, as Nominatim's policy asks |
 
 Place search and tiles go through the server, which caches them (searches for a week, tiles under
-`<data>/tiles`) and spaces searches at least a second apart. The OpenStreetMap defaults are for local testing
-only; their public servers are not meant for production traffic. The production provider is an open PRD
-question.
+`<data>/tiles`) and spaces searches at least a second apart, as OpenStreetMap's usage policies ask of a personal
+app. Set `TRIPALOGUE_CONTACT_EMAIL` so their operators can reach you if needed.
 
 `tripalogue serve --no-worker` plus a separate `tripalogue worker` runs media processing in its own process.
 
@@ -133,44 +133,42 @@ with "could not be converted", check that line, and that `ffmpeg -decoders | gre
 
 ```sh
 npm run typecheck
-npm test            # 131 tests: model, order keys, operations, history, itinerary, assignment, metadata, contributors, sample hash, geo proxy, HEIC, server API, uploads, processing, retry, auth
+npm test            # 151 tests: model, order keys, operations, history, itinerary, assignment, metadata, travelers, sample hash, geo proxy, HEIC, presentation edits, audio mix, server API, uploads, processing, retry, local-only access
 npm run test:e2e    # Phase 0 browser exit test (needs Playwright's Chromium: npx playwright install chromium)
 npm run test:phase1 # Phase 1 browser test of the G1 tasks (no internet needed: it uses a stand-in map provider)
-npm run test:phase2 # Phase 2 browser test of the G2 tasks (three travelers, a slow camera, WhatsApp copies, a folder upload)
+npm run test:phase2 # Phase 2 browser test of the G2 tasks (your photos and two travelers', a slow camera, WhatsApp copies, a folder upload)
 npm run test:phase3 # Phase 3 browser test of the G3 tasks (cut a 12-minute draft to 5, place portraits, lay music) and a 300-item playback
 ```
 
 ## How it works
 
 ```text
-Browser (each member)                         Server
-  editors + player ── edits as operations ──▶ API: accounts, roles, operation log, versions, edit lock
+Your browser                                  Local server (127.0.0.1)
+  editors + player ── edits as operations ──▶ API: operation log, versions, edit lock
   shared render model                          SQLite (node:sqlite)
-  resumable uploader ─── original bytes ────▶ object storage (file system driver; S3-shaped interface)
+  resumable uploader ─── original bytes ────▶ media store (files under <data>/blobs)
                      ◀── signed media links ── media worker: ffprobe, thumbnails, proxies (ffmpeg)
 ```
 
 - **Edits are operations.** The browser keeps a local undo history. Each edit is diffed into operations
   addressed by entity id (never array index), queued, and saved within about a second. The server applies them,
   stamps who changed each entity, validates the result, and records the batch in the operation log with a new
-  revision. Every 50 revisions it keeps an automatic version; members can also save named versions and restore
+  revision. Every 50 revisions it keeps an automatic version; you can also save named versions and restore
   any of them (a restore is itself a revision).
-- **One editor at a time, for now.** Editors take a one-minute edit lock that the browser renews; others see
-  who is editing. A save based on an older revision is accepted only when everything in between came from the
-  server (uploads finishing, media processed); those changes are folded into the editor's undo history so undo
-  never reverts them. Phase 7 replaces the lock with live merging.
+- **One window edits at a time.** The window you edit in holds a one-minute edit lock that it renews. A save
+  based on an older revision is accepted only when everything in between came from the server (uploads
+  finishing, media processed); those changes are folded into the undo history so undo never reverts them.
 - **Order without renumbering.** Cue order is a fractional key (`src/core/fractional.ts`), so a move changes
-  one cue and two people reordering never collide.
+  one cue.
 - **Originals are never altered.** Uploads are chunked, each chunk must start at the server's offset, and an
   interrupted upload resumes after a reload. The finished file is hashed (sha256) and stored as is; capture
   time and GPS stay intact.
-- **Media is private.** Media URLs check membership, then redirect to a signed link that expires after 10 minutes
-  and supports byte ranges for video seeking.
-- **Roles:** owner (everything, invitations), editor (edit, versions, export), contributor (upload and view),
-  viewer (watch). All checks are on the server.
-- **Security:** no passwords stored; sign-in tokens and session ids stored only as hashes; HttpOnly SameSite
-  session cookies; every write needs an `X-TripAlogue-Client` header (blocks cross-site requests); a strict
-  Content-Security-Policy on the app; blob keys cannot leave the store.
+- **Media stays on this computer.** Media URLs redirect to a signed link that expires after 10 minutes and
+  supports byte ranges for video seeking.
+- **Only you, only here.** No accounts and no sign-in. The server listens on 127.0.0.1, answers only requests
+  whose Host is localhost (which defeats DNS-rebinding pages), and every write needs an `X-TripAlogue-Client`
+  header (which other web sites cannot send). A strict Content-Security-Policy on the app; blob keys cannot
+  leave the store.
 
 ## Schema v2
 
@@ -180,13 +178,14 @@ fields (`storageKey`, `contentHash`, `status`, `assets`), fractional cue order, 
 
 ## Exit test
 
-`scripts/exit-test.ts` starts the app on an empty data folder and, in headless Chromium, signs in with an
-emailed link, imports the hand-written 20-item project by uploading its files through the browser, waits for
+`scripts/exit-test.ts` starts the app on an empty data folder and, in headless Chromium, opens it (no sign-in),
+imports the hand-written 20-item project by uploading its files through the browser, waits for
 processing, plays the whole travelogue in real time, spot-checks frames, and checks that an edit autosaves,
 survives a reload and can be undone. Report and screenshots: `docs/exit-test/`.
 
 | Check | Result |
 | --- | --- |
+| Open the app with no sign-in | pass |
 | Upload and process 20 originals (10.1 MB) | all ready about 14 s after import |
 | Play 116 s of timeline at 1x | 116.2 s, all 23 segments in order, 0 of 6,971 frames waiting on media, 60 fps |
 | Frame checks (title, fit, custom rectangle, fill, full-length clip, 2x clip) | 6 of 6 |
@@ -223,8 +222,8 @@ invalid chapter. Numeric dates in pasted text are read month/day/year.
 
 **Preview** is just the player at full width. **Mix** has a side panel with the selected **Clip** and the **Items**
 list; **Hide panel** (or the P key) folds it away, and the browser remembers the choice. The travelogue panel —
-**Upload**, **Members** and **Versions** — sits in the **Itinerary** view's lower right, under the map and the chapter
-timeline, with **Delete this travelogue** (owner only) below it.
+**Upload** and **Versions** — sits in the **Itinerary** view's lower right, under the map and the chapter
+timeline, with **Delete this travelogue** below it.
 
 The inset is on for new travelogues. For a travelogue made before it existed, open **Map** next to Mute in
 Preview and tick **Show map inset**. While a chapter plays, the inset frames that chapter's located photos and
@@ -259,31 +258,33 @@ independently, so you can drag from one to the other without losing your place.
 | MM-8 | Likely duplicates: same content, or same time and size from different sources | `src/core/media-edits.ts` |
 | MM-9 | Location from EXIF GPS or QuickTime ISO 6709; set from the chapter's place, by clicking the map, copy/paste between items, or clear | `src/core/contributors.ts` |
 | MM-15 | Audio (MP3, M4A, AAC, WAV): duration, recording time, a waveform thumbnail and a playable AAC copy; filed by time | `src/server/media.ts` |
-| MM-16 | The traveler behind each source, their initials on each item, and each person's items on their own | `src/web/media.ts` |
+| MM-16 | Travelers are names in the travelogue: choose (or add) whose photos you are uploading, or name the traveler behind a source; their initials on each item, and each person's items on their own | `src/core/contributors.ts`, `src/web/media.ts` |
 | MM-17 | Per traveler: items without a capture time or a location, and items that look like reduced copies (stills of 2,048 px or less, 720p video, chat-app file names), with a ready-to-send note asking for the originals | `src/core/contributors.ts` |
-| MM-18 | A one-page guide to sharing originals, linked from invitations and the Upload tab | `src/web/guide-contributors.html` |
+| MM-18 | A one-page guide for fellow travelers on sending you their originals, linked from the Upload tab | `src/web/guide-contributors.html` |
 | PE-5 (videos) | A video plays in full by default; trim it from the beginning and/or the end in the Media inspector | `src/core/media-edits.ts`, `src/web/media.ts` |
 | MM-22 | Remove items to a Removed bin, put them back, delete them for good; delete a whole travelogue | `src/core/remove.ts`, `src/server/deletion.ts` |
 | MV-2 | Media map: each located item around its chapter's pin; items far from their chapter flagged | `src/web/media.ts`, `src/web/map.ts` |
 
-**Sources are per person and camera.** Uploads are grouped by who sent them and the camera that recorded them
-(EXIF or QuickTime make and model), for example "Jody · Canon EOS R6". Clock errors belong to a camera, so a
-camera an hour slow can be corrected without moving the same person's phone photos, whose clocks keep network
-time. Files with no camera recorded go to the person's own uploads source.
+**Sources are per person and camera.** Uploads are grouped by whose photos they are (yours, or a traveler's you
+pick in the Upload tab's **Whose photos?** menu) and the camera that recorded them (EXIF or QuickTime make and
+model), for example "Canon EOS R6" or "Ana · Apple iPhone 14". Clock errors belong to a camera, so a camera an
+hour slow can be corrected without moving the same person's phone photos, whose clocks keep network time. Files
+with no camera recorded stay in that person's general source ("My uploads", "Ana's photos").
 
 `scripts/phase2-test.ts` scripts the G2 tasks in headless Chromium. It imports the sample with its originals,
-then has three travelers upload:
-- the owner, with photos taken after the trip, a screenshot with no camera time, a copy of a sample photo, three
-  photos from a camera an hour slow and a phone photo;
-- Ana, with phone originals, one of them taken 274 km from its chapter;
-- Ben, with WhatsApp copies;
+then adds:
+- your own photos taken after the trip, a screenshot with no camera time, a copy of a sample photo, three photos
+  from a camera an hour slow and a phone photo;
+- Ana's phone originals (one taken 274 km from its chapter), naming her in **Whose photos?** as they upload;
+- Ben's WhatsApp copies, the same way;
 - plus a voice memo, a folder with subfolders, and a drag-and-drop.
 
 In the Media view it then places the unassigned items, fixes the slow camera with the preview, finds Ben's
 stripped copies and drafts the note, sets locations three ways, and checks everything survives a reload. It also removes, puts back
 and deletes items for good, and deletes a whole travelogue. Report and screenshots: `docs/phase2-test/`.
 It also trims a video from both ends and resets it, checks the two scrolling columns, the file picker keeping its
-selection, and the delete box's new place. Result: 39 of 39 checks, with no browser console errors.
+selection, and the delete box's place (with no Members tab and no sign-out). Result: 40 of 40 checks, with no
+browser console errors.
 
 ### Video length
 
@@ -303,7 +304,7 @@ never cut short. The cue profile's old `videoMaxSec` cap is no longer applied.
   deletes anything that has been in the bin for 30 days (`TRIPALOGUE_PURGE_AFTER_DAYS`). Deleting first takes the
   items out of the travelogue and out of every saved version, records their ids so no edit can bring them back,
   and only then erases the original and derived files.
-- **Delete a travelogue:** the owner can, at the bottom of the Itinerary page, type the travelogue's title and press **Delete this
+- **Delete a travelogue:** at the bottom of the Itinerary page, type the travelogue's title and press **Delete this
   travelogue**. Its database rows, operation log, versions, media files and unfinished uploads are all erased.
 
 ## Phase 3: Presentation editor
@@ -344,16 +345,16 @@ by drag within a chapter and into the next one (answering "Keep the time"), rest
 three portrait photos on the stage to the thirds and centre and shrinks them; drops the song on the Music lane
 under Porto and the memo on a picture, then reorders and trims around it (the memo stays on its picture to the
 millisecond); checks the mix (music at 70%, ducked 12 dB under the memo; mute), real playback of the song in step
-with the clock, play-this-chapter, reset-chapter, an edit reaching the preview in about 60 ms, a reload, a viewer's
-read-only Mix view, and a 300-item travelogue playing through at 4x with no frames waiting on media. Report and
-screenshots: `docs/phase3-test/`. Result: 26 of 26 checks, with no browser console errors.
+with the clock, play-this-chapter, reset-chapter, an edit reaching the preview in about 60 ms, a reload, and a
+300-item travelogue playing through at 4x with no frames waiting on media. Report and
+screenshots: `docs/phase3-test/`. Result: 25 of 25 checks, with no browser console errors.
 
 ## Layout
 
 ```text
 src/core/     platform-neutral model: schema, validation, migrations, order keys, operations, history, autosave, timeline (with audio clips), render model and audio mix, telemetry, itinerary, assignment, media edits, presentation edits, contributors, sample hash
-src/server/   web server: config, database, object storage, auth, projects and operation log, uploads, media jobs (with HEIC conversion, photo orientation, capture metadata), mailer, geo proxy
-src/web/      browser app: API client, project session (sync, autosave, lock), resumable uploader, itinerary view, media view, edit view (timeline, clip inspector, stage placement), route map, playback inset, UI
+src/server/   local server: config, database, media store, the local user, projects and operation log, uploads, media jobs (with HEIC conversion, photo orientation, capture metadata), geo proxy
+src/web/      browser app: API client, project session (sync, autosave, lock), resumable uploader, itinerary view, media view, mix view (timeline, clip inspector, stage placement), route map, playback inset, UI
 src/player/   canvas player (pictures, video and the audio mix) and media pool
 src/node/     command line (serve, worker, import, validate, info, new) and file helpers
 samples/      hand-written 20-item project (schema v1) and its synthetic media generator
@@ -363,10 +364,6 @@ scripts/      build, sample media, exit test, Phase 1, 2 and 3 tests
 
 ## Not built yet
 
-- An email provider (links go to the console and `data/outbox/`).
-- A hosted test site, with an S3-compatible storage driver for it (the storage interface is ready; the
-  file-system driver ships).
-- A production map provider (see Configuration).
-- Google sign-in is built but untested against Google: it needs a Google OAuth client (see Configuration).
-- Export to MP4, editable transitions and Ken Burns, music across chapters, the full inset map, Google Photos and
-  upload links, and live co-editing are later phases; their data already has a place in the schema.
+- Export to MP4, editable transitions and Ken Burns, music across chapters, the full inset map and Google Photos
+  import are later phases; their data already has a place in the schema.
+- A packaged desktop app (its own window and icon). For now it runs as a local server opened in your browser.

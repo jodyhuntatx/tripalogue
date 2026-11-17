@@ -4,7 +4,7 @@
  * storage."
  *
  * Starts the web app on a fresh data folder, then in headless Chromium:
- * signs in with an emailed link, imports the hand-written project by uploading
+ * opens the app (no sign-in), imports the hand-written project by uploading
  * its 20 files through the browser, waits for processing, plays the whole
  * travelogue, spot-checks frames, and checks that an edit autosaves, survives
  * a reload, and can be undone. Writes a report and screenshots to
@@ -21,7 +21,6 @@ import { chromium } from 'playwright';
 import { buildTimeline, parseProject } from '../src/core/index.js';
 import { startApp } from '../src/server/app.js';
 import { geoConfigFromEnv } from '../src/server/geo.js';
-import type { OutboxMailer } from '../src/server/mailer.js';
 import type {} from '../src/web/main.js'; // window.tripalogue typings
 import { writeHeic } from '../test/helpers/heic.js';
 
@@ -49,7 +48,7 @@ const app = await startApp({ dataDir, port: 0, log: () => {}, geo: geoConfigFrom
 const browser = await chromium.launch({ args: ['--autoplay-policy=no-user-gesture-required'] });
 const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
 /** Upload, Members and Versions live in the Itinerary view's travelogue panel (lower right). */
-const panelTab = async (t: 'Upload' | 'Members' | 'Versions') => {
+const panelTab = async (t: 'Upload' | 'Versions') => {
   await page.click('#view-itinerary');
   await page.click(`#project-panel button[data-tab="${t}"]`);
 };
@@ -64,16 +63,11 @@ page.on('pageerror', (e) => consoleErrors.push(e.message));
 const shot = (name: string) => page.screenshot({ path: path.join(outDir, `${name}.png`) });
 
 try {
-  // 1. Sign in with an emailed link.
+  // 1. Open the app: no sign-in, straight to your travelogues.
   await page.goto(app.url);
-  await page.fill('input[type=email]', 'jody@example.com');
-  await shot('01-sign-in');
-  await page.click('button[type=submit]');
-  await page.waitForSelector('text=Check your email');
-  const mail = await (app.mailer as OutboxMailer).latestFor('jody@example.com');
-  await page.goto(/https?:\/\/\S+/.exec(mail!.text)![0]);
   await page.waitForSelector('#import-json');
-  check('signs in with an emailed link', true);
+  await shot('01-travelogues');
+  check('opens straight to your travelogues, with no sign-in', await page.locator('input[type=email]').count() === 0);
 
   // 2. Import the hand-written project and upload its 20 files through the browser.
   const media = readdirSync(path.join(sampleDir, 'media')).map((f) => path.join(sampleDir, 'media', f));

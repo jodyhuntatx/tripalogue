@@ -1,21 +1,20 @@
 /**
- * The TripAlogue web server: JSON API, signed media links, and the web client.
+ * The TripAlogue local server: JSON API, signed media links, and the web client, for one person on this computer.
  *
- * Mutating API calls must carry the `X-TripAlogue-Client: 1` header. Browsers
- * cannot add custom headers to cross-site requests without a CORS preflight,
- * which this server never grants, so this blocks cross-site request forgery
- * on top of the SameSite session cookie.
+ * It listens on 127.0.0.1 only and has no sign-in: every request acts as the local user. Two checks keep other web
+ * pages in the same browser out: mutating API calls must carry the `X-TripAlogue-Client: 1` header (browsers cannot
+ * add custom headers to cross-site requests without a CORS preflight, which this server never grants), and the
+ * Host header must name this computer (which defeats DNS-rebinding pages).
  */
 import { promises as fs, createReadStream } from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { Auth, safeNext } from './auth.js';
+import { Auth } from './auth.js';
 import { FsBlobStore, type BlobStore } from './blobstore.js';
 import { loadConfig, type ServerConfig } from './config.js';
 import { Db } from './db.js';
 import { HttpError, readBody, readJson, requireString, Router, sendJson, type Ctx, type Req, type Res } from './http.js';
-import { OutboxMailer, type Mailer } from './mailer.js';
 import { Geo } from './geo.js';
 import { Jobs } from './media.js';
 import { MediaTools } from './toolcheck.js';
@@ -39,7 +38,6 @@ export interface App {
   uploads: Uploads;
   jobs: Jobs;
   blobs: BlobStore;
-  mailer: Mailer;
   deletion: Deletion;
   server: http.Server;
   url: string;
@@ -51,13 +49,12 @@ export function defaultWebDir(): string {
   return path.resolve(here, '..', '..', 'dist', 'web');
 }
 
-export async function startApp(overrides: Partial<ServerConfig> = {}, deps: { mailer?: Mailer; blobs?: BlobStore } = {}): Promise<App> {
+export async function startApp(overrides: Partial<ServerConfig> = {}, deps: { blobs?: BlobStore } = {}): Promise<App> {
   const cfg = loadConfig(overrides);
   const db = Db.open(cfg.dataDir);
-  const mailer = deps.mailer ?? new OutboxMailer(path.join(cfg.dataDir, 'outbox'), cfg.log);
   const blobs = deps.blobs ?? new FsBlobStore(path.join(cfg.dataDir, 'blobs'));
-  const auth = new Auth(db, cfg, mailer);
-  const projects = new Projects(db, cfg, mailer, auth);
+  const auth = new Auth(db, cfg);
+  const projects = new Projects(db);
   const jobs = new Jobs(db, cfg, blobs, projects);
   const tools = new MediaTools(cfg); // reads cfg.ffmpeg / cfg.ffprobe / cfg.log at each check
   const uploads = new Uploads(db, cfg, blobs, projects, jobs);
@@ -66,40 +63,15 @@ export async function startApp(overrides: Partial<ServerConfig> = {}, deps: { ma
   const webDir = cfg.webDir ?? defaultWebDir();
   const r = new Router();
 
-  const me = (c: Ctx) => auth.require(c.req);
+  const me = (_c: Ctx) => auth.user;
   const member = (c: Ctx, min: Role) => {
     const user = me(c);
     return { user, role: projects.require(c.params.id, user, min) };
   };
 
-  // ---- auth ----
-  r.on('POST', '/api/auth/email', async (c) => {
-    const b = await readJson(c.req);
-    await auth.requestEmailLink(b.email, b.next);
-    sendJson(c.res, 200, { sent: true });
-  });
-  r.on('GET', '/api/auth/verify', (c) => {
-    const { user, next } = auth.verifyEmailLink(c.url.searchParams.get('token') ?? '');
-    auth.createSession(c.res, user.id);
-    redirect(c.res, next);
-  });
-  r.on('GET', '/api/auth/google/start', (c) => {
-    const { url, cookie } = auth.googleStart(c.url.searchParams.get('next'));
-    c.res.setHeader('Set-Cookie', cookie);
-    redirect(c.res, url);
-  });
-  r.on('GET', '/api/auth/google/callback', async (c) => {
-    const { user, next } = await auth.googleCallback(c.req, c.url);
-    auth.createSession(c.res, user.id);
-    redirect(c.res, next);
-  });
-  r.on('POST', '/api/auth/logout', (c) => {
-    auth.logout(c.req, c.res);
-    sendJson(c.res, 200, { ok: true });
-  });
-  r.on('GET', '/api/me', (c) => sendJson(c.res, 200, { user: auth.userFor(c.req) ?? null, google: auth.googleEnabled }));
+  r.on('GET', '/api/me', (c) => sendJson(c.res, 200, { user: me(c) }));
   r.on('GET', '/api/config', async (c) => sendJson(c.res, 200, {
-    google: auth.googleEnabled, telemetryEndpoint: cfg.telemetryDir ? '/api/telemetry' : null, chunkBytes: cfg.chunkBytes, maxUploadBytes: cfg.maxUploadBytes,
+    telemetryEndpoint: cfg.telemetryDir ? '/api/telemetry' : null, chunkBytes: cfg.chunkBytes, maxUploadBytes: cfg.maxUploadBytes,
     map: { tiles: !!cfg.geo.tileUrl, search: !!cfg.geo.geocoderUrl, attribution: cfg.geo.attribution },
     media: await mediaStatus(),
     purgeAfterDays: cfg.purgeAfterDays,
@@ -114,7 +86,7 @@ export async function startApp(overrides: Partial<ServerConfig> = {}, deps: { ma
     sendJson(c.res, 200, await mediaStatus(c.url.searchParams.get('recheck') === '1'));
   });
 
-  // ---- places and map tiles (signed-in users only, so the proxy is not open to the world) ----
+  // ---- places and map tiles (through this server, which adds the policy-required User-Agent and a cache) ----
   r.on('GET', '/api/geo/search', async (c) => {
     me(c);
     sendJson(c.res, 200, { places: await geo.search(c.url.searchParams.get('q') ?? '', c.url.searchParams.get('lang') ?? undefined) });
@@ -194,35 +166,6 @@ export async function startApp(overrides: Partial<ServerConfig> = {}, deps: { ma
     sendJson(c.res, 200, { rev: projects.restore(c.params.id, c.params.vid, user) });
   });
 
-  // ---- members ----
-  r.on('GET', '/api/projects/:id/members', (c) => {
-    member(c, 'viewer');
-    sendJson(c.res, 200, { members: projects.members(c.params.id) });
-  });
-  r.on('POST', '/api/projects/:id/invites', async (c) => {
-    const { user } = member(c, 'owner');
-    const b = await readJson(c.req);
-    await projects.invite(c.params.id, user, b.email, b.role);
-    sendJson(c.res, 201, { sent: true });
-  });
-  r.on('PATCH', '/api/projects/:id/members/:uid', async (c) => {
-    member(c, 'owner');
-    const b = await readJson(c.req);
-    projects.setRole(c.params.id, c.params.uid, b.role);
-    sendJson(c.res, 200, { ok: true });
-  });
-  r.on('DELETE', '/api/projects/:id/members/:uid', (c) => {
-    member(c, 'owner');
-    projects.removeMember(c.params.id, c.params.uid);
-    sendJson(c.res, 200, { ok: true });
-  });
-  r.on('GET', '/api/invites/accept', (c) => {
-    const user = auth.userFor(c.req);
-    const t = c.url.searchParams.get('token') ?? '';
-    if (!user) return redirect(c.res, `/?next=${encodeURIComponent(`/api/invites/accept?token=${t}`)}#/signin`);
-    redirect(c.res, `/#/p/${encodeURIComponent(projects.acceptInvite(t, user))}`);
-  });
-
   // ---- uploads ----
   r.on('POST', '/api/projects/:id/uploads', async (c) => {
     const { user } = member(c, 'contributor');
@@ -300,6 +243,7 @@ export async function startApp(overrides: Partial<ServerConfig> = {}, deps: { ma
     try {
       if (url.pathname.startsWith('/blob/')) return await serveBlob(req, res, url);
       if (url.pathname.startsWith('/api/')) {
+        if (!localHost(req.headers.host)) throw new HttpError(403, 'TripAlogue only answers on this computer (localhost)', 'host');
         const mutating = !['GET', 'HEAD', 'OPTIONS'].includes(req.method);
         if (mutating && req.headers['x-tripalogue-client'] !== '1') throw new HttpError(403, 'Missing X-TripAlogue-Client header', 'csrf');
         const m = r.match(req.method, url.pathname);
@@ -311,9 +255,6 @@ export async function startApp(overrides: Partial<ServerConfig> = {}, deps: { ma
       const he = e instanceof HttpError ? e : new HttpError(500, 'Something went wrong on the server', 'server_error');
       if (!(e instanceof HttpError)) cfg.log(`error ${req.method} ${url.pathname}: ${(e as Error).stack ?? e}`);
       if (res.headersSent) return void res.end();
-      // Links people click in email or that Google redirects to land on a page, not on JSON.
-      const browserLanding = url.pathname === '/api/auth/verify' || url.pathname.startsWith('/api/auth/google/') || url.pathname === '/api/invites/accept';
-      if (browserLanding) return redirect(res, `/?error=${encodeURIComponent(he.message)}#/signin`);
       sendJson(res, he.status, { error: he.message, code: he.code });
     }
   });
@@ -364,7 +305,7 @@ export async function startApp(overrides: Partial<ServerConfig> = {}, deps: { ma
   await new Promise<void>((resolve) => server.listen(cfg.port, cfg.host, resolve));
   const addr = server.address();
   const port = typeof addr === 'object' && addr ? addr.port : cfg.port;
-  if (!overrides.baseUrl && !process.env.TRIPALOGUE_BASE_URL) cfg.baseUrl = `http://${cfg.host}:${port}`;
+  if (!overrides.baseUrl) cfg.baseUrl = `http://${cfg.host}:${port}`;
   void tools.status(); // check ffmpeg now, so problems are in the log at startup
   if (cfg.runWorker) {
     jobs.start();
@@ -372,7 +313,7 @@ export async function startApp(overrides: Partial<ServerConfig> = {}, deps: { ma
   }
 
   return {
-    cfg, db, auth, projects, uploads, jobs, blobs, mailer, server, deletion, url: `${cfg.baseUrl}/`,
+    cfg, db, auth, projects, uploads, jobs, blobs, server, deletion, url: `${cfg.baseUrl}/`,
     async close() {
       deletion.stop();
       jobs.stop();
@@ -387,4 +328,9 @@ function redirect(res: Res, location: string, status = 302, cacheControl = 'no-s
   res.writeHead(status, { Location: location, 'Cache-Control': cacheControl }).end();
 }
 
-export { safeNext };
+/** The Host header names this computer: localhost, 127.0.0.1 or [::1], with any port. */
+export function localHost(host: string | undefined): boolean {
+  if (!host) return false;
+  const name = host.replace(/:\d+$/, '').toLowerCase();
+  return name === 'localhost' || name === '127.0.0.1' || name === '[::1]';
+}

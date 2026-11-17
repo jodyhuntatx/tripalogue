@@ -1,5 +1,5 @@
 {
-  "date": "2026-11-17T19:27:06.755Z",
+  "date": "2026-11-17T20:28:54.009Z",
   "browser": "153.0.8010.12",
   "checks": [
     {
@@ -20,7 +20,12 @@
     {
       "name": "uploads are grouped by camera, so one camera’s clock can be fixed alone",
       "pass": true,
-      "detail": "Sample media | jody's uploads | jody · Canon EOS R6 | jody · Apple iPhone 15 Pro"
+      "detail": "Sample media | My uploads | Canon EOS R6 | Apple iPhone 15 Pro"
+    },
+    {
+      "name": "a fellow traveler is named while uploading, and their photos are filed under them, per camera (MM-16)",
+      "pass": true,
+      "detail": "Sample media | My uploads | Canon EOS R6 | Apple iPhone 15 Pro | Ana's photos | Ben's photos | Ana · Apple iPhone 14"
     },
     {
       "name": "with unassigned items, the project opens in the Media view",
@@ -30,7 +35,7 @@
     {
       "name": "the Unassigned bin is listed first with its count",
       "pass": true,
-      "detail": "32 items · 5 unassigned · 5 with uncertain times · 2 possible duplicates"
+      "detail": "32 items · 5 unassigned · 5 with uncertain times · 2 possible duplicates: IMG_3001.jpg, Screenshot 2026-05-20.jpg?, IMG-20260504-WA0007.jpg?, IMG-20260504-WA0008.jpg?, copy-of-alfama.jpg?"
     },
     {
       "name": "a file with no camera time is badged as uncertain",
@@ -65,7 +70,7 @@
     {
       "name": "applying it moves the slow camera’s photos to the right chapter, and nothing else",
       "pass": true,
-      "detail": "saved in 361 ms; the iPhone photo stays in Lisbon"
+      "detail": "saved in 355 ms; the iPhone photo stays in Lisbon"
     },
     {
       "name": "typing in the inspector survives unrelated updates",
@@ -80,12 +85,12 @@
     {
       "name": "the contributor check finds who sent copies stripped of time and place (G2)",
       "pass": true,
-      "detail": "Ana: Aana 3 items1 without a capture time1 without a location1 look like copiesAsk ana for originals | Ben: Bben 2 items2 without a capture time2 without a location2 look like copies (WhatsApp)Ask ben for originals"
+      "detail": "Ana: AAna 3 items1 without a capture time1 without a location1 look like copiesAsk Ana for originals | Ben: BBen 2 items2 without a capture time2 without a location2 look like copies (WhatsApp)Ask Ben for originals"
     },
     {
       "name": "a ready-to-send note asks Ben for the originals",
       "pass": true,
-      "detail": "Thanks for adding your photos and videos to \"Portugal in Ten Days\". Of the 2 photos and videos you shared, 2 look like s"
+      "detail": "Thanks for sending your photos and videos for \"Portugal in Ten Days\". Of the 2 photos and videos you shared, 2 look like"
     },
     {
       "name": "a contributor’s problem items can be shown on their own",
@@ -180,10 +185,10 @@
     {
       "name": "Delete for good erases the original once nothing refers to it",
       "pass": true,
-      "detail": "originals/trv_-AuXQAiZdoS4/m_xUWlG6YZ.jpg: file erased, bin gone"
+      "detail": "originals/trv_kBNv7gMPRXce/m_d6ohAt8q.jpg: file erased, bin gone"
     },
     {
-      "name": "\"Delete this travelogue\" is on the Itinerary page, not in the Members tab",
+      "name": "\"Delete this travelogue\" is on the Itinerary page; there is no Members tab and no sign-out",
       "pass": true,
       "detail": ""
     },

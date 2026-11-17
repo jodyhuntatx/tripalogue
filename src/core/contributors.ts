@@ -90,12 +90,12 @@ export function originalsRequest(r: ContributorReport, o: { name: string; trip: 
   return [
     `Hi ${o.name},`,
     '',
-    `Thanks for adding your photos and videos to "${o.trip}". ${what} Without the originals they can't be placed in the right part of the trip or on the map.`,
+    `Thanks for sending your photos and videos for "${o.trip}". ${what} Without the originals they can't be placed in the right part of the trip or on the map.`,
     '',
-    'Could you upload the originals again? A few tips:',
-    '- Upload from your phone’s photo library or your computer, not from a chat app: messaging apps shrink files and remove the time and place.',
+    'Could you send me the originals? A few tips:',
+    '- Send them from your phone’s photo library or your computer (AirDrop, a shared folder, a USB stick), not through a chat app: messaging apps shrink files and remove the time and place.',
     '- On iPhone, when sharing, tap Options and turn on Location and All Photos Data. On Android, check that your share or export keeps location.',
-    '- Use the same upload link as before; files you already sent are recognised and skipped.',
+    '- Sending everything again is fine: files I already have are recognised and skipped.',
     '',
     'Thank you!',
     o.from,
@@ -105,6 +105,33 @@ export function originalsRequest(r: ContributorReport, o: { name: string; trip: 
 const joinList = (xs: string[]) => (xs.length <= 1 ? xs.join('') : `${xs.slice(0, -1).join(', ')} and ${xs[xs.length - 1]}`);
 
 // ---------------------------------------------------------------- sources and locations
+
+/** MM-16: add a traveler (a name) to the travelogue. */
+export function addTraveler(p: Travelogue, id: Id, name: string, email?: string): Travelogue {
+  const n = name.trim();
+  if (!n || p.travelers?.some((t) => t.id === id)) return p;
+  return { ...p, travelers: [...(p.travelers ?? []), { id, name: n.slice(0, 80), ...(email?.trim() ? { email: email.trim() } : {}) }] };
+}
+
+/** MM-16: rename a traveler (or set their email); the sources named after them follow. */
+export function updateTraveler(p: Travelogue, id: Id, patch: { name?: string; email?: string }): Travelogue {
+  const t = p.travelers?.find((x) => x.id === id);
+  if (!t) return p;
+  const name = patch.name?.trim() ? patch.name.trim().slice(0, 80) : t.name;
+  const next = { ...t, name, ...(patch.email !== undefined ? { email: patch.email.trim() || undefined } : {}) };
+  if (!next.email) delete next.email;
+  return {
+    ...p,
+    travelers: p.travelers!.map((x) => (x.id === id ? next : x)),
+    sources: name === t.name ? p.sources : p.sources.map((s) => (s.contributorId === id && s.displayName.startsWith(t.name) ? { ...s, displayName: name + s.displayName.slice(t.name.length) } : s)),
+  };
+}
+
+/** The display name of a traveler id (null: sources with nobody named). */
+export function travelerName(p: Travelogue, id: Id | null): string {
+  if (id === null) return 'Not named';
+  return p.travelers?.find((t) => t.id === id)?.name ?? 'A traveler';
+}
 
 /** MM-16: name the traveler behind a source (null clears it). */
 export function setSourceContributor(p: Travelogue, sourceId: Id, contributorId: Id | null): Travelogue {

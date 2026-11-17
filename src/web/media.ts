@@ -23,10 +23,14 @@
  */
 import {
   contributorOf, contributorReports, duplicateGroups, dropIntoChapter, farFromChapter, itemInstant, localToUtc, messagingApp,
-  originalsRequest, overlapItems, previewClockOffset, removeMedia, renameSource, restoreMedia, setClockOffset, setItemLocation, setVideoTrim, MIN_CLIP_SEC, setSourceContributor, setUserTime, shiftUserTime,
+  originalsRequest, overlapItems, previewClockOffset, removeMedia, renameSource, restoreMedia, setClockOffset, setItemLocation, setVideoTrim, MIN_CLIP_SEC, setSourceContributor, setUserTime, shiftUserTime, addTraveler, travelerName, newId,
   strippedSigns, type ContributorReport, type Id, type LatLng, type MediaItem, type Travelogue,
 } from '../core/index.js';
 import { Api } from './api.js';
+
+/** The traveler menu's "+ New traveler…" entry. */
+const NEW_TRAVELER = '__new__';
+const newTravelerId = () => newId('traveler');
 import { fill, h } from './dom.js';
 import { RouteMap } from './map.js';
 import type { ProjectSession } from './session.js';
@@ -43,7 +47,6 @@ export interface MediaView {
 type Filter = 'all' | 'unassigned' | 'uncertain' | 'overlap' | 'duplicate' | 'far';
 const FILTERS: [Filter, string][] = [['all', 'All'], ['unassigned', 'Unassigned'], ['uncertain', 'Time uncertain'], ['overlap', 'Overlaps'], ['duplicate', 'Duplicates'], ['far', 'Far from chapter']];
 
-interface Member { userId: string; name: string; email: string }
 
 const deviceZone = () => Intl.DateTimeFormat().resolvedOptions().timeZone;
 
@@ -54,12 +57,10 @@ export function mountMedia(s: ProjectSession, ctx: { projectId: string; play: (i
   let derived = { dupes: new Map<Id, number>(), overlaps: new Set<Id>(), far: new Map<Id, number>(), state: null as Travelogue | null };
   /** A focused subset from the contributor check ("Ana · no location"), shown on top of the filter. */
   let focus: { label: string; ids: Set<Id> } | null = null;
-  let members: Member[] = [];
   let copiedPlace: LatLng | null = null;
   let binOpen = false;
   let picking = false;
-  void Api.members(ctx.projectId).then((r) => { members = r.members; render(); }).catch(() => {});
-  const memberName = (id: Id | null) => (id === null ? 'No traveler named' : members.find((m) => m.userId === id)?.name ?? 'A traveler');
+  const memberName = (id: Id | null) => travelerName(s.state, id);
   const tiles = new Map<Id, { el: HTMLElement; key: string }>();
 
   const summary = h('div', { class: 'media-summary', id: 'media-summary', role: 'status' });
@@ -521,7 +522,7 @@ export function mountMedia(s: ProjectSession, ctx: { projectId: string; play: (i
 
   function askFor(r: ContributorReport) {
     const p = s.state;
-    const who = members.find((m) => m.userId === r.contributorId);
+    const who = p.travelers?.find((t) => t.id === r.contributorId);
     const meName = s.me.name;
     const text = originalsRequest(r, { name: (who?.name ?? 'there').split(' ')[0], trip: p.title, from: meName });
     const area = h('textarea', { id: 'ask-text', rows: '14', 'aria-label': 'Message' });
@@ -534,7 +535,7 @@ export function mountMedia(s: ProjectSession, ctx: { projectId: string; play: (i
         h('button', { class: 'primary', id: 'ask-copy', onclick: async () => {
           try { await navigator.clipboard.writeText(area.value); (document.getElementById('ask-copy') as HTMLButtonElement).textContent = 'Copied'; } catch { area.select(); }
         } }, 'Copy'),
-        who?.email && h('a', { class: 'button', id: 'ask-email', href: `mailto:${encodeURIComponent(who.email)}?subject=${encodeURIComponent(`Originals for "${p.title}"`)}&body=${encodeURIComponent(area.value)}` }, 'Open in email'),
+        h('a', { class: 'button', id: 'ask-email', href: `mailto:${who?.email ? encodeURIComponent(who.email) : ''}?subject=${encodeURIComponent(`Originals for "${p.title}"`)}&body=${encodeURIComponent(area.value)}` }, 'Open in email'),
         h('button', { id: 'ask-close', onclick: () => { dialog.close(); dialog.remove(); } }, 'Close')));
     document.body.append(dialog);
     dialog.showModal();
@@ -559,7 +560,7 @@ export function mountMedia(s: ProjectSession, ctx: { projectId: string; play: (i
   const draftOffsets = new Map<Id, number>();
   function renderSources() {
     const p = s.state;
-    const key = JSON.stringify([p.sources, p.media.map((m) => m.sourceId), p.chapters.map((c) => [c.id, c.start, c.end, c.timeZone]), members, s.canEdit]);
+    const key = JSON.stringify([p.sources, p.media.map((m) => m.sourceId), p.chapters.map((c) => [c.id, c.start, c.end, c.timeZone]), p.travelers, s.canEdit]);
     if (key === sourcesKey) return;
     sourcesKey = key;
     if (!p.sources.length) {
@@ -601,15 +602,28 @@ export function mountMedia(s: ProjectSession, ctx: { projectId: string; play: (i
           s.edit(`Clock offset for ${src.displayName}`, (q) => setClockOffset(q, src.id, sec), { structural: true });
         });
         refresh();
+        // MM-16: whose photos these are. Travelers are just names, added here or when uploading.
+        const newName = h('input', { class: 'traveler-new', placeholder: 'Name', 'aria-label': `${src.displayName}: new traveler's name`, hidden: true });
         const traveler = h('select', { 'aria-label': `${src.displayName}: traveler`, class: 'traveler', disabled: !s.canEdit,
-          onchange: (e: Event) => { const v = (e.target as HTMLSelectElement).value; s.edit('Set traveler', (q) => setSourceContributor(q, src.id, v || null)); } },
-          h('option', { value: '' }, 'No traveler named'),
-          ...members.map((m) => h('option', { value: m.userId, selected: m.userId === src.contributorId }, m.name)));
+          onchange: (e: Event) => {
+            const v = (e.target as HTMLSelectElement).value;
+            if (v === NEW_TRAVELER) { newName.hidden = false; newName.focus(); return; }
+            s.edit('Set traveler', (q) => setSourceContributor(q, src.id, v || null));
+          } },
+          h('option', { value: '' }, 'Not named'),
+          ...(p.travelers ?? []).map((t) => h('option', { value: t.id, selected: t.id === src.contributorId }, t.name)),
+          h('option', { value: NEW_TRAVELER }, '+ New traveler…'));
+        newName.addEventListener('keydown', (e) => {
+          if (e.key === 'Escape') { newName.hidden = true; traveler.value = src.contributorId ?? ''; }
+          if (e.key !== 'Enter' || !newName.value.trim()) return;
+          const tid = newTravelerId();
+          s.edit(`Add traveler ${newName.value.trim()}`, (q) => setSourceContributor(addTraveler(q, tid, newName.value), src.id, tid));
+        });
         const nameInput = h('input', { value: src.displayName, class: 'source-name', 'aria-label': 'Source name', readOnly: !s.canEdit,
           onchange: (e: Event) => s.edit('Rename source', (q) => renameSource(q, src.id, (e.target as HTMLInputElement).value)) });
         return h('div', { class: 'source', 'data-source': src.id },
           h('div', { class: 'row' }, nameInput, h('span', { class: 'muted' }, ` ${count} item${count === 1 ? '' : 's'}`)),
-          h('div', { class: 'row' }, h('span', { class: 'muted' }, 'Traveler'), traveler),
+          h('div', { class: 'row' }, h('span', { class: 'muted' }, 'Traveler'), traveler, newName),
           h('div', { class: 'row offset' }, h('span', { class: 'muted' }, 'Clock'), sign, hours, h('span', {}, 'h'), mins, h('span', {}, 'min'), apply),
           preview);
       }));

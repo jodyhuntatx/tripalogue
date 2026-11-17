@@ -1,13 +1,14 @@
 /**
  * TripAlogue web client (Phase 0 shell): sign-in, projects, import and
  * upload, the player, a few edits (title, include, order) with undo/redo and
- * autosave, members and invitations, and version history.
+ * autosave and version history.
  *
- * Routes: #/signin · #/projects · #/p/<projectId>
+ * Routes: #/projects · #/p/<projectId>[/itinerary|media|mix|preview]. No sign-in: the app runs for one person on
+ * this computer.
  */
-import { effectiveInstant, moveItem, parseProject, setIncluded, setTitle, Telemetry, type TelemetryEvent, type Travelogue } from '../core/index.js';
+import { addTraveler, effectiveInstant, moveItem, newId, parseProject, setIncluded, setTitle, Telemetry, type TelemetryEvent, type Travelogue } from '../core/index.js';
 import { Player, type PlayerState } from '../player/player.js';
-import { Api, ApiError, type MediaToolStatus, type Role, type User } from './api.js';
+import { Api, ApiError, type MediaToolStatus, type User } from './api.js';
 import { mountInset, type InsetView } from './inset.js';
 import { mountItinerary, type ItineraryView } from './itinerary.js';
 import { mountMedia, type MediaView } from './media.js';
@@ -77,45 +78,12 @@ async function route() {
       me = undefined;
     }
   }
-  if (!me || hash.startsWith('#/signin')) return renderSignIn();
-  if (pm) return renderProject(decodeURIComponent(pm[1]), named);
-  return renderProjects();
-}
-
-// ---------------- sign in ----------------
-
-async function renderSignIn() {
-  if (me) {
-    location.hash = '#/projects';
+  if (!me) {
+    app.replaceChildren(h('main', { class: 'page' }, banner('Cannot reach TripAlogue on this computer. Is it still running? Start it again with `npm start`.', 'error')));
     return;
   }
-  document.title = 'Sign in — TripAlogue';
-  const cfg = await Api.config().catch(() => ({ google: false }));
-  const next = params.get('next') ?? '/';
-  const email = h('input', { type: 'email', name: 'email', required: true, autocomplete: 'email', placeholder: 'you@example.com', 'aria-label': 'Email address' });
-  const msg = h('div', { class: 'form-msg', role: 'status' });
-  const form = h('form', {
-    class: 'card signin',
-    onsubmit: async (e: Event) => {
-      e.preventDefault();
-      msg.textContent = 'Sending…';
-      try {
-        await Api.requestLink(email.value, next);
-        form.replaceChildren(h('h1', {}, 'Check your email'), h('p', {}, `We sent a sign-in link to ${email.value}. It works once and expires in 15 minutes.`));
-      } catch (err) {
-        msg.textContent = (err as Error).message;
-      }
-    },
-  },
-  h('h1', {}, 'TripAlogue'),
-  h('p', { class: 'muted' }, 'Sign in with a link sent to your email. No password needed.'),
-  params.get('error') && banner(params.get('error')!, 'error'),
-  email,
-  h('button', { type: 'submit', class: 'primary' }, 'Email me a sign-in link'),
-  cfg.google && h('a', { class: 'button', href: `/api/auth/google/start?next=${encodeURIComponent(next)}` }, 'Sign in with Google'),
-  msg);
-  app.replaceChildren(form);
-  email.focus();
+  if (pm) return renderProject(decodeURIComponent(pm[1]), named);
+  return renderProjects();
 }
 
 // ---------------- projects ----------------
@@ -124,9 +92,7 @@ function topbar(...extra: Child[]) {
   return h('header', { class: 'topbar' },
     h('a', { href: '#/projects', class: 'brand' }, 'TripAlogue'),
     ...extra,
-    h('span', { class: 'spacer' }),
-    me && h('span', { class: 'muted' }, me.email),
-    h('button', { onclick: async () => { await Api.logout(); me = undefined; location.hash = '#/signin'; } }, 'Sign out'));
+    h('span', { class: 'spacer' }));
 }
 
 async function renderProjects() {
@@ -236,11 +202,11 @@ async function renderProject(id: string, initialView?: View) {
   let tab: (typeof tabs)[number] = 'Clip';
   const tabBar = h('div', { class: 'tabs', role: 'tablist' }, ...tabs.map((t) => h('button', { role: 'tab', 'data-tab': t, onclick: () => { tab = t; renderSide(); } }, t)));
   // The travelogue panel, in the Itinerary view's lower right: uploads, who is on the trip, saved versions.
-  const ptabs = ['Upload', 'Members', 'Versions'] as const;
+  const ptabs = ['Upload', 'Versions'] as const;
   let ptab: (typeof ptabs)[number] = 'Upload';
   const projBody = h('div', { class: 'side-body project-panel-body' });
   const ptabBar = h('div', { class: 'tabs', role: 'tablist' }, ...ptabs.map((t) => h('button', { role: 'tab', 'data-tab': t, onclick: () => { ptab = t; renderProjectPanel(); } }, t)));
-  const projectPanel = h('section', { class: 'project-panel card', id: 'project-panel', 'aria-label': 'Uploads, members and versions' }, ptabBar, projBody);
+  const projectPanel = h('section', { class: 'project-panel card', id: 'project-panel', 'aria-label': 'Uploads and versions' }, ptabBar, projBody);
 
   titleInput.addEventListener('input', () => s.edit('Rename travelogue', (p) => setTitle(p, titleInput.value), { coalesceKey: 'title' }));
   const exportLink = h('a', { class: 'button', href: `/api/projects/${encodeURIComponent(id)}/export`, download: '' }, 'Export file');
@@ -277,7 +243,7 @@ async function renderProject(id: string, initialView?: View) {
     },
   });
   itinerary.el.querySelector('.itinerary-side')?.append(projectPanel);
-  if (s.role === 'owner') itinerary.el.querySelector('.itinerary-side')?.append(deleteProjectBox());
+  itinerary.el.querySelector('.itinerary-side')?.append(deleteProjectBox());
   const inset = mountInset(s, stageWrap, cfg.map);
   const media = mountMedia(s, {
     projectId: id,
@@ -453,7 +419,7 @@ async function renderProject(id: string, initialView?: View) {
     redoBtn.disabled = !s.canEdit || !s.history.canRedo;
     undoBtn.title = s.history.undoLabel ? `Undo ${s.history.undoLabel}` : '';
     redoBtn.title = s.history.redoLabel ? `Redo ${s.history.redoLabel}` : '';
-    const label: Record<string, string> = { saved: 'All changes saved', saving: 'Saving…', offline: 'Offline', readonly: s.mayEdit ? `${s.lock?.name ?? 'Someone'} is editing` : `View only (${s.role})`, error: 'Not saved' };
+    const label: Record<string, string> = { saved: 'All changes saved', saving: 'Saving…', offline: 'Offline', readonly: 'Open for editing in another window', error: 'Not saved' };
     statusChip.textContent = label[s.status];
     statusChip.dataset.status = s.status;
     statusChip.title = s.message;
@@ -484,6 +450,31 @@ async function renderProject(id: string, initialView?: View) {
   const uploadFolder = h('input', { type: 'file', multiple: true, id: 'upload-folder', 'aria-label': 'Choose a folder', hidden: true });
   uploadFolder.setAttribute('webkitdirectory', '');
   uploadFolder.addEventListener('change', () => void startUpload(mediaFiles(uploadFolder.files ?? [])));
+  // MM-16: whose photos the next upload is (yours, or a traveler's); kept across redraws like the pickers.
+  const uploadFrom = h('select', { id: 'upload-from', 'aria-label': 'Whose photos and videos are these?' });
+  const uploadFromNew = h('input', { id: 'upload-from-new', placeholder: 'Traveler’s name', 'aria-label': 'New traveler’s name', hidden: true });
+  uploadFrom.addEventListener('change', () => {
+    if (uploadFrom.value === '__new__') { uploadFromNew.hidden = false; uploadFromNew.focus(); }
+    else uploadFromNew.hidden = true;
+  });
+  uploadFromNew.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') { uploadFromNew.hidden = true; uploadFrom.value = ''; }
+    if (e.key !== 'Enter' || !uploadFromNew.value.trim()) return;
+    const tid = newId('traveler');
+    s.edit(`Add traveler ${uploadFromNew.value.trim()}`, (q) => addTraveler(q, tid, uploadFromNew.value));
+    uploadFromNew.value = '';
+    uploadFromNew.hidden = true;
+    fillUploadFrom(tid);
+  });
+  function fillUploadFrom(want = uploadFrom.value) {
+    const travelers = s.state.travelers ?? [];
+    const key = JSON.stringify([travelers, want]);
+    if (uploadFrom.dataset.key === key) return;
+    uploadFrom.dataset.key = key;
+    uploadFrom.replaceChildren(h('option', { value: '' }, 'Mine'), ...travelers.map((t) => h('option', { value: t.id }, t.name)), h('option', { value: '__new__' }, '+ New traveler…'));
+    uploadFrom.value = want === '__new__' || travelers.some((t) => t.id === want) ? want : '';
+  }
+
   async function startUpload(picked?: File[]) {
     const files = picked ?? [...(uploadInput.files ?? [])];
     if (!files.length) return;
@@ -495,7 +486,10 @@ async function renderProject(id: string, initialView?: View) {
     uploadFolder.value = '';
     uploads = jobs.map((j) => ({ file: j.file, sent: 0, total: j.file.size, state: 'queued' as const }));
     renderProgress(uploadProgress, uploads);
-    await uploadAll(id, jobs, (all) => { uploads = all; renderProgress(uploadProgress, all); });
+    // Flush first, so the server knows a traveler added just now.
+    await s.flush().catch(() => {});
+    const from = uploadFrom.value && uploadFrom.value !== '__new__' ? uploadFrom.value : undefined;
+    await uploadAll(id, jobs, (all) => { uploads = all; renderProgress(uploadProgress, all); }, 3, from);
     void s.poll();
   }
 
@@ -508,7 +502,6 @@ async function renderProject(id: string, initialView?: View) {
   function renderProjectPanel() {
     ptabBar.querySelectorAll<HTMLElement>('[role=tab]').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.tab === ptab)));
     if (ptab === 'Upload') return renderUpload();
-    if (ptab === 'Members') return void renderMembers();
     return void renderVersions();
   }
 
@@ -539,7 +532,7 @@ async function renderProject(id: string, initialView?: View) {
             itemTime(p, m) && h('span', { class: 'when' }, itemTime(p, m))),
           m.timestampConfidence === 'low' && !m.userTimestamp && h('span', { class: 'badge low', title: 'Time taken from the file date, not the camera: it may be wrong' }, 'time?'),
           !ready && h('span', { class: `badge ${m.status}`, title: m.status === 'failed' ? m.error ?? '' : '' }, m.status ?? ''),
-          m.status === 'failed' && m.storageKey && s.role !== 'viewer' && h('button', { class: 'retry', 'aria-label': `Retry processing ${m.uri}`, title: m.error ?? '', onclick: () => void retry([m.id]) }, 'Retry'),
+          m.status === 'failed' && m.storageKey && h('button', { class: 'retry', 'aria-label': `Retry processing ${m.uri}`, title: m.error ?? '', onclick: () => void retry([m.id]) }, 'Retry'),
           ready && m.assets?.jpeg && h('a', { class: 'badge jpg', href: Api.mediaUrl(id, m.id, 'jpeg'), download: `${(m.uri.split('/').pop() ?? 'photo').replace(/\.[^.]+$/, '')}.jpg`,
             title: 'Converted from HEIC. Download the full-size JPG (the original HEIC is kept too).' }, 'JPG'),
           cue && h('label', { class: 'inc', title: 'Include in the travelogue' },
@@ -566,7 +559,6 @@ async function renderProject(id: string, initialView?: View) {
 
   function renderUpload() {
     const p = s.state;
-    const mayUpload = s.role !== 'viewer';
     // Waiting for an original (never uploaded, or the upload failed) vs uploaded but processing failed.
     const pending = p.media.filter((m) => m.status === 'pending' || m.status === 'uploading' || (m.status === 'failed' && !m.storageKey));
     const failedProcessing = p.media.filter((m) => m.status === 'failed' && m.storageKey);
@@ -580,57 +572,29 @@ async function renderProject(id: string, initialView?: View) {
       ? h('div', { class: 'failed-processing' },
         h('p', {}, `${failedProcessing.length} uploaded item(s) could not be processed. Their originals are stored, so they can be processed again without re-uploading.`),
         h('ul', { class: 'pending' }, ...failedProcessing.slice(0, 50).map((m) => h('li', { class: 'muted' }, `${m.uri.split('/').pop()}${m.error ? ` · ${m.error}` : ''}`))),
-        mayUpload && h('button', { class: 'primary', id: 'retry-failed', onclick: () => void retry() }, `Retry processing (${failedProcessing.length})`))
+        h('button', { class: 'primary', id: 'retry-failed', onclick: () => void retry() }, `Retry processing (${failedProcessing.length})`))
       : null;
     const input = uploadInput;
     const folder = uploadFolder;
+    fillUploadFrom();
     const start = startUpload;
     projBody.replaceChildren(
-      mayUpload
-        ? h('div', {},
+      h('div', {},
           h('p', { class: 'muted' }, pending.length
             ? `${pending.length} item(s) are waiting for their original. Choose the matching files to finish the upload, or add new photos and videos (they go to Unassigned).`
             : 'Add photos and videos. Originals upload unaltered, so capture time and location are kept. Each item goes to the chapter its time falls in.'),
-          h('p', { class: 'small' }, h('a', { href: '/guide-contributors.html', target: '_blank', rel: 'noopener', id: 'guide-link' }, 'How to share originals from a phone or camera')),
+          h('div', { class: 'row' }, h('label', { for: 'upload-from', class: 'small' }, 'Whose photos?'), uploadFrom, uploadFromNew),
+          h('p', { class: 'small' }, h('a', { href: '/guide-contributors.html', target: '_blank', rel: 'noopener', id: 'guide-link' }, 'How fellow travelers can send you their originals')),
           dropZone(start),
           h('div', { class: 'row' }, input, h('button', { class: 'primary', id: 'upload-start', onclick: () => void start() }, 'Upload')),
           h('div', { class: 'row' }, folder, h('button', { id: 'upload-folder-btn', onclick: () => folder.click() }, 'Upload a whole folder…')),
           uploadProgress,
-          pending.length ? h('ul', { class: 'pending' }, ...pending.slice(0, 50).map((m) => h('li', { class: 'muted' }, `${m.uri.split('/').pop()} · ${m.status}${m.error ? ` · ${m.error}` : ''}`))) : null)
-        : h('p', { class: 'muted' }, 'Viewers cannot upload media.'));
+          pending.length ? h('ul', { class: 'pending' }, ...pending.slice(0, 50).map((m) => h('li', { class: 'muted' }, `${m.uri.split('/').pop()} · ${m.status}${m.error ? ` · ${m.error}` : ''}`))) : null));
     if (failedBlock) projBody.append(failedBlock);
     if (toolsBanner) projBody.prepend(toolsBanner);
   }
 
-  async function renderMembers() {
-    const { members } = await Api.members(id).catch(() => ({ members: [] as { userId: string; name: string; email: string; role: Role; joinedAt: number }[] }));
-    if (ptab !== 'Members') return;
-    const owner = s.role === 'owner';
-    const email = h('input', { type: 'email', placeholder: 'friend@example.com', 'aria-label': 'Email to invite', required: true });
-    const role = h('select', { 'aria-label': 'Role' }, ...(['editor', 'contributor', 'viewer'] as const).map((r) => h('option', { value: r }, r)));
-    const msg = h('div', { class: 'form-msg', role: 'status' });
-    projBody.replaceChildren(
-      h('ul', { class: 'members' }, ...members.map((m) => h('li', {},
-        h('span', {}, `${m.name} `, h('span', { class: 'muted' }, m.email)),
-        owner && m.role !== 'owner'
-          ? h('select', { 'aria-label': `Role for ${m.email}`, onchange: async (e: Event) => { await Api.setRole(id, m.userId, (e.target as HTMLSelectElement).value as Role); void renderMembers(); } },
-            ...(['editor', 'contributor', 'viewer'] as const).map((r) => h('option', { value: r, selected: r === m.role }, r)))
-          : h('span', { class: 'chip' }, m.role),
-        owner && m.role !== 'owner' && h('button', { class: 'icon', 'aria-label': `Remove ${m.email}`, onclick: async () => { await Api.removeMember(id, m.userId); void renderMembers(); } }, '✕')))),
-      owner ? h('form', { class: 'invite', onsubmit: async (e: Event) => {
-        e.preventDefault();
-        try {
-          await Api.invite(id, email.value, role.value as Role);
-          msg.textContent = `Invitation sent to ${email.value}.`;
-          email.value = '';
-        } catch (err) {
-          msg.textContent = (err as Error).message;
-        }
-      } }, h('h3', {}, 'Invite someone'), email, role, h('button', { type: 'submit', class: 'primary' }, 'Send invite'), msg) : '',
-      h('p', { class: 'muted small' }, 'Editors change the travelogue (one at a time until live co-editing arrives). Contributors upload media. Viewers watch.'));
-  }
-
-  /** The owner can delete the whole travelogue, with everything in it, after typing its title (Itinerary view). */
+  /** Delete the whole travelogue, with everything in it, after typing its title (Itinerary view). */
   function deleteProjectBox(): HTMLElement {
     const confirmInput = h('input', { id: 'delete-confirm', 'aria-label': 'Type the travelogue’s title to confirm', autocomplete: 'off' });
     const go = h('button', { class: 'danger', id: 'delete-project', disabled: true }, 'Delete this travelogue');
@@ -658,7 +622,7 @@ async function renderProject(id: string, initialView?: View) {
       }
     });
     const box = h('details', { class: 'danger-zone card', id: 'danger-zone' }, h('summary', {}, 'Delete this travelogue'),
-      h('p', { class: 'small' }, 'Deletes the travelogue for everyone: its chapters, every photo, video and audio file (originals included), its versions and its members. This cannot be undone.'),
+      h('p', { class: 'small' }, 'Deletes the travelogue: its chapters, every photo, video and audio file (originals included) and its versions. This cannot be undone.'),
       prompt, confirmInput, go, msg);
     box.addEventListener('toggle', sync);
     sync();

@@ -88,7 +88,7 @@ export interface MediaSource {
   rootPath?: string;
   /** Opaque reference to a server-held, encrypted OAuth grant; never a credential. */
   authRef?: string;
-  /** Member who supplies this source's media (contributor attribution). */
+  /** The traveler whose photos these are (MM-16): an id in Travelogue.travelers. */
   contributorId?: Id;
   /** Added to captured-at to correct a wrong camera clock (MM-4). */
   clockOffsetSec: number;
@@ -249,6 +249,8 @@ export interface Travelogue {
   annotations: Annotation[];
   audioLanes: AudioLane[];
   mapView: MapViewSettings;
+  /** People whose photos and videos are in the travelogue (MM-16); sources name them. */
+  travelers?: Traveler[];
   /** PE-9: the length the user is aiming for, in seconds; runtime is shown against it. */
   targetSec?: number;
   /**
@@ -256,6 +258,14 @@ export interface Travelogue {
    * deleted for good (and their files erased) by hand or a set number of days after removal.
    */
   removed?: RemovedItem[];
+}
+
+/** Someone on the trip who sent photos or videos. Just a name: TripAlogue has one user, on this computer. */
+export interface Traveler {
+  id: Id;
+  name: string;
+  /** Optional, for "Open in email" when asking them for originals. */
+  email?: string;
 }
 
 export interface RemovedItem {

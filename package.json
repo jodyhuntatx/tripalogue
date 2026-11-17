@@ -16,7 +16,7 @@
     "test": "node --no-warnings --import tsx --test test/*.test.ts",
     "test:e2e": "npm run build && node --no-warnings --import tsx scripts/exit-test.ts",
     "sample": "tsx scripts/make-sample-media.ts",
-    "start": "node --no-warnings dist/node/cli.js serve",
+    "start": "node --no-warnings dist/node/cli.js serve --open",
     "dev": "npm run build && node --no-warnings --import tsx src/node/cli.ts serve --data data",
     "test:phase1": "npm run build && node --no-warnings --import tsx scripts/phase1-test.ts",
     "test:phase2": "npm run build && node --no-warnings --import tsx scripts/phase2-test.ts",

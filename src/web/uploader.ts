@@ -27,7 +27,7 @@ function store(): Storage | undefined {
   }
 }
 
-export async function uploadFile(projectId: string, file: File, opts: { mediaId?: string; onProgress?: (p: UploadProgress) => void } = {}): Promise<string> {
+export async function uploadFile(projectId: string, file: File, opts: { mediaId?: string; travelerId?: string; onProgress?: (p: UploadProgress) => void } = {}): Promise<string> {
   const p: UploadProgress = { file, sent: 0, total: file.size, state: 'uploading', mediaId: opts.mediaId };
   const report = () => opts.onProgress?.({ ...p });
   report();
@@ -54,7 +54,7 @@ export async function uploadFile(projectId: string, file: File, opts: { mediaId?
   }
   if (!uploadId) {
     const created = await api<{ uploadId: string; mediaId: string; offset: number; chunkBytes: number }>('POST', `/api/projects/${projectId}/uploads`, {
-      fileName: file.name, size: file.size, mediaId: opts.mediaId, lastModified: file.lastModified,
+      fileName: file.name, size: file.size, mediaId: opts.mediaId, lastModified: file.lastModified, ...(opts.travelerId ? { travelerId: opts.travelerId } : {}),
     });
     uploadId = created.uploadId;
     offset = created.offset;
@@ -124,7 +124,7 @@ async function alreadyUploaded(projectId: string, files: File[]): Promise<Map<nu
 
 /** Upload several files, a few at a time. New files the project already has (same content) are skipped (MM-7). */
 export async function uploadAll(
-  projectId: string, jobs: { file: File; mediaId?: string }[], onProgress: (all: UploadProgress[]) => void, parallel = 3,
+  projectId: string, jobs: { file: File; mediaId?: string }[], onProgress: (all: UploadProgress[]) => void, parallel = 3, travelerId?: string,
 ): Promise<UploadProgress[]> {
   const state: UploadProgress[] = jobs.map((j) => ({ file: j.file, sent: 0, total: j.file.size, state: j.mediaId ? 'queued' : 'checking', mediaId: j.mediaId }));
   const emit = () => onProgress(state.map((s) => ({ ...s })));
@@ -144,7 +144,7 @@ export async function uploadAll(
     for (let j = queue.shift(); j; j = queue.shift()) {
       const i = j.i;
       try {
-        await uploadFile(projectId, j.file, { mediaId: j.mediaId, onProgress: (p) => { state[i] = p; emit(); } });
+        await uploadFile(projectId, j.file, { mediaId: j.mediaId, travelerId, onProgress: (p) => { state[i] = p; emit(); } });
       } catch (e) {
         state[i] = { ...state[i], state: 'failed', error: (e as Error).message };
         emit();

@@ -20,8 +20,6 @@ input, select { background: #0f1217; color: var(--text); border: 1px solid var(-
 .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .loading { padding: 40px; color: var(--muted); }
 
-.signin { max-width: 400px; margin: 12vh auto; display: grid; gap: 12px; }
-.signin h1 { margin: 0; font-size: 22px; }
 
 .topbar { display: flex; align-items: center; gap: 10px; padding: 12px 20px; border-bottom: 1px solid var(--line); }
 .topbar .brand { font-weight: 700; color: var(--text); text-decoration: none; }
@@ -64,7 +62,7 @@ input, select { background: #0f1217; color: var(--text); border: 1px solid var(-
 .tabs button[aria-selected="true"] { color: var(--text); box-shadow: inset 0 -2px 0 var(--accent); }
 .side-body { padding: 12px; overflow: auto; display: grid; gap: 10px; }
 .group h3 { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 8px 0 6px; }
-.items, .members, .versions, .pending { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.items, .versions, .pending { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
 .items li { display: flex; align-items: center; gap: 8px; padding: 4px; border-radius: 6px; }
 .items li:hover { background: #1b2028; }
 .items li.excluded .name { text-decoration: line-through; color: var(--muted); }
@@ -72,7 +70,7 @@ input, select { background: #0f1217; color: var(--text); border: 1px solid var(-
 .items .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .badge { font-size: 11px; border-radius: 4px; padding: 1px 6px; background: #2a2f38; color: var(--warn); }
 .badge.failed { color: var(--bad); }
-.members li, .versions li { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--line); }
+.versions li { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--line); }
 .invite { display: grid; gap: 8px; margin-top: 8px; }
 .invite h3 { margin: 0; font-size: 13px; }
 
@@ -339,6 +337,6 @@ button.danger-outline { background: none; border-color: #8f2a2a; color: #f19b9b;
 .project.previewing { grid-template-columns: minmax(0, 1fr); }
 .project.previewing > .side, .project.previewing #toggle-panel { display: none; }
 
-/* Itinerary: the travelogue panel (Upload, Members, Versions) under the map and timeline */
+/* Itinerary: the travelogue panel (Upload, Versions) under the map and timeline */
 .project-panel { padding: 0; display: flex; flex-direction: column; }
 .project-panel .project-panel-body { max-height: 42vh; overflow: auto; }

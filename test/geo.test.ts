@@ -6,7 +6,6 @@ import path from 'node:path';
 import { after, before, describe, it } from 'node:test';
 import { startApp, type App } from '../src/server/app.js';
 import { geoConfigFromEnv } from '../src/server/geo.js';
-import type { OutboxMailer } from '../src/server/mailer.js';
 
 const tmp = mkdtempSync(path.join(os.tmpdir(), 'tripalogue-geo-'));
 let app: App;
@@ -14,10 +13,18 @@ let upstream: http.Server;
 const seen: { url: string; ua: string; at: number }[] = [];
 let failTiles = false;
 const PNG = Buffer.from('89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000d4944415478da63f8ffff3f0005fe02fea7d6a2c80000000049454e44ae426082', 'hex');
-let cookie = '';
-
-async function get(p: string, withCookie = true) {
-  const res = await fetch(new URL(p, app.url), { headers: withCookie && cookie ? { cookie } : {}, redirect: 'manual' });
+async function get(p: string, host?: string) {
+  if (host) {
+    // fetch() cannot set Host; ask over plain http instead.
+    const u = new URL(p, app.url);
+    const status = await new Promise<number>((resolve, reject) => {
+      const req = http.request({ host: u.hostname, port: u.port, path: u.pathname + u.search, headers: { host } }, (res) => { res.resume(); resolve(res.statusCode ?? 0); });
+      req.on('error', reject);
+      req.end();
+    });
+    return { status, type: null, body: Buffer.alloc(0) };
+  }
+  const res = await fetch(new URL(p, app.url), { redirect: 'manual' });
   return { status: res.status, type: res.headers.get('content-type'), body: Buffer.from(await res.arrayBuffer()) };
 }
 
@@ -46,10 +53,6 @@ before(async () => {
     dataDir: tmp, port: 0, log: () => {}, webDir: tmp,
     geo: geoConfigFromEnv(tmp, { geocoderUrl: `${base}/search`, tileUrl: `${base}/tiles/{z}/{x}/{y}.png`, minSearchIntervalMs: 300, tileMaxAgeMs: 60_000 }),
   });
-  await fetch(new URL('/api/auth/email', app.url), { method: 'POST', headers: { 'content-type': 'application/json', 'x-tripalogue-client': '1' }, body: JSON.stringify({ email: 'map@example.com' }) });
-  const mail = await (app.mailer as OutboxMailer).latestFor('map@example.com');
-  const v = await fetch(/https?:\/\/\S+/.exec(mail!.text)![0], { redirect: 'manual' });
-  cookie = v.headers.get('set-cookie')!.split(';')[0];
 });
 after(async () => {
   await app.close();
@@ -77,8 +80,8 @@ describe('place search proxy (IT-8)', () => {
     assert.ok(b.at - a.at >= 280, `requests ${b.at - a.at} ms apart`);
   });
 
-  it('needs a signed-in user and a real query', async () => {
-    assert.equal((await get('/api/geo/search?q=Lisbon', false)).status, 401);
+  it('answers only on this computer, and needs a real query', async () => {
+    assert.equal((await get('/api/geo/search?q=Lisbon', 'evil.example')).status, 403);
     assert.equal((await get('/api/geo/search?q=x')).status, 400);
     assert.deepEqual(JSON.parse((await get('/api/geo/search?q=Nowhereville')).body.toString()).places, []);
   });
@@ -108,7 +111,7 @@ describe('map tile proxy (MV-1)', () => {
       failTiles = false;
     }
     for (const bad of ['/api/tiles/3/8/0', '/api/tiles/20/0/0', '/api/tiles/a/b/c', '/api/tiles/-1/0/0']) assert.equal((await get(bad)).status, 400, bad);
-    assert.equal((await get('/api/tiles/3/4/2', false)).status, 401);
+    assert.equal((await get('/api/tiles/3/4/2', 'evil.example')).status, 403);
   });
 
   it('tells the client what the map can do', async () => {

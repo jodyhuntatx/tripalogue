@@ -2,13 +2,14 @@
 /**
  * tripalogue — command-line tools.
  *
- *   tripalogue serve   [--port N] [--data DIR] [--base-url URL] [--no-worker]   run the web app
- *   tripalogue worker  [--data DIR]                                            run media jobs only
- *   tripalogue import  <file> --email you@example.com [--data DIR]             import a project file and its media into an account
+ *   tripalogue serve   [--port N] [--data DIR] [--open] [--no-worker]   run the app on this computer (--open: in your browser)
+ *   tripalogue worker  [--data DIR]                                   run media jobs only
+ *   tripalogue import  <file> [--data DIR]                            import a project file and its media
  *   tripalogue new     <file> --title "Trip name" [--aspect 16:9|9:16|1:1]     write a new, empty project file
  *   tripalogue validate <file>
  *   tripalogue info    <file>
  */
+import { spawn } from 'node:child_process';
 import { createReadStream, promises as fs } from 'node:fs';
 import path from 'node:path';
 import { createProject, ProjectFormatError } from '../core/project.js';
@@ -36,14 +37,26 @@ function parseArgs(argv: string[]) {
 
 const fmt = (s: number) => `${Math.floor(s / 60)}:${(s % 60).toFixed(1).padStart(4, '0')}`;
 const USAGE = `Usage:
-  tripalogue serve   [--port N] [--data DIR] [--base-url URL] [--no-worker]
+  tripalogue serve   [--port N] [--data DIR] [--open] [--no-worker]
   tripalogue worker  [--data DIR]
-  tripalogue import  <file> --email you@example.com [--data DIR]
+  tripalogue import  <file> [--data DIR]
   tripalogue new     <file> --title "Trip name" [--aspect 16:9|9:16|1:1]
   tripalogue validate <file>
   tripalogue info    <file>`;
 
 const str = (v: string | true | undefined) => (typeof v === 'string' ? v : undefined);
+
+/** Open a URL in the default browser (best effort: the address is printed either way). */
+function openBrowser(url: string): void {
+  const [cmd, args] = process.platform === 'darwin' ? ['open', [url]] : process.platform === 'win32' ? ['cmd', ['/c', 'start', '', url]] : ['xdg-open', [url]];
+  try {
+    const child = spawn(cmd, args as string[], { stdio: 'ignore', detached: true });
+    child.on('error', () => console.log(`Open ${url} in your browser.`));
+    child.unref();
+  } catch {
+    console.log(`Open ${url} in your browser.`);
+  }
+}
 
 export async function main(argv = process.argv.slice(2)): Promise<number> {
   const [cmd, ...rest] = argv;
@@ -53,9 +66,9 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
   try {
     switch (cmd) {
       case 'serve': {
-        const app = await startApp({ port: flags.port ? Number(flags.port) : undefined, dataDir, baseUrl: str(flags['base-url']), runWorker: !flags['no-worker'], log: (m) => console.error(m) });
+        const app = await startApp({ port: flags.port ? Number(flags.port) : undefined, dataDir, runWorker: !flags['no-worker'], log: (m) => console.error(m) });
         console.log(`TripAlogue is running at ${app.url}  (data: ${app.cfg.dataDir}; Ctrl+C to stop)`);
-        console.log('Sign-in links are written to the console and to <data>/outbox until an email provider is configured.');
+        if (flags.open) openBrowser(app.url);
         await new Promise(() => {});
         return 0;
       }
@@ -67,10 +80,10 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
         return 0;
       }
       case 'import': {
-        if (!file || typeof flags.email !== 'string') break;
+        if (!file) break;
         const app = await startApp({ port: 0, dataDir, runWorker: true, log: () => {} });
         try {
-          const user = app.auth.upsertUser(app.auth.normalizeEmail(flags.email));
+          const user = app.auth.user;
           const original = await openProject(file);
           const { project, pending } = app.projects.import(user, await fs.readFile(file, 'utf8'));
           console.log(`Imported "${project.title}" as ${project.id}; uploading ${pending.length} originals…`);
@@ -91,7 +104,7 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
           const { doc } = app.projects.load(project.id);
           const failed = doc.media.filter((m) => m.status === 'failed');
           console.log(`\n${doc.media.length - failed.length} of ${doc.media.length} ready${failed.length ? `; failed: ${failed.map((m) => m.uri).join(', ')}` : ''}`);
-          console.log(`Run \`tripalogue serve${dataDir ? ` --data ${dataDir}` : ''}\`, sign in as ${user.email}, and open /#/p/${project.id}`);
+          console.log(`Run \`tripalogue serve --open${dataDir ? ` --data ${dataDir}` : ''}\` and open "${project.title}"`);
           return failed.length ? 2 : 0;
         } finally {
           await app.close();

@@ -58,15 +58,13 @@ export async function api<T = unknown>(method: string, path: string, body?: unkn
 }
 
 export const Api = {
-  config: () => api<{ google: boolean; telemetryEndpoint: string | null; chunkBytes: number; maxUploadBytes: number; map: { tiles: boolean; search: boolean; attribution: string }; media?: MediaToolStatus; purgeAfterDays?: number }>('GET', '/api/config'),
+  config: () => api<{ telemetryEndpoint: string | null; chunkBytes: number; maxUploadBytes: number; map: { tiles: boolean; search: boolean; attribution: string }; media?: MediaToolStatus; purgeAfterDays?: number }>('GET', '/api/config'),
   mediaTools: (recheck = false) => api<MediaToolStatus>('GET', `/api/media-tools${recheck ? '?recheck=1' : ''}`),
   purgeMedia: (id: string, mediaIds: string[]) => api<{ deleted: string[] }>('POST', `/api/projects/${encodeURIComponent(id)}/media/purge`, { mediaIds }),
   deleteProject: (id: string, confirmTitle: string) => api<{ deleted: boolean }>('DELETE', `/api/projects/${encodeURIComponent(id)}`, { confirmTitle }),
   retryMedia: (id: string, mediaIds?: string[]) => api<{ queued: string[]; media: MediaToolStatus }>('POST', `/api/projects/${encodeURIComponent(id)}/media/retry`, mediaIds ? { mediaIds } : {}),
   geoSearch: (q: string, lang?: string) => api<{ places: { name: string; displayName: string; lat: number; lng: number; kind?: string }[] }>('GET', `/api/geo/search?q=${encodeURIComponent(q)}${lang ? `&lang=${encodeURIComponent(lang)}` : ''}`),
-  me: () => api<{ user: User | null }>('GET', '/api/me'),
-  requestLink: (email: string, next?: string) => api('POST', '/api/auth/email', { email, next }),
-  logout: () => api('POST', '/api/auth/logout', {}),
+  me: () => api<{ user: User }>('GET', '/api/me'),
   projects: () => api<{ projects: { id: string; title: string; role: Role; updatedAt: number; items: number }[] }>('GET', '/api/projects'),
   createProject: (title: string) => api<{ id: string }>('POST', '/api/projects', { title }),
   importProject: (text: string) => api<{ id: string; pending: { mediaId: string; uri: string }[] }>('POST', '/api/projects/import', undefined, { raw: text }),
@@ -78,9 +76,5 @@ export const Api = {
   versions: (id: string) => api<{ versions: { id: string; rev: number; author: string; at: number; label: string; auto: boolean }[] }>('GET', `/api/projects/${id}/versions`),
   saveVersion: (id: string, label: string) => api<{ id: string }>('POST', `/api/projects/${id}/versions`, { label }),
   restore: (id: string, vid: string) => api<{ rev: number }>('POST', `/api/projects/${id}/versions/${vid}/restore`, {}),
-  members: (id: string) => api<{ members: { userId: string; name: string; email: string; role: Role; joinedAt: number }[] }>('GET', `/api/projects/${id}/members`),
-  invite: (id: string, email: string, role: Role) => api('POST', `/api/projects/${id}/invites`, { email, role }),
-  setRole: (id: string, uid: string, role: Role) => api('PATCH', `/api/projects/${id}/members/${uid}`, { role }),
-  removeMember: (id: string, uid: string) => api('DELETE', `/api/projects/${id}/members/${uid}`),
   mediaUrl: (id: string, mediaId: string, variant: 'proxy' | 'thumb' | 'original' | 'jpeg') => `/api/projects/${encodeURIComponent(id)}/media/${encodeURIComponent(mediaId)}/${variant}`,
 };
