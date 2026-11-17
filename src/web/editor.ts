@@ -1,5 +1,5 @@
 /**
- * Presentation editor (Phase 3): the Edit view's timeline and clip inspector.
+ * Presentation editor (Phase 3): the Mix view's timeline and clip inspector.
  *
  * - PE-1 timeline of the whole travelogue grouped by chapter, each clip as long as it plays
  * - PE-2 play this chapter, play from the selection, click the ruler to scrub
@@ -30,9 +30,9 @@ export interface EditorView {
   select(ids: Id[], seek?: boolean): void;
   update(): void;
   onTime(t: number): void;
-  /** Called when the Edit view is shown or hidden. */
+  /** Called when the Mix view is shown or hidden. */
   setActive(on: boolean): void;
-  /** Keyboard shortcuts while the Edit view is shown; true when the key was used. */
+  /** Keyboard shortcuts while the Mix view is shown; true when the key was used. */
   handleKey(e: KeyboardEvent): boolean;
   dispose(): void;
 }
@@ -587,7 +587,7 @@ export function mountEditor(s: ProjectSession, ctx: EditorContext): EditorView {
     if (chip && !(e.target as HTMLElement).closest('button')) select([chip.dataset.excluded!], false);
   });
 
-  /** Keys in the Edit view (the page calls this): Delete excludes (PE-4), Escape clears, Enter selects. */
+  /** Keys in the Mix view (the page calls this): Delete excludes (PE-4), Escape clears, Enter selects. */
   function handleKey(e: KeyboardEvent): boolean {
     if ((e.target as HTMLElement).matches?.('input, textarea, select')) return false;
     if ((e.key === 'Delete' || e.key === 'Backspace') && selected.length && s.canEdit) {

@@ -159,7 +159,7 @@ try {
   const pid = await importProject(draftFile, draftMedia, 170);
 
   // The song and the memo, from the Upload tab.
-  await page.click('#view-play');
+  await page.click('#view-mix');
   await page.click('.tabs button[data-tab="Upload"]');
   await page.setInputFiles('#upload-input', [song, memo]);
   await page.click('#upload-start');
@@ -169,7 +169,7 @@ try {
   const memoId = await audioId('Memo bridge.m4a');
 
   // ---- the Edit view ----
-  await page.click('#view-edit');
+  await page.click('#view-mix');
   await page.waitForSelector('#pe-timeline:not([hidden]) #pe-visual .pe-clip[data-item]');
   const t0 = await tl();
   const clipsShown = await page.locator('#pe-visual .pe-clip[data-item]').count();
@@ -458,7 +458,7 @@ try {
   await tab2.goto(/https?:\/\/\S+/.exec((await (app.mailer as OutboxMailer).latestFor(viewer))!.text)![0]);
   await tab2.goto(invite);
   await tab2.waitForTimeout(500);
-  await tab2.goto(`${app.url}#/p/${pid}/edit`);
+  await tab2.goto(`${app.url}#/p/${pid}/mix`);
   await tab2.waitForSelector('#pe-visual .pe-clip[data-item]');
   await tab2.waitForTimeout(500);
   const ro = await tab2.evaluate(() => ({ canEdit: window.tripalogue!.session!.canEdit, edges: document.querySelectorAll('#pe-visual .edge').length }));
@@ -467,7 +467,7 @@ try {
 
   // ---- a 300-item travelogue plays without stalls ----
   const bigPid = await importProject(bigFile, bigItems.map((m) => path.join(gen, m.uri)), 300);
-  await page.goto(`${app.url}#/p/${bigPid}/edit`);
+  await page.goto(`${app.url}#/p/${bigPid}/mix`);
   await page.waitForSelector('#pe-visual .pe-clip[data-item]');
   const renderMs = await page.evaluate(() => {
     const t0 = performance.now();

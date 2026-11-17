@@ -140,7 +140,8 @@ try {
   await page.waitForFunction(() => document.getElementById('meta')?.dataset.ready === '20', null, { timeout: 180_000, polling: 500 });
   const pid = page.url().split('#/p/')[1].split('/')[0];
 
-  // The traveler's phone: upload the extra files from the Upload tab.
+  // The traveler's phone: upload the extra files from the Upload tab (in the Mix view's side panel).
+  await page.click('#view-mix');
   await page.click('.tabs button[data-tab="Upload"]');
   await page.setInputFiles('#upload-input', [afterTrip, screenshot, dupe, ...slow, phone]);
   await page.click('#upload-start');
@@ -317,7 +318,7 @@ try {
   await fs.writeFile(path.join(folder, '.DS_Store'), 'x');
   await fs.writeFile(path.join(folder, 'notes.txt'), 'packing list');
   const before = await page.evaluate(() => window.tripalogue!.session!.state.media.length);
-  await page.click('#view-play');
+  await page.click('#view-mix');
   await page.click('.tabs button[data-tab="Upload"]');
   await page.locator('#drop-zone').screenshot({ path: path.join(outDir, '05-drop-zone.png') });
   // The file picker keeps its selection when the panel redraws (it used to take two tries on first use).
@@ -430,7 +431,7 @@ try {
   const binLeft = await page.locator('#removed-bin').count();
   check('Delete for good erases the original once nothing refers to it', !blobLeft && !binLeft, `${shotKey}: file ${blobLeft ? 'still there' : 'erased'}, bin ${binLeft ? 'still shown' : 'gone'}`);
 
-  await page.click('#view-play');
+  await page.click('#view-mix');
   await page.click('.tabs button[data-tab="Members"]');
   await page.waitForSelector('.members li');
   const inMembers = await page.locator('.side-body #danger-zone').count();

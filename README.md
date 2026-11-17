@@ -200,8 +200,10 @@ survives a reload and can be undone. Report and screenshots: `docs/exit-test/`.
 
 ## Phase 1: Itinerary editor
 
-A travelogue opens in the **Itinerary** view until it has chapters and media; **Play** is one click away and
-keeps the same session.
+The views follow the workflow, left to right: **Itinerary** (plan the chapters), **Media** (upload and sort into
+chapters), **Mix** (cut, time and lay audio), **Preview** (watch); export to video comes in Phase 4. A travelogue
+opens in the **Itinerary** view until it has chapters and media. Switching views keeps the same session. Links to
+the old `/edit` and `/play` views still open Mix and Preview.
 
 | PRD | Requirement | Where |
 | --- | --- | --- |
@@ -214,16 +216,16 @@ keeps the same session.
 | IT-7 | Split a chapter at a time (media moves by timestamp) and merge with the next | `splitChapter`, `mergeChapters` |
 | IT-8 | Place search, or drop a pin by clicking the map | `src/server/geo.ts`, `src/web/map.ts` |
 | MV-1 | Route map: numbered pins joined in order; selecting a pin selects its chapter and the reverse | `src/web/map.ts` |
-| MV-9 | Basic playback inset: a corner map in Play that shows the whole trip on each title card, then flies in to the chapter being played; visited chapters marked, route ahead dashed; photos and videos with a location as dots, with a trail through the chapter so far and a marker that hops to each item as it plays; on/off, corner, size and shape under **Map** in the player controls | `src/web/inset.ts` |
+| MV-9 | Basic playback inset: a corner map in the player that shows the whole trip on each title card, then flies in to the chapter being played; visited chapters marked, route ahead dashed; photos and videos with a location as dots, with a trail through the chapter so far and a marker that hops to each item as it plays; on/off, corner, size and shape under **Map** in the player controls | `src/web/inset.ts` |
 
 Moving a start past its end (or an end before its start) keeps the chapter's length, so an edit never leaves an
 invalid chapter. Numeric dates in pasted text are read month/day/year.
 
-In Play, **Hide panel** (or the P key) folds away the Items, Upload, Members and Versions panel so the player
-uses the whole width; the browser remembers the choice.
+**Preview** is just the player at full width. The side panel (Clip, Items, Upload, Members, Versions) is in **Mix**,
+where **Hide panel** (or the P key) folds it away; the browser remembers the choice.
 
-The inset is on for new travelogues. For a travelogue made before it existed, open **Map** next to Mute in the
-Play view and tick **Show map inset**. While a chapter plays, the inset frames that chapter's located photos and
+The inset is on for new travelogues. For a travelogue made before it existed, open **Map** next to Mute in
+Preview and tick **Show map inset**. While a chapter plays, the inset frames that chapter's located photos and
 videos: those still to come are rings, those already shown are filled and joined by a trail in play order, and
 the marker travels to each new item and pulses as it arrives (unless **Animate between views** is off). Items
 more than 50 km from the chapter's place are drawn but don't widen the view. It is preview only: the animated travel
@@ -239,7 +241,7 @@ browser console errors. The Phase 0 exit test, now 24 checks, adds the inset fol
 ## Phase 2: Media manager
 
 Uploaded photos, videos and voice memos now land in the right chapter by themselves, and the **Media** view
-(between Itinerary and Play) is where the sort gets fixed. A travelogue opens there while anything is unassigned.
+(between Itinerary and Mix) is where the sort gets fixed. A travelogue opens there while anything is unassigned.
 Unassigned items (with the Removed bin below them) and the itinerary's chapters sit in two columns that scroll
 independently, so you can drag from one to the other without losing your place.
 
@@ -304,7 +306,7 @@ never cut short. The cue profile's old `videoMaxSec` cap is no longer applied.
 
 ## Phase 3: Presentation editor
 
-The **Edit** view (between Media and Play) turns the auto-sorted draft into a cut. It is the player with a timeline
+The **Mix** view (between Media and Preview) turns the auto-sorted draft into a cut. It is the player with a timeline
 under it and a **Clip** tab beside it; every change is an ordinary edit (undoable, autosaved, in the operation log).
 
 | PRD | Requirement | Where |
@@ -327,7 +329,7 @@ New in the file format (all optional, so older files still load): `targetSec` on
 lane, `chapterLocked` on a media item, and audio clips' anchors may have a negative offset (a lead-in).
 
 Notes:
-- **Excluded vs Removed.** Excluding (Edit view) keeps the item in the travelogue, out of the cut. Removing
+- **Excluded vs Removed.** Excluding (Mix view) keeps the item in the travelogue, out of the cut. Removing
   (Media view) takes it out of the travelogue into the Removed bin, to be deleted for good.
 - **Preview volume.** Levels above 100% (clip or lane volume up to 200%) play at full volume in the browser
   preview; export will apply them.
@@ -341,7 +343,7 @@ three portrait photos on the stage to the thirds and centre and shrinks them; dr
 under Porto and the memo on a picture, then reorders and trims around it (the memo stays on its picture to the
 millisecond); checks the mix (music at 70%, ducked 12 dB under the memo; mute), real playback of the song in step
 with the clock, play-this-chapter, reset-chapter, an edit reaching the preview in about 60 ms, a reload, a viewer's
-read-only Edit view, and a 300-item travelogue playing through at 4x with no frames waiting on media. Report and
+read-only Mix view, and a 300-item travelogue playing through at 4x with no frames waiting on media. Report and
 screenshots: `docs/phase3-test/`. Result: 26 of 26 checks, with no browser console errors.
 
 ## Layout

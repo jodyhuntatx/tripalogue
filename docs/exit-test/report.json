@@ -1,12 +1,12 @@
 {
-  "date": "2026-11-16T22:00:47.739Z",
+  "date": "2026-11-17T17:21:11.264Z",
   "rate": 1,
   "browser": "153.0.8010.12",
   "timelineSec": 116,
-  "wallSec": 116.028,
-  "uploadSec": 0.648,
-  "readySec": 16.163,
-  "framesDrawn": 6963,
+  "wallSec": 116.05,
+  "uploadSec": 0.495,
+  "readySec": 16.005,
+  "framesDrawn": 6970,
   "placeholderFrames": 0,
   "checks": [
     {
@@ -17,7 +17,7 @@
     {
       "name": "imports and uploads all 20 originals through the browser",
       "pass": true,
-      "detail": "10.1 MB uploaded in 0.6 s; all processed after 16.2 s"
+      "detail": "10.1 MB uploaded in 0.5 s; all processed after 16.0 s"
     },
     {
       "name": "originals are stored byte for byte",
@@ -42,7 +42,7 @@
     {
       "name": "media ready in time (under 2% of frames waited on loading)",
       "pass": true,
-      "detail": "0 of 6963 frames"
+      "detail": "0 of 6970 frames"
     },
     {
       "name": "draws smoothly (30 fps or better)",
@@ -62,7 +62,7 @@
     {
       "name": "frame at 19.0 s: custom-rect-m04",
       "pass": true,
-      "detail": "39% of the frame lit"
+      "detail": "40% of the frame lit"
     },
     {
       "name": "frame at 45.5 s: fill-m09",
@@ -105,9 +105,9 @@
       "detail": "63 revisions"
     },
     {
-      "name": "the side panel hides so the player fills the width, is remembered, and P brings it back",
+      "name": "Preview has no side panel and the player uses the width; in Mix the panel hides, is remembered, and P brings it back",
       "pass": true,
-      "detail": "player 1044 px wide with the panel, 1262 px without"
+      "detail": "player 1262 px wide in Preview, 764 px in Mix with the panel"
     },
     {
       "name": "the wider player redraws its frame",
