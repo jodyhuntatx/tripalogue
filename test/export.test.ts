@@ -15,6 +15,8 @@ import {
 } from '../src/core/index.js';
 import { startApp, type App } from '../src/server/app.js';
 import type { ExportInfo } from '../src/server/exports.js';
+import { withExif } from '../src/server/heif.js';
+import { exifTiff } from './helpers/heic.js';
 
 const run = promisify(execFile);
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -295,6 +297,41 @@ describe('MP4 export from the originals', { timeout: 900_000 }, () => {
     app.exports.start();
     const done = await waitFor(id);
     assert.equal(done.status, 'done', JSON.stringify(done.error));
+  });
+
+  it('keeps a sideways-stored phone photo upright and unstretched, even when the project recorded its sideways size', async () => {
+    // Blue, with a red block top-left, stored 320×240 and tagged "turn a quarter clockwise": upright it is 240×320, red top-right.
+    const plain = path.join(tmp, 'side.jpg');
+    await run('ffmpeg', ['-v', 'error', '-y', '-f', 'lavfi', '-i', 'color=c=blue:s=320x240,drawbox=x=0:y=0:w=80:h=60:c=red:t=fill', '-frames:v', '1', plain]);
+    const tagged = path.join(tmp, 'IMG_SIDE.jpg');
+    await fs.writeFile(tagged, withExif(await fs.readFile(plain), exifTiff('2026:05:04 09:00:00', 6)));
+    const id = await uploadFile(tagged);
+    await app.jobs.idle();
+    // As an older version recorded it: the stored (sideways) size. Put it first in chapter 1, filling the frame.
+    app.projects.serverChange(pid, app.auth.user.id, 'Old size', (d) => ({
+      ...d,
+      media: d.media.map((m) => (m.id === id ? { ...m, width: 320, height: 240, chapterId: d.chapters[0].id, chapterLocked: true } : m)),
+      cues: d.cues.map((c) => (c.itemId === id ? { ...c, order: '1', durationSec: 4, placement: { mode: 'fill' as const } } : c)),
+    }));
+    const doc = (await req('GET', `/api/projects/${pid}`)).json.project as Travelogue;
+    const tl = buildTimeline(doc);
+    const seg = tl.segments.find((x) => x.kind !== 'title' && x.item.id === id)!;
+    const created = await req('POST', `/api/projects/${pid}/renders`, { settings: chapterExport(doc.chapters[0].id) });
+    const done = await waitFor(created.json.render.id);
+    assert.equal(done.status, 'done', JSON.stringify(done.error));
+    const mid = seg.start + seg.duration / 2 - tl.chapters[0].start;
+    // Filling a 1280×720 frame with an upright portrait picture crops a band across its middle: all blue.
+    // Stretched to the frame instead, its red corner would show at the top right.
+    const corner = await pixel(done.path!, mid, 1270, 10);
+    const centre = await pixel(done.path!, mid, 640, 360);
+    assert.ok(corner[2] > 150 && corner[0] < 90, `top-right is blue, not the red corner: ${corner}`);
+    assert.ok(centre[2] > 150 && centre[0] < 90, `centre is blue: ${centre}`);
+    // Processing again (here a retry after a failure) records the upright size over the old one.
+    app.projects.serverChange(pid, app.auth.user.id, 'Fail', (d) => ({ ...d, media: d.media.map((m) => (m.id === id ? { ...m, status: 'failed' as const } : m)) }));
+    await req('POST', `/api/projects/${pid}/media/retry`, { mediaIds: [id] });
+    await app.jobs.idle();
+    const again = (await req('GET', `/api/projects/${pid}`)).json.project.media.find((m: { id: string }) => m.id === id);
+    assert.deepEqual([again.width, again.height], [240, 320]);
   });
 
   it('refuses bad settings and empty ranges', async () => {

@@ -267,8 +267,9 @@ export class Jobs {
           const fromFile = !m.capturedAt && !meta.capturedAt && m.fileModifiedAt;
           return {
             ...m,
-            width: m.width ?? pr.width,
-            height: m.height ?? pr.height,
+            // The upright size just measured (an older version could have recorded a photo's sideways stored size).
+            width: pr.width ?? m.width,
+            height: pr.height ?? m.height,
             durationSec: m.durationSec ?? (m.kind !== 'image' ? pr.durationSec : undefined),
             capturedAt: m.capturedAt ?? meta.capturedAt ?? m.fileModifiedAt,
             timestampConfidence: m.timestampConfidence ?? (fromMeta ? 'high' : fromFile ? 'low' : m.capturedAt ? 'high' : undefined),

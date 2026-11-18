@@ -1,5 +1,5 @@
 {
-  "date": "2026-11-18T16:49:09.746Z",
+  "date": "2026-11-18T18:50:16.706Z",
   "browser": "153.0.8010.12",
   "cores": 2,
   "checks": [
@@ -11,7 +11,7 @@
     {
       "name": "while it renders, the dialog shows progress and the time left (VX-3)",
       "pass": true,
-      "detail": "12% · Rendering pictures · about 1:24 left"
+      "detail": "15% · Rendering pictures · about 1:29 left"
     },
     {
       "name": "editing goes on while the export renders; the edit is saved (VX-3)",
@@ -26,7 +26,7 @@
     {
       "name": "renders in at most twice its length (acceptance; this machine has 2 cores)",
       "pass": true,
-      "detail": "1:56 of travelogue in 105 s (0.90× its length)"
+      "detail": "1:56 of travelogue in 99 s (0.85× its length)"
     },
     {
       "name": "Download saves the MP4 under the travelogue's name",

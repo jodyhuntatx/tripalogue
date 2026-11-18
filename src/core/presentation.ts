@@ -154,9 +154,10 @@ export function setTarget(p: Travelogue, sec: number | null): Travelogue {
 // ---------------------------------------------------------------- audio lanes (AU-1 to AU-3)
 
 /** Default fades and ducking for a clip on a lane: music fades 1 s in and out; narration ducks the others. */
-export function audioDefaults(p: Travelogue, laneId: Id): Pick<AudioCue, 'fadeInSec' | 'fadeOutSec' | 'duck'> {
+/** Defaults for a clip put on a lane: music fades, plays on across chapters and is not ducking; narration ducks. */
+export function audioDefaults(p: Travelogue, laneId: Id): Pick<AudioCue, 'fadeInSec' | 'fadeOutSec' | 'duck' | 'spanChapters'> {
   const kind = p.audioLanes.find((l) => l.id === laneId)?.kind;
-  return kind === 'music' ? { fadeInSec: 1, fadeOutSec: 1, duck: false } : { fadeInSec: 0.2, fadeOutSec: 0.2, duck: true };
+  return kind === 'music' ? { fadeInSec: 1, fadeOutSec: 1, duck: false, spanChapters: true } : { fadeInSec: 0.2, fadeOutSec: 0.2, duck: true };
 }
 
 /**
@@ -172,7 +173,7 @@ export function placeAudio(p: Travelogue, itemId: Id, laneId: Id, atSec: number,
   if (!a) return p;
   const prev = p.cues.find((c) => c.itemId === itemId);
   const keep = prev?.audio && prev.audio.laneId === laneId ? prev.audio : undefined;
-  const audio: AudioCue = { laneId, anchor: a, ...(keep ? { fadeInSec: keep.fadeInSec, fadeOutSec: keep.fadeOutSec, duck: keep.duck } : audioDefaults(p, laneId)) };
+  const audio: AudioCue = { laneId, anchor: a, ...(keep ? { fadeInSec: keep.fadeInSec, fadeOutSec: keep.fadeOutSec, duck: keep.duck, ...(keep.spanChapters ? { spanChapters: true } : {}) } : audioDefaults(p, laneId)) };
   if (!prev) {
     const cue = { ...defaultCue(m, p.cueProfile, keyBetween(null, null)), audio };
     delete cue.durationSec;
@@ -224,9 +225,37 @@ export function unplaceAudio(p: Travelogue, itemId: Id): Travelogue {
 }
 
 /** AU-3: an audio clip's fades and ducking. */
-export function setAudioCue(p: Travelogue, itemId: Id, patch: Partial<Pick<AudioCue, 'fadeInSec' | 'fadeOutSec' | 'duck'>>): Travelogue {
-  return patchCues(p, [itemId], (c) => (c.audio ? { ...c, audio: { ...c.audio, ...patch } } : c));
+export function setAudioCue(p: Travelogue, itemId: Id, patch: Partial<Pick<AudioCue, 'fadeInSec' | 'fadeOutSec' | 'duck' | 'spanChapters'>>): Travelogue {
+  return patchCues(p, [itemId], (c) => {
+    if (!c.audio) return c;
+    const audio = { ...c.audio, ...patch };
+    if (patch.spanChapters === false) delete audio.spanChapters; // the default: stop at the chapter's end
+    return { ...c, audio };
+  });
 }
+
+/**
+ * Trim an audio clip from either end, as when dragging its edges. Trimming the start keeps the rest of the sound
+ * where it was on the timeline (the clip starts later by as much); trimming the end shortens it.
+ */
+export function trimAudio(p: Travelogue, itemId: Id, edge: 'start' | 'end', mediaSec: number, tl: Timeline = buildTimeline(p)): Travelogue {
+  const m = p.media.find((x) => x.id === itemId);
+  const cue = p.cues.find((c) => c.itemId === itemId);
+  const clip = tl.audio.find((c) => c.item.id === itemId);
+  if (!m || !cue?.audio || m.durationSec === undefined) return p;
+  const inPt = cue.inPointSec ?? 0;
+  const outPt = cue.outPointSec ?? m.durationSec;
+  if (edge === 'end') {
+    const out = Math.max(inPt + MIN_AUDIO_TRIM_SEC, Math.min(m.durationSec, mediaSec));
+    return patchCues(p, [itemId], (c) => ({ ...c, outPointSec: Math.round(out * 1000) / 1000 }));
+  }
+  const next = Math.round(Math.max(0, Math.min(outPt - MIN_AUDIO_TRIM_SEC, mediaSec)) * 1000) / 1000;
+  const trimmed = patchCues(p, [itemId], (c) => ({ ...c, inPointSec: next }));
+  return clip ? moveAudio(trimmed, itemId, Math.max(0, clip.start + (next - inPt)), cue.audio.laneId, tl) : trimmed;
+}
+
+/** The shortest an audio clip can be trimmed to. */
+export const MIN_AUDIO_TRIM_SEC = 0.5;
 
 /** AU-3: a clip's own volume (a video's sound, or an audio clip), 0..2. */
 export function setVolumes(p: Travelogue, ids: Id[], volume: number): Travelogue {

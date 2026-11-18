@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import {
   buildTimeline, chapterCues, DUCK_RAMP_SEC, keepAssigned, mixAt, moveAudio, moveClips, parseProject, placeAudio, reassign, resetChapter,
-  resetCues, setAudioAnchorKind, setDurations, setIncludedMany, setLane, setPlacements, setTarget, setUserTime, setVideoTrim, setVolumes,
+  resetCues, setAudioAnchorKind, setAudioCue, trimAudio, setDurations, setIncludedMany, setLane, setPlacements, setTarget, setUserTime, setVideoTrim, setVolumes,
   unplaceAudio, validate, type MediaItem, type Travelogue,
 } from '../src/core/index.js';
 
@@ -116,6 +116,8 @@ describe('audio lanes (AU-1 to AU-4)', () => {
     let p = withAudio();
     const sintra = buildTimeline(p).chapters[1];
     p = placeAudio(p, 'a2', 'lane-music', sintra.start + 2);
+    p = setAudioCue(p, 'a2', { spanChapters: false });
+    assert.equal(p.cues.find((x) => x.itemId === 'a2')!.audio!.spanChapters, undefined, 'off is the absent default');
     let c = buildTimeline(p).audio.find((x) => x.item.id === 'a2')!;
     assert.deepEqual(p.cues.find((x) => x.itemId === 'a2')!.audio!.anchor, { type: 'chapterTime', chapterId: 'ch-sintra', offsetSec: 2 });
     assert.equal(c.start, sintra.start + 2);
@@ -169,6 +171,48 @@ describe('audio lanes (AU-1 to AU-4)', () => {
     const quiet = setVolumes(p, ['m15'], 0.5);
     assert.ok(Math.abs(Object.fromEntries(mixAt(buildTimeline(quiet), quiet.audioLanes, boat.start + 1).map((x) => [x.itemId, x.gain])).m15 - 0.5) < 1e-9);
     assert.equal(validate(solo).filter((i) => i.level === 'error').length, 0);
+  });
+
+  it('lets music play on across chapters: to its end, the next clip on its lane, or the end of the travelogue', () => {
+    let p = withAudio();
+    const tl0 = buildTimeline(p);
+    const [lisbon, sintra] = tl0.chapters;
+    // Music placed on the Music lane plays on by default.
+    p = placeAudio(p, 'a2', 'lane-music', lisbon.start + 1);
+    assert.equal(p.cues.find((x) => x.itemId === 'a2')!.audio!.spanChapters, true);
+    let c = buildTimeline(p).audio.find((x) => x.item.id === 'a2')!;
+    assert.equal(c.spans, true);
+    assert.ok(c.start + c.duration > lisbon.end, 'past the end of Lisbon');
+    assert.equal(c.duration, Math.min(60, tl0.duration - c.start), 'its own 60 s, or to the travelogue end');
+    assert.equal(c.chapterId, 'ch-lisbon', 'still anchored in Lisbon');
+    // Trim its end: it stops there, even in the middle of Sintra.
+    p = trimAudio(p, 'a2', 'end', sintra.start + 3 - c.start);
+    c = buildTimeline(p).audio.find((x) => x.item.id === 'a2')!;
+    assert.ok(Math.abs(c.start + c.duration - (sintra.start + 3)) < 1e-3);
+    assert.equal(c.cutSec, 0);
+    // Trim its start by 2 s: it starts 2 s later, and what plays stays where it was.
+    const before = c.start;
+    p = trimAudio(p, 'a2', 'start', 2);
+    c = buildTimeline(p).audio.find((x) => x.item.id === 'a2')!;
+    assert.ok(Math.abs(c.start - (before + 2)) < 1e-3 && c.inPointSec === 2);
+    assert.ok(Math.abs(c.start + c.duration - (sintra.start + 3)) < 1e-3, 'same end');
+    // Untrimmed, with a second clip on the Music lane later: it stops where that one starts.
+    p = setVideoTrim(p, 'a2', 0, null);
+    p = placeAudio(p, 'a1', 'lane-music', sintra.start + 5);
+    const clips = buildTimeline(p).audio;
+    c = clips.find((x) => x.item.id === 'a2')!;
+    const next = clips.find((x) => x.item.id === 'a1')!;
+    assert.ok(Math.abs(c.start + c.duration - next.start) < 1e-6);
+    assert.equal(c.cutBy, 'next');
+    // Narration placed in Lisbon still stops at the chapter end by default.
+    assert.equal(placeAudio(withAudio(), 'a1', 'lane-narration', lisbon.start + 1).cues.find((x) => x.itemId === 'a1')!.audio!.spanChapters, undefined);
+    // The mix follows it into Sintra, with its fade-out at its new end.
+    const tl = buildTimeline(p);
+    const inSintra = Object.fromEntries(mixAt(tl, p.audioLanes, sintra.start + 1).map((v) => [v.itemId, v.gain]));
+    assert.ok(inSintra.a2 > 0, 'heard in the next chapter');
+    assert.equal(validate(p).filter((i) => i.level === 'error').length, 0);
+    const bad = { ...p, cues: p.cues.map((x) => (x.itemId === 'a2' ? { ...x, audio: { ...x.audio!, spanChapters: 'yes' as never } } : x)) };
+    assert.ok(validate(bad).some((i) => i.path.endsWith('.audio.spanChapters')));
   });
 
   it('rejects audio cues on visual items and on unknown lanes', () => {

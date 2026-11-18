@@ -364,3 +364,5 @@ button.danger-outline { background: none; border-color: #8f2a2a; color: #f19b9b;
 .export-news { border-color: #2f5a43; }
 .export-head { justify-content: space-between; }
 .export-row .spacer, .export-head .spacer { flex: 1; }
+.pe-clip.audio .edge.left { left: 0; right: auto; }
+.pe-clip.audio.spans { border-right-style: dashed; }

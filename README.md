@@ -134,7 +134,7 @@ with "could not be converted", check that line, and that `ffmpeg -decoders | gre
 
 ```sh
 npm run typecheck
-npm test            # 169 tests: model, order keys, operations, history, itinerary, assignment, metadata, travelers, sample hash, geo proxy, HEIC, presentation edits, audio mix, export plan and MP4 render, server API, uploads, processing, retry, local-only access
+npm test            # 171 tests: model, order keys, operations, history, itinerary, assignment, metadata, travelers, sample hash, geo proxy, HEIC, presentation edits, audio mix, export plan and MP4 render, server API, uploads, processing, retry, local-only access
 npm run test:e2e    # Phase 0 browser exit test (needs Playwright's Chromium: npx playwright install chromium)
 npm run test:phase1 # Phase 1 browser test of the G1 tasks (no internet needed: it uses a stand-in map provider)
 npm run test:phase2 # Phase 2 browser test of the G2 tasks (your photos and two travelers', a slow camera, WhatsApp copies, a folder upload)
@@ -326,19 +326,20 @@ under it and a **Clip** tab beside it; every change is an ordinary edit (undoabl
 | PE-8 | Ctrl/Cmd-click and Shift-click select several; set their duration (videos are trimmed to it), placement, inclusion or reset them together | same |
 | PE-9 | Runtime in total and per chapter, against a target length (type `5:00`); the bar turns amber past the target | `src/web/editor.ts` |
 | AU-1 | Narration and Music lanes under the pictures. Audio items (voice memos, songs) wait in **Audio to place**; drag one onto a lane at any point | `src/core/presentation.ts` |
-| AU-2 | Narration anchors to the picture it starts on and moves with it (a lead-in before it is allowed); music anchors to its time in the chapter; switch either way in the Clip tab, keeping where it plays. A clip stops at the end of its chapter | `src/core/timeline.ts` |
-| AU-3 | Trim an audio clip's start and end, its volume and fades, whether it ducks the others; per lane volume, mute and solo, including the clip sound inside videos | `src/core/presentation.ts` |
+| AU-2 | Narration anchors to the picture it starts on and moves with it (a lead-in before it is allowed); music anchors to its time in the chapter; switch either way in the Clip tab, keeping where it plays. A clip stops at the end of its chapter, unless it is set to **Play on into the next chapters** (AU-8, built early; on by default for music): then it stops at its own end, where the next clip on its lane starts, or at the end of the travelogue | `src/core/timeline.ts` |
+| AU-3 | Trim an audio clip's start and end (drag either edge on its lane, or type the times), its volume and fades, whether it ducks the others; per lane volume, mute and solo, including the clip sound inside videos | `src/core/presentation.ts` |
 | AU-4 | One mix for preview and (Phase 4) export: clip volume × lane volume × fades × ducking (narration lowers music and clip sound by 12 dB, 0.3 s ramps). The player plays narration and music in step with the pictures. Waveforms on the lanes | `src/core/render-model.ts`, `src/player/player.ts` |
 
 New in the file format (all optional, so older files still load): `targetSec` on the travelogue, `solo` on an audio
-lane, `chapterLocked` on a media item, and audio clips' anchors may have a negative offset (a lead-in).
+lane, `chapterLocked` on a media item, `spanChapters` on an audio clip, and audio clips' anchors may have a negative
+offset (a lead-in).
 
 Notes:
 - **Excluded vs Removed.** Excluding (Mix view) keeps the item in the travelogue, out of the cut. Removing
   (Media view) takes it out of the travelogue into the Removed bin, to be deleted for good.
 - **Preview volume.** Levels above 100% (clip or lane volume up to 200%) play at full volume in the browser
   preview; the export applies them.
-- **Music across chapters, cross-fades, Ken Burns and editable fades** are Phase 5.
+- **Cross-fades, looping music, Ken Burns and editable picture fades** are Phase 5.
 
 `scripts/phase3-test.ts` scripts the G3 tasks in headless Chromium. It builds a 12-minute draft (the sample plus
 150 generated photos, 30 of them portrait), imports it with a 90 s song and a 6 s voice memo, then: sets a 5:00
@@ -349,8 +350,8 @@ under Porto and the memo on a picture, then reorders and trims around it (the me
 millisecond); checks the mix (music at 70%, ducked 12 dB under the memo; mute), real playback of the song in step
 with the clock, play-this-chapter, reset-chapter, an edit reaching the preview in about 60 ms, a reload, and a
 300-item travelogue playing through at 4x with no frames waiting on media. Report and
-screenshots: `docs/phase3-test/`. Result: 27 of 27 checks (with the smooth-playback and autoplay checks), with no
-browser console errors.
+screenshots: `docs/phase3-test/`. Result: 30 of 30 checks (with the smooth-playback and autoplay checks, and music
+played on across chapters, trimmed by its edges and kept to its chapter again), with no browser console errors.
 
 ## Phase 4: Video export
 
@@ -381,6 +382,10 @@ How it renders:
   `Portugal in Ten Days - Sintra - 1080p.mp4`; the dialog shows the path. Download saves a copy; **Delete**
   removes it. Deleting a travelogue deletes its exports.
 - **Deterministic:** the same project and settings give the same frames.
+- **Upright size from the file.** Each picture is placed by the upright size of the file it renders from (turned
+  by its EXIF orientation), as the preview does with its proxy. Photos processed by an earlier version may record
+  their sideways stored size in the project; the export no longer stretches them, and processing them again
+  records the upright size.
 
 `scripts/phase4-test.ts` scripts the G4 tasks in headless Chromium on the sample trip, with a song under Lisbon and
 a narration beep on a photo in Porto. It exports the whole travelogue at 1080p while renaming a chapter, downloads
@@ -407,8 +412,8 @@ scripts/      build, sample media, exit test, Phase 1, 2, 3 and 4 tests
 
 ## Not built yet
 
-- Editable transitions and Ken Burns, music across chapters, captions, the inset map in exports and Google Photos
-  import are later phases; their data already has a place in the schema.
+- Editable transitions and Ken Burns, cross-fading and looping music, captions, the inset map in exports and Google
+  Photos import are later phases; their data already has a place in the schema.
 - HDR video (for example from recent iPhones) is converted to standard range without tone mapping, so its colours
   may look flat in an export.
 - A packaged desktop app (its own window and icon). For now it runs as a local server opened in your browser.

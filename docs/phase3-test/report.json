@@ -1,5 +1,5 @@
 {
-  "date": "2026-11-18T16:57:01.057Z",
+  "date": "2026-11-18T18:46:45.722Z",
   "browser": "153.0.8010.12",
   "checks": [
     {
@@ -68,9 +68,24 @@
       "detail": "0.378×0.896, 0.374×0.887, 0.378×0.895"
     },
     {
-      "name": "a song dragged onto the Music lane plays under the chapter, from its time in the chapter to the chapter's end (AU-1, AU-2)",
+      "name": "a song dragged onto the Music lane plays from its time in the chapter on into the next chapters, to the travelogue's end (AU-1, AU-2)",
       "pass": true,
-      "detail": "3:44–4:03 (Porto 3:44–4:03)"
+      "detail": "3:44–4:51 (Porto 3:44–4:03, the travelogue ends 4:51)"
+    },
+    {
+      "name": "drag a music clip's edges to trim its end and its start; trimming the start keeps the rest where it was",
+      "pass": true,
+      "detail": "ends 4:41 after trimming 10 s; then starts 1.97 s later at 1.97 s into the file"
+    },
+    {
+      "name": "\"Play on into the next chapters\" off: the song stops at the end of its chapter again",
+      "pass": true,
+      "detail": "3:46–4:03"
+    },
+    {
+      "name": "Undo puts the song back as dropped",
+      "pass": true,
+      "detail": "3:44–4:51"
     },
     {
       "name": "a voice memo dropped on the Narration lane is anchored to the picture it starts on (AU-2)",
@@ -90,17 +105,17 @@
     {
       "name": "audio clips show their waveforms on the lanes (AU-4)",
       "pass": true,
-      "detail": "url(\"http://127.0.0.1:40641/api/projects/trv_-I8g6uOC9LiE/me"
+      "detail": "url(\"http://127.0.0.1:33055/api/projects/trv_lv6H0zXeMoQN/me"
     },
     {
       "name": "in playback the song plays alongside the pictures, kept to the timeline clock",
       "pass": true,
-      "detail": "drift 0.009 s"
+      "detail": "drift 0.010 s"
     },
     {
       "name": "with a busy browser the song plays on without re-seeks, and the playhead keeps real time",
       "pass": true,
-      "detail": "0 re-seeks; playhead 6.50 s in 6.50 s; drift 0.011 s"
+      "detail": "0 re-seeks; playhead 6.48 s in 6.49 s; drift 0.016 s"
     },
     {
       "name": "when Play is clicked, a video that starts later under the song plays with sound, and the song keeps playing (Safari's autoplay rule)",
@@ -110,7 +125,7 @@
     {
       "name": "\"Play this chapter\" plays the chapter and stops at its end (PE-2)",
       "pass": true,
-      "detail": "stopped at 223.55 s; Sintra ends at 223.50 s"
+      "detail": "stopped at 223.50 s; Sintra ends at 223.50 s"
     },
     {
       "name": "\"Reset chapter to defaults\" puts its pictures back to the cue profile (PE-7)",
@@ -130,7 +145,7 @@
     {
       "name": "a 300-item travelogue plays without stalls (acceptance)",
       "pass": true,
-      "detail": "300 items, 5:09 at 4x in 77 s; 0 of 4660 frames waited (0.00%); timeline drawn in 7 ms"
+      "detail": "300 items, 5:09 at 4x in 77 s; 0 of 4662 frames waited (0.00%); timeline drawn in 7 ms"
     },
     {
       "name": "no errors in the browser console",
