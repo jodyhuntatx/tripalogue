@@ -24,7 +24,7 @@ import {
 } from '../core/index.js';
 import type { BlobStore } from './blobstore.js';
 import { probe } from './media.js';
-import { jpegOrientation, orientationFilters } from './orientation.js';
+import { jpegOrientation, orientationFilters, swapsSides } from './orientation.js';
 
 const run = promisify(execFile);
 
@@ -137,20 +137,27 @@ export class Renderer {
     }
   }
 
-  /** Upright size of every playing item: from the project, or probed from the original when the project lacks it. */
+  /**
+   * Upright size of every playing picture, measured from the file the export renders (turned by a photo's EXIF
+   * orientation), not taken from the project: an item processed by an older version may record the sideways
+   * stored size, and placing by that would stretch the picture. The preview measures its upright proxy the same way.
+   */
   private async uprightSizes(tl: Timeline, items: Map<string, MediaItem>, signal: AbortSignal): Promise<Map<string, Size>> {
     const out = new Map<string, Size>();
     for (const seg of tl.segments) {
-      if (seg.kind === 'title') continue;
-      const m = items.get(seg.item.id)!;
-      if (m.width && m.height) {
-        out.set(m.id, { w: m.width, h: m.height });
-        continue;
-      }
+      if (seg.kind === 'title' || out.has(seg.item.id)) continue;
       this.checkAbort(signal);
+      const m = items.get(seg.item.id)!;
       const file = await this.pictureFile(m);
       const pr = await probe(file, this.o.ffprobe).catch(() => undefined);
-      if (pr?.width && pr.height) out.set(m.id, { w: pr.width, h: pr.height });
+      let w = pr?.width, h = pr?.height;
+      if (m.kind === 'image' && pr?.storedWidth && pr.storedHeight) {
+        const turned = swapsSides(await jpegOrientation(file).catch(() => 1));
+        w = turned ? pr.storedHeight : pr.storedWidth;
+        h = turned ? pr.storedWidth : pr.storedHeight;
+      }
+      if (w && h) out.set(m.id, { w, h });
+      else if (m.width && m.height) out.set(m.id, { w: m.width, h: m.height });
     }
     return out;
   }
