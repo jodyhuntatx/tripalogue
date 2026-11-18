@@ -210,6 +210,26 @@ describe('fixing times (MM-4, MM-5, MM-8)', () => {
     assert.equal(early.media.find((m) => m.id === 'u')!.userTimestamp, '2026-05-04T11:00:00Z', 'noon when it had no time');
   });
 
+  it('a chapter holds its end minute, and an item moved there stays (a chapter ending 08:50, the next at 09:00)', () => {
+    const tz = 'Asia/Kathmandu';
+    const fly = ch('fly', '2026-10-23T00:00', '2026-10-23T08:50', tz);
+    const trek = ch('trek', '2026-10-23T09:00', '2026-10-23T23:59', tz);
+    const p = reassign(trip([fly, trek], [
+      item('at850', '2026-10-23T08:50:21+05:45'),
+      item('gap', '2026-10-23T08:55:00+05:45'),
+      item('at9', '2026-10-23T09:00:00+05:45'),
+    ]));
+    assert.deepEqual(p.media.map((m) => m.chapterId), ['fly', null, 'trek'], '08:50:21 is in the chapter that ends 08:50; 08:55 is in the gap');
+    // The gap item, moved into the first chapter, lands inside it and is not sent back to Unassigned.
+    const moved = dropIntoChapter(p, ['gap'], 'fly');
+    const g = moved.media.find((m) => m.id === 'gap')!;
+    assert.equal(g.chapterId, 'fly');
+    assert.equal(keepAssigned(moved, moved).media.find((m) => m.id === 'gap')!.chapterId, 'fly');
+    // Dropped onto the last item of the chapter, it lands just before that item, still inside.
+    const before = dropIntoChapter(p, ['gap'], 'fly', 'at850');
+    assert.equal(before.media.find((m) => m.id === 'gap')!.chapterId, 'fly');
+  });
+
   it('flags duplicates by content, and by time and size across sources only', () => {
     const p = base();
     const media: MediaItem[] = [
