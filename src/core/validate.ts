@@ -59,9 +59,10 @@ export function validate(raw: unknown): ValidationIssue[] {
     if (isNum(o.w) && o.w <= 0) err(`${path}.w`, 'must be > 0');
     if (isNum(o.h) && o.h <= 0) err(`${path}.h`, 'must be > 0');
   };
-  const transition = (o: unknown, path: string) => {
+  const transition = (o: unknown, path: string, kinds = ['cut', 'fade', 'slide', 'zoom', 'crossfade']) => {
     if (!isObj(o)) return err(path, 'must be a transition object');
-    oneOf(o, 'type', path, ['cut', 'fade']);
+    oneOf(o, 'type', path, kinds);
+    if (o.direction !== undefined) oneOf(o, 'direction', path, ['left', 'right', 'up', 'down']);
     num(o, 'durationSec', path, 0, 10);
   };
 
@@ -115,7 +116,15 @@ export function validate(raw: unknown): ValidationIssue[] {
       }
     }
     if (!isObj(c.titleCard) || typeof c.titleCard.enabled !== 'boolean') err(`${path}.titleCard`, 'must be {enabled: boolean, durationSec?}');
-    else num(c.titleCard, 'durationSec', `${path}.titleCard`, 0, 60, true);
+    else {
+      num(c.titleCard, 'durationSec', `${path}.titleCard`, 0, 60, true);
+      for (const k of ['title', 'subtitle', 'description', 'backgroundItemId']) {
+        if (c.titleCard[k] !== undefined && typeof c.titleCard[k] !== 'string') err(`${path}.titleCard.${k}`, 'must be a string');
+      }
+      if (c.titleCard.layout !== undefined) oneOf(c.titleCard, 'layout', `${path}.titleCard`, ['center', 'left', 'lower']);
+    }
+    if (c.mapInset !== undefined) oneOf(c, 'mapInset', path, ['on', 'off']);
+    if (c.credits !== undefined) oneOf(c, 'credits', path, ['on', 'off']);
   });
 
   // Travelers (MM-16): names, each with a unique id.
@@ -225,7 +234,9 @@ export function validate(raw: unknown): ValidationIssue[] {
       if (c.placement.mode === 'custom') rect(c.placement.rect, `${path}.placement.rect`);
     }
     transition(c.entrance, `${path}.entrance`);
-    transition(c.exit, `${path}.exit`);
+    transition(c.exit, `${path}.exit`, ['cut', 'fade', 'slide']);
+    if (c.mute !== undefined && typeof c.mute !== 'boolean') err(`${path}.mute`, 'must be a boolean');
+    if (c.mapInset !== undefined) oneOf(c, 'mapInset', path, ['on', 'off']);
     if (!isObj(c.animation)) err(`${path}.animation`, 'must be an object');
     else if (c.animation.type === 'kenBurns') {
       rect(c.animation.from, `${path}.animation.from`);
@@ -242,6 +253,8 @@ export function validate(raw: unknown): ValidationIssue[] {
         num(a, 'fadeOutSec', `${path}.audio`, 0, 60);
         if (typeof a.duck !== 'boolean') err(`${path}.audio.duck`, 'must be a boolean');
         if (a.spanChapters !== undefined && typeof a.spanChapters !== 'boolean') err(`${path}.audio.spanChapters`, 'must be a boolean');
+        if (a.loop !== undefined && typeof a.loop !== 'boolean') err(`${path}.audio.loop`, 'must be a boolean');
+        if (a.crossfade !== undefined && typeof a.crossfade !== 'boolean') err(`${path}.audio.crossfade`, 'must be a boolean');
         const an = a.anchor;
         if (!isObj(an)) err(`${path}.audio.anchor`, 'must be an object');
         else {
@@ -276,8 +289,49 @@ export function validate(raw: unknown): ValidationIssue[] {
   }
 
   arr('annotations');
+  if (Array.isArray(p.annotations)) {
+    const seen = new Set<string>();
+    p.annotations.forEach((a: unknown, i: number) => {
+      const path = `$.annotations[${i}]`;
+      if (!isObj(a)) return err(path, 'must be an object');
+      if (typeof a.id !== 'string') err(`${path}.id`, 'must be a string');
+      else if (seen.has(a.id)) err(`${path}.id`, `duplicate annotation id "${a.id}"`);
+      else seen.add(a.id);
+      if (typeof a.text !== 'string') err(`${path}.text`, 'must be a string');
+      if (typeof a.style !== 'string') err(`${path}.style`, 'must be a string');
+      if (a.kind !== undefined) oneOf(a, 'kind', path, ['caption', 'place', 'date']);
+      rect(a.position, `${path}.position`);
+      num(a, 'startSec', path, 0);
+      num(a, 'durationSec', path, 0);
+      const tg = a.target;
+      if (!isObj(tg) || (tg.type === 'item' ? typeof tg.itemId !== 'string' : tg.type === 'chapter' ? typeof tg.chapterId !== 'string' : true)) {
+        err(`${path}.target`, 'must be {type: "item", itemId} or {type: "chapter", chapterId}');
+      } else if (tg.type === 'item' && !mediaIds.has(tg.itemId as string)) {
+        issues.push({ level: 'warning', path: `${path}.target.itemId`, message: `unknown media item "${tg.itemId}"` });
+      }
+    });
+  }
+  if (p.cuePresets !== undefined) {
+    if (!Array.isArray(p.cuePresets)) err('$.cuePresets', 'must be an array');
+    else p.cuePresets.forEach((c: unknown, i: number) => {
+      if (!isObj(c) || typeof c.id !== 'string' || typeof c.name !== 'string' || !isObj(c.cue)) err(`$.cuePresets[${i}]`, 'must be {id, name, cue}');
+    });
+  }
+  if (p.credits !== undefined && typeof p.credits !== 'boolean') err('$.credits', 'must be a boolean');
   if (!isObj(p.mapView)) err('$.mapView', 'must be an object');
-  else num(p.mapView, 'size', '$.mapView', 0.1, 0.3);
+  else {
+    num(p.mapView, 'size', '$.mapView', 0.1, 0.3);
+    if (p.mapView.style !== undefined) oneOf(p.mapView, 'style', '$.mapView', ['light', 'dark', 'terrain']);
+    const tr = p.mapView.transition;
+    if (tr !== undefined) {
+      if (!isObj(tr)) err('$.mapView.transition', 'must be {mode, durationSec}');
+      else {
+        oneOf(tr, 'mode', '$.mapView.transition', ['inset', 'fullFrame']);
+        num(tr, 'durationSec', '$.mapView.transition', 0.5, 15);
+      }
+    }
+    if (p.mapView.labelLanguage !== undefined && typeof p.mapView.labelLanguage !== 'string') err('$.mapView.labelLanguage', 'must be a string');
+  }
 
   return issues;
 }

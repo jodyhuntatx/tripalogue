@@ -21,8 +21,10 @@ import { HttpError } from './http.js';
 export interface GeoConfig {
   /** Nominatim-compatible search endpoint. Empty string disables search. */
   geocoderUrl: string;
-  /** Tile URL template with {z}, {x}, {y}. Empty string disables tiles. */
+  /** Tile URL template with {z}, {x}, {y} (and optionally {lang}, for providers that label in a chosen language). Empty string disables tiles. */
   tileUrl: string;
+  /** MV-8: tiles for the terrain style (empty: terrain uses the standard tiles). */
+  terrainTileUrl: string;
   attribution: string;
   userAgent: string;
   /** Minimum spacing between upstream searches (Nominatim: 1 per second). */
@@ -45,6 +47,7 @@ export function geoConfigFromEnv(dataDir: string, overrides: Partial<GeoConfig> 
   return {
     geocoderUrl: env.TRIPALOGUE_GEOCODER_URL ?? 'https://nominatim.openstreetmap.org/search',
     tileUrl: env.TRIPALOGUE_TILE_URL ?? 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+    terrainTileUrl: env.TRIPALOGUE_TERRAIN_TILE_URL ?? 'https://tile.opentopomap.org/{z}/{x}/{y}.png',
     attribution: env.TRIPALOGUE_TILE_ATTRIBUTION ?? '© OpenStreetMap contributors',
     userAgent: `TripAlogue/0.1 (travelogue editor; development)${contact}`,
     minSearchIntervalMs: 1100,
@@ -94,16 +97,23 @@ export class Geo {
     return places;
   }
 
-  /** A map tile, from the disk cache when fresh enough, else from the provider (stale copy if the provider fails). */
-  async tile(zIn: string, xIn: string, yIn: string): Promise<Buffer> {
+  /**
+   * A map tile, from the disk cache when fresh enough, else from the provider (stale copy if the provider fails).
+   * `style` terrain uses the terrain provider; light and dark share the standard tiles (dark is drawn darker).
+   */
+  async tile(zIn: string, xIn: string, yIn: string, style = 'light', lang = ''): Promise<Buffer> {
     if (!this.cfg.tileUrl) throw new HttpError(503, 'Map tiles are not configured', 'not_configured');
+    const terrain = style === 'terrain' && !!this.cfg.terrainTileUrl;
+    const template = terrain ? this.cfg.terrainTileUrl : this.cfg.tileUrl;
+    const language = template.includes('{lang}') && /^[a-z]{2,3}(-[A-Za-z]{2,4})?$/.test(lang) ? lang : '';
     const z = Number(zIn);
     const x = Number(xIn);
     const y = Number(yIn.replace(/\.png$/, ''));
     if (![z, x, y].every(Number.isInteger) || z < 0 || z > 19 || x < 0 || y < 0 || x >= 2 ** z || y >= 2 ** z) {
       throw new HttpError(400, 'Invalid tile coordinates', 'invalid');
     }
-    const file = path.join(this.cfg.cacheDir, String(z), String(x), `${y}.png`);
+    const sub = [terrain ? 'terrain' : '', language ? `lang-${language}` : ''].filter(Boolean);
+    const file = path.join(this.cfg.cacheDir, ...sub, String(z), String(x), `${y}.png`);
     let stale: Buffer | undefined;
     try {
       const st = await fs.stat(file);
@@ -113,10 +123,10 @@ export class Geo {
     } catch {
       /* not cached */
     }
-    const key = `${z}/${x}/${y}`;
+    const key = `${sub.join('/')}/${z}/${x}/${y}`;
     let p = this.inflight.get(key);
     if (!p) {
-      p = this.fetchTile(z, x, y, file).finally(() => this.inflight.delete(key));
+      p = this.fetchTile(template, language, z, x, y, file).finally(() => this.inflight.delete(key));
       this.inflight.set(key, p);
     }
     try {
@@ -127,8 +137,8 @@ export class Geo {
     }
   }
 
-  private async fetchTile(z: number, x: number, y: number, file: string): Promise<Buffer> {
-    const url = this.cfg.tileUrl.replace('{z}', String(z)).replace('{x}', String(x)).replace('{y}', String(y));
+  private async fetchTile(template: string, lang: string, z: number, x: number, y: number, file: string): Promise<Buffer> {
+    const url = template.replace('{z}', String(z)).replace('{x}', String(x)).replace('{y}', String(y)).replace('{lang}', lang || 'en');
     let res: Response;
     try {
       res = await fetch(url, { headers: { 'User-Agent': this.cfg.userAgent }, signal: AbortSignal.timeout(10_000) });

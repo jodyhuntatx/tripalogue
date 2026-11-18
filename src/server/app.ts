@@ -60,7 +60,11 @@ export async function startApp(overrides: Partial<ServerConfig> = {}, deps: { bl
   const jobs = new Jobs(db, cfg, blobs, projects);
   const tools = new MediaTools(cfg); // reads cfg.ffmpeg / cfg.ffprobe / cfg.log at each check
   const uploads = new Uploads(db, cfg, blobs, projects, jobs);
-  const exports = new Exports(db, cfg, blobs, projects);
+  const exports = new Exports(db, cfg, blobs, projects, {
+    serverUrl: () => cfg.baseUrl,
+    // VX-8: tiles for exports go through the same cache as the preview's.
+    tiles: { tile: (z, x, y, style, lang) => geo.tile(z, x, y, style, lang), attribution: cfg.geo.attribution, enabled: !!cfg.geo.tileUrl },
+  });
   const deletion = new Deletion(db, blobs, projects, uploads, { purgeAfterDays: cfg.purgeAfterDays, log: cfg.log, exports });
   const geo = new Geo(cfg.geo);
   const webDir = cfg.webDir ?? defaultWebDir();
@@ -94,11 +98,19 @@ export async function startApp(overrides: Partial<ServerConfig> = {}, deps: { bl
     me(c);
     sendJson(c.res, 200, { places: await geo.search(c.url.searchParams.get('q') ?? '', c.url.searchParams.get('lang') ?? undefined) });
   });
-  r.on('GET', '/api/tiles/:z/:x/:y', async (c) => {
-    me(c);
-    const buf = await geo.tile(c.params.z, c.params.x, c.params.y);
+  const sendTile = async (c: { res: import('node:http').ServerResponse; url: URL }, z: string, x: string, y: string, style?: string) => {
+    const buf = await geo.tile(z, x, y, style, c.url.searchParams.get('lang') ?? '');
     c.res.writeHead(200, { 'Content-Type': 'image/png', 'Content-Length': buf.length, 'Cache-Control': 'private, max-age=86400' });
     c.res.end(buf);
+  };
+  r.on('GET', '/api/tiles/:z/:x/:y', async (c) => {
+    me(c);
+    await sendTile(c, c.params.z, c.params.x, c.params.y);
+  });
+  // MV-8: by style (terrain has its own tiles; light and dark share the standard ones).
+  r.on('GET', '/api/tiles/:style/:z/:x/:y', async (c) => {
+    me(c);
+    await sendTile(c, c.params.z, c.params.x, c.params.y, c.params.style);
   });
 
   // ---- projects ----
@@ -228,8 +240,8 @@ export async function startApp(overrides: Partial<ServerConfig> = {}, deps: { bl
   });
   r.on('POST', '/api/projects/:id/renders', async (c) => {
     member(c, 'editor');
-    const body = (await readJson(c.req, MAX_EXPORT_REQUEST_BYTES)) as { settings?: unknown; titleCards?: unknown };
-    sendJson(c.res, 201, { render: await exports.create(c.params.id, body.settings, body.titleCards) });
+    const body = (await readJson(c.req, MAX_EXPORT_REQUEST_BYTES)) as { settings?: unknown };
+    sendJson(c.res, 201, { render: await exports.create(c.params.id, body.settings) });
   });
   r.on('POST', '/api/projects/:id/renders/:rid/cancel', (c) => {
     member(c, 'editor');
@@ -266,6 +278,40 @@ export async function startApp(overrides: Partial<ServerConfig> = {}, deps: { bl
     if (c.req.method === 'HEAD') return void c.res.end();
     createReadStream(f.path).pipe(c.res);
   });
+
+  // ---- the export page (server/render.ts): a headless browser here draws frames with the preview's code ----
+  const renderer = exports.renderer;
+  const renderCall = async (c: { res: import('node:http').ServerResponse }, fn: () => Promise<void> | void) => {
+    try {
+      await fn();
+    } catch (e) {
+      const err = e as Error & { itemId?: string };
+      if (!c.res.headersSent) sendJson(c.res, 410, { error: err.message, itemId: err.itemId });
+    }
+  };
+  r.on('GET', '/api/render/:token/setup', (c) => renderCall(c, () => sendJson(c.res, 200, renderer.setupFor(c.params.token))));
+  r.on('GET', '/api/render/:token/image/:item', (c) => renderCall(c, async () => {
+    const file = renderer.pictureFor(c.params.token, c.params.item);
+    const st = await fs.stat(file);
+    c.res.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Content-Length': st.size, 'Cache-Control': 'no-store' });
+    createReadStream(file).pipe(c.res);
+  }));
+  r.on('GET', '/api/render/:token/video/:item', (c) => renderCall(c, async () => {
+    const q = c.url.searchParams;
+    const f = await renderer.videoFrame(c.params.token, Number(q.get('chunk')), c.params.item, Number(q.get('t')), Number(q.get('speed') || 1));
+    c.res.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Content-Length': f.data.length, 'X-Width': String(f.w), 'X-Height': String(f.h), 'Cache-Control': 'no-store' });
+    c.res.end(f.data);
+  }));
+  r.on('POST', '/api/render/:token/frame', (c) => renderCall(c, async () => {
+    const q = c.url.searchParams;
+    await renderer.acceptFrame(c.params.token, Number(q.get('chunk')), Number(q.get('k')), c.req);
+    sendJson(c.res, 200, { ok: true });
+  }));
+  r.on('POST', '/api/render/:token/fail', (c) => renderCall(c, async () => {
+    const body = (await readJson(c.req, 16 * 1024)) as { chunk?: number; message?: string; itemId?: string; reason?: string };
+    renderer.pageFailed(c.params.token, Number(body.chunk), body);
+    sendJson(c.res, 200, { ok: true });
+  }));
 
   // ---- telemetry (opt-in) ----
   r.on('POST', '/api/telemetry', async (c) => {

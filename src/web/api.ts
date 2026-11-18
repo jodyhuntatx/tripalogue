@@ -99,8 +99,8 @@ export const Api = {
   restore: (id: string, vid: string) => api<{ rev: number }>('POST', `/api/projects/${id}/versions/${vid}/restore`, {}),
   renders: (id: string) => api<{ renders: RenderInfo[] }>('GET', `/api/projects/${encodeURIComponent(id)}/renders`),
   unseenRenders: () => api<{ renders: RenderInfo[] }>('GET', '/api/renders/unseen'),
-  startRender: (id: string, settings: ExportSettings, titleCards: Record<number, string>) =>
-    api<{ render: RenderInfo }>('POST', `/api/projects/${encodeURIComponent(id)}/renders`, { settings, titleCards }),
+  startRender: (id: string, settings: ExportSettings) =>
+    api<{ render: RenderInfo }>('POST', `/api/projects/${encodeURIComponent(id)}/renders`, { settings }),
   cancelRender: (id: string, rid: string) => api<{ render: RenderInfo }>('POST', `/api/projects/${encodeURIComponent(id)}/renders/${encodeURIComponent(rid)}/cancel`, {}),
   seenRender: (id: string, rid: string) => api<{ render: RenderInfo }>('POST', `/api/projects/${encodeURIComponent(id)}/renders/${encodeURIComponent(rid)}/seen`, {}),
   deleteRender: (id: string, rid: string) => api('DELETE', `/api/projects/${encodeURIComponent(id)}/renders/${encodeURIComponent(rid)}`),

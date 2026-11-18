@@ -10,14 +10,14 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import {
-  buildTimeline, exportFileName, planVideo, resolveRange, settingsProblem, type ExportSettings, type Travelogue,
+  buildTimeline, exportFileName, resolveRange, settingsProblem, type ExportSettings, type Travelogue,
 } from '../core/index.js';
 import type { BlobStore } from './blobstore.js';
 import type { ServerConfig } from './config.js';
 import type { Db } from './db.js';
 import { HttpError } from './http.js';
 import type { Projects } from './projects.js';
-import { RenderError, Renderer } from './render.js';
+import { RenderError, Renderer, type RenderOptions } from './render.js';
 import { newId } from './auth.js';
 
 export type ExportStatus = 'queued' | 'running' | 'done' | 'failed' | 'cancelled';
@@ -50,18 +50,21 @@ interface Row {
   started_at: number | null; finished_at: number | null; seen: number;
 }
 
-/** Title card pictures may be large at 4K; the whole request is capped. */
-export const MAX_EXPORT_REQUEST_BYTES = 96 * 1024 * 1024;
+/** An export request is small (its settings). */
+export const MAX_EXPORT_REQUEST_BYTES = 64 * 1024;
 
 export class Exports {
-  private readonly renderer: Renderer;
+  readonly renderer: Renderer;
   private current: { id: string; abort: AbortController } | null = null;
   private running = false;
   private stopped = true;
   private idleWaiters: (() => void)[] = [];
 
-  constructor(private readonly db: Db, private readonly cfg: ServerConfig, blobs: BlobStore, private readonly projects: Projects, renderer?: Renderer) {
-    this.renderer = renderer ?? new Renderer(blobs, { ffmpeg: cfg.ffmpeg, ffprobe: cfg.ffprobe, log: cfg.log });
+  constructor(
+    private readonly db: Db, private readonly cfg: ServerConfig, blobs: BlobStore, private readonly projects: Projects,
+    options: Pick<RenderOptions, 'serverUrl' | 'tiles' | 'concurrency'>,
+  ) {
+    this.renderer = new Renderer(blobs, { ffmpeg: cfg.ffmpeg, ffprobe: cfg.ffprobe, log: cfg.log, ...options });
   }
 
   private get root() { return path.join(this.cfg.dataDir, 'exports'); }
@@ -93,8 +96,8 @@ export class Exports {
     return new Promise((r) => this.idleWaiters.push(r));
   }
 
-  /** Queue an export of the travelogue as it is now. `titleCards` are JPEG or PNG data URLs by segment index. */
-  async create(projectId: string, settingsIn: unknown, titleCardsIn: unknown): Promise<ExportInfo> {
+  /** Queue an export of the travelogue as it is now. */
+  async create(projectId: string, settingsIn: unknown): Promise<ExportInfo> {
     const settings = settingsIn as ExportSettings;
     const problem = settingsProblem(settings);
     if (problem) throw new HttpError(400, `Export ${problem}`, 'invalid');
@@ -107,18 +110,10 @@ export class Exports {
       throw new HttpError(400, (e as Error).message, 'invalid');
     }
     if (!(range.end - range.start > 0)) throw new HttpError(400, 'There is nothing to export in that part of the travelogue', 'empty');
-    const plan = planVideo(tl, settings, (seg) => (seg.item.width && seg.item.height ? { w: seg.item.width, h: seg.item.height } : undefined));
     const id = newId('exp');
     const work = this.workDir(id);
-    await fs.mkdir(path.join(work, 'titles'), { recursive: true });
+    await fs.mkdir(work, { recursive: true });
     await fs.writeFile(path.join(work, 'project.json'), JSON.stringify(doc));
-    const cards = (titleCardsIn && typeof titleCardsIn === 'object' ? titleCardsIn : {}) as Record<string, unknown>;
-    for (const r of plan.runs) {
-      if (r.kind !== 'title') continue;
-      const url = cards[String(r.segmentIndex)];
-      const m = typeof url === 'string' ? /^data:image\/(png|jpeg);base64,([A-Za-z0-9+/=]+)$/.exec(url) : null;
-      if (m) await fs.writeFile(path.join(work, 'titles', `${r.segmentIndex}.${m[1] === 'png' ? 'png' : 'jpg'}`), Buffer.from(m[2], 'base64'));
-    }
     const name = exportFileName(doc.title, tl, settings);
     this.db.run(
       "INSERT INTO exports (id, project_id, rev, name, settings, status, progress, created_at) VALUES (?, ?, ?, ?, ?, 'queued', 0, ?)",
@@ -234,12 +229,10 @@ export class Exports {
     let lastWrite = 0;
     try {
       const doc = JSON.parse(await fs.readFile(path.join(work, 'project.json'), 'utf8')) as Travelogue;
-      const titleCards = new Map<number, string>();
-      for (const f of await fs.readdir(path.join(work, 'titles')).catch(() => [] as string[])) titleCards.set(Number(f.split('.')[0]), path.join(work, 'titles', f));
       const out = this.outFile(row.project_id, id, row.name);
       await fs.mkdir(path.dirname(out), { recursive: true });
       const result = await this.renderer.render({
-        doc, settings: JSON.parse(row.settings) as ExportSettings, titleCards, outFile: out, workDir: path.join(work, 'render'), signal: abort.signal,
+        doc, settings: JSON.parse(row.settings) as ExportSettings, outFile: out, workDir: path.join(work, 'render'), signal: abort.signal,
         onProgress: (fraction, step) => {
           const now = Date.now();
           if (now - lastWrite < 400 && fraction < 1) return;

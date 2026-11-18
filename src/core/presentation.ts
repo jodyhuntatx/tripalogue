@@ -16,7 +16,7 @@ const r1 = (n: number) => Math.round(n * 10) / 10;
 const r3 = (n: number) => Math.round(n * 1000) / 1000;
 const cmp = (a: Cue, b: Cue) => (a.order < b.order ? -1 : a.order > b.order ? 1 : 0);
 
-function patchCues(p: Travelogue, ids: Iterable<Id>, fn: (c: Cue, m: MediaItem) => Cue): Travelogue {
+export function patchCues(p: Travelogue, ids: Iterable<Id>, fn: (c: Cue, m: MediaItem) => Cue): Travelogue {
   const want = new Set(ids);
   const media = new Map(p.media.map((m) => [m.id, m]));
   let changed = false;
@@ -225,11 +225,12 @@ export function unplaceAudio(p: Travelogue, itemId: Id): Travelogue {
 }
 
 /** AU-3: an audio clip's fades and ducking. */
-export function setAudioCue(p: Travelogue, itemId: Id, patch: Partial<Pick<AudioCue, 'fadeInSec' | 'fadeOutSec' | 'duck' | 'spanChapters'>>): Travelogue {
+export function setAudioCue(p: Travelogue, itemId: Id, patch: Partial<Pick<AudioCue, 'fadeInSec' | 'fadeOutSec' | 'duck' | 'spanChapters' | 'loop' | 'crossfade'>>): Travelogue {
   return patchCues(p, [itemId], (c) => {
     if (!c.audio) return c;
     const audio = { ...c.audio, ...patch };
-    if (patch.spanChapters === false) delete audio.spanChapters; // the default: stop at the chapter's end
+    // Off is the default: leave the key out.
+    for (const k of ['spanChapters', 'loop', 'crossfade'] as const) if (patch[k] === false) delete audio[k];
     return { ...c, audio };
   });
 }

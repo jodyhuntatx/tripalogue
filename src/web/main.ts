@@ -255,7 +255,7 @@ async function renderProject(id: string, initialView?: View) {
   });
   itinerary.el.querySelector('.itinerary-side')?.append(projectPanel);
   itinerary.el.querySelector('.itinerary-side')?.append(deleteProjectBox());
-  const inset = mountInset(s, stageWrap, cfg.map);
+  const inset = mountInset(s, cfg.map);
   const media = mountMedia(s, {
     projectId: id,
     map: cfg.map,
@@ -334,6 +334,11 @@ async function renderProject(id: string, initialView?: View) {
   const urlFor = (itemId: string) => Api.mediaUrl(id, itemId, 'proxy');
   const player = new Player({
     canvas, project: s.state, urlFor, rate: Number(params.get('rate') ?? 1) || 1,
+    tiles: cfg.map.tiles ? {
+      // MV-8: terrain has its own tiles; light and dark share the standard ones. A label language goes along.
+      url: (style, z, x, y) => `/api/tiles/${style === 'terrain' ? 'terrain' : 'light'}/${z}/${x}/${y}${s.state.mapView.labelLanguage ? `?lang=${encodeURIComponent(s.state.mapView.labelLanguage)}` : ''}`,
+      attribution: cfg.map.attribution,
+    } : undefined,
     onState: (st) => {
       document.body.dataset.state = st;
       playBtn.textContent = st === 'playing' ? 'Pause' : st === 'ended' ? 'Replay' : 'Play';
@@ -345,7 +350,6 @@ async function renderProject(id: string, initialView?: View) {
       const ch = player.timeline.chapters[frame.chapterIndex];
       chapterLabel.textContent = ch ? `${ch.index + 1}. ${ch.title}` : '';
       marks.querySelectorAll<HTMLElement>('.chapter-mark').forEach((el) => el.classList.toggle('current', Number(el.dataset.index) === frame.chapterIndex));
-      inset.onFrame(frame, player.timeline);
       editor.onTime(t);
       stage.refresh();
     },

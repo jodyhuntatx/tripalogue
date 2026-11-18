@@ -7,8 +7,12 @@
  * chapters (then it stops at its own end, the next clip on its lane, or the end of the travelogue).
  */
 import { defaultCue } from './project.js';
-import type { Chapter, Cue, MediaItem, Transition, Travelogue } from './schema.js';
+import type { Chapter, Cue, MediaItem, TitleLayout, Transition, Travelogue } from './schema.js';
 
+/**
+ * A chapter's opening: its title card (IT-5, PE-15), preceded in full-frame map mode (MV-6) by mapSec of the map
+ * filling the frame. With the card turned off, the opening is the map alone (card = false), or absent.
+ */
 export interface TitleSegment {
   kind: 'title';
   chapterId: string;
@@ -17,8 +21,15 @@ export interface TitleSegment {
   duration: number;
   title: string;
   subtitle: string;
-  /** The chapter's "What happened here" text; empty when there is none. */
+  /** The chapter's "What happened here" text (or the card's own); empty when there is none. */
   description: string;
+  layout: TitleLayout;
+  /** A picture behind the card's text. */
+  background?: MediaItem;
+  /** Seconds of full-frame map before the card (0 = none). */
+  mapSec: number;
+  /** Whether the card itself shows (after the map). */
+  card: boolean;
   entrance: Transition;
   exit: Transition;
 }
@@ -34,6 +45,8 @@ export interface MediaSegment {
   /** Video only: media time at segment start, and media seconds per timeline second. */
   inPointSec: number;
   speed: number;
+  /** PE-16: seconds this segment overlaps the one before it (a crossfade entrance); 0 otherwise. */
+  overlapSec: number;
 }
 
 export type Segment = TitleSegment | MediaSegment;
@@ -59,6 +72,10 @@ export interface AudioClip {
   cutBy?: 'chapter' | 'next' | 'end';
   /** Plays on past its chapter (AudioCue.spanChapters). */
   spans: boolean;
+  /** AU-8: repeats its trimmed part (outPointSec - inPointSec long) until it stops. */
+  loopSec?: number;
+  /** AU-7: seconds of crossfade at its end into the next clip on its lane (it fades out over them). */
+  crossfadeOutSec?: number;
 }
 
 export interface ChapterSpan {
@@ -95,6 +112,12 @@ export function cueDuration(item: MediaItem, cue: Cue): number | undefined {
   return (outPt - inPt) / (cue.speed || 1);
 }
 
+/** MV-6 default: chapter transitions in the inset, over 3 s. */
+export const DEFAULT_MAP_TRANSITION = { mode: 'inset' as const, durationSec: 3 };
+
+/** PE-16: the longest a crossfade may be, as a share of either item's length. */
+const MAX_OVERLAP_SHARE = 0.5;
+
 export function buildTimeline(p: Travelogue): Timeline {
   const cueByItem = new Map(p.cues.map((c) => [c.itemId, c]));
   const segments: Segment[] = [];
@@ -102,21 +125,29 @@ export function buildTimeline(p: Travelogue): Timeline {
   const skipped: Timeline['skipped'] = [];
   let t = 0;
 
+  const byId = new Map(p.media.map((m) => [m.id, m]));
+  const transition = p.mapView.transition ?? DEFAULT_MAP_TRANSITION;
+  const mapOn = (ch: Chapter) => p.mapView.enabled && ch.mapInset !== 'off' && !!ch.coordinates;
   p.chapters.forEach((ch, chapterIndex) => {
     const chStart = t;
-    if (ch.titleCard.enabled) {
-      const duration = ch.titleCard.durationSec ?? p.cueProfile.titleCardSec;
-      if (duration > 0) {
-        segments.push({
-          kind: 'title', chapterId: ch.id, chapterIndex, start: t, duration,
-          title: ch.title,
-          subtitle: [ch.locationName, formatDateRange(ch)].filter(Boolean).join(' · '),
-          description: ch.description.trim(),
-          entrance: { type: 'fade', durationSec: p.cueProfile.fadeInSec },
-          exit: { type: 'fade', durationSec: p.cueProfile.fadeOutSec },
-        });
-        t += duration;
-      }
+    const tc = ch.titleCard;
+    const cardSec = tc.enabled ? tc.durationSec ?? p.cueProfile.titleCardSec : 0;
+    const mapSec = transition.mode === 'fullFrame' && mapOn(ch) ? transition.durationSec : 0;
+    if (cardSec > 0 || mapSec > 0) {
+      const bg = tc.backgroundItemId ? byId.get(tc.backgroundItemId) : undefined;
+      const duration = cardSec + mapSec;
+      segments.push({
+        kind: 'title', chapterId: ch.id, chapterIndex, start: t, duration,
+        title: tc.title?.trim() || ch.title,
+        subtitle: tc.subtitle !== undefined ? tc.subtitle.trim() : [ch.locationName, formatDateRange(ch)].filter(Boolean).join(' · '),
+        description: (tc.description !== undefined ? tc.description : ch.description).trim(),
+        layout: tc.layout ?? 'center',
+        background: bg && (bg.kind === 'image' || bg.kind === 'video') && (bg.status === undefined || bg.status === 'ready') ? bg : undefined,
+        mapSec, card: cardSec > 0,
+        entrance: { type: 'fade', durationSec: p.cueProfile.fadeInSec },
+        exit: { type: 'fade', durationSec: p.cueProfile.fadeOutSec },
+      });
+      t += duration;
     }
     const items = p.media.filter((m) => m.chapterId === ch.id && (m.kind === 'image' || m.kind === 'video'));
     // Items without a cue play last in their chapter, in file order ('~' sorts after every order key).
@@ -133,9 +164,15 @@ export function buildTimeline(p: Travelogue): Timeline {
         skipped.push({ itemId: item.id, reason: item.kind === 'video' ? 'video length unknown and no out-point set' : 'no duration' });
         continue;
       }
+      // PE-16: a crossfade entrance starts over the end of the segment before it.
+      const prev = segments[segments.length - 1];
+      const overlapSec = cue.entrance.type === 'crossfade' && prev
+        ? Math.max(0, Math.min(cue.entrance.durationSec, prev.duration * MAX_OVERLAP_SHARE, duration * MAX_OVERLAP_SHARE))
+        : 0;
+      t -= overlapSec;
       segments.push({
         kind: item.kind as 'image' | 'video', chapterId: ch.id, chapterIndex, start: t, duration,
-        item, cue, inPointSec: cue.inPointSec ?? 0, speed: cue.speed || 1,
+        item, cue, inPointSec: cue.inPointSec ?? 0, speed: cue.speed || 1, overlapSec,
       });
       t += duration;
     }
@@ -194,11 +231,14 @@ function buildAudio(p: Travelogue, segments: Segment[], chapters: ChapterSpan[],
       skipped.push({ itemId: item.id, reason: 'starts after its chapter ends' });
       continue;
     }
-    const full = Math.max(0, outPt - inPt);
+    const loopSec = a.loop && outPt - inPt > MIN_AUDIO_SEC ? outPt - inPt : undefined;
+    // A looping clip is as long as it is allowed to be: its chapter, or with spanChapters the lane or travelogue.
+    const full = loopSec ? Number.POSITIVE_INFINITY : Math.max(0, outPt - inPt);
     placed.push({
       item, cue, laneId: a.laneId, chapterId: span.chapterId, chapterIndex: span.index, start, duration: full, inPointSec: inPt,
       anchorItemId: a.anchor.type === 'item' ? a.anchor.itemId : undefined,
       fadeInSec: a.fadeInSec, fadeOutSec: a.fadeOutSec, duck: a.duck, cutSec: 0, spans: !!a.spanChapters, chapterEnd: span.end,
+      ...(loopSec ? { loopSec } : {}),
     });
   }
   // Where each clip stops: its chapter's end; or, spanning chapters, the next clip on its lane or the travelogue's end.
@@ -208,10 +248,16 @@ function buildAudio(p: Travelogue, segments: Segment[], chapters: ChapterSpan[],
     const full = c.duration;
     let limit = c.chapterEnd;
     let by: AudioClip['cutBy'] = 'chapter';
+    let crossfadeOutSec: number | undefined;
     if (c.spans) {
       const next = placed.find((o) => o !== c && o.laneId === c.laneId && o.start > c.start + MIN_AUDIO_SEC);
       limit = next ? Math.min(next.start, end) : end;
       by = next && next.start < end ? 'next' : 'end';
+      // AU-7: a next clip that crossfades lets this one run on under its fade-in, fading out as it comes in.
+      if (next && next.start < end && next.cue.audio?.crossfade && next.fadeInSec > 0) {
+        crossfadeOutSec = Math.min(next.fadeInSec, end - next.start);
+        limit = next.start + crossfadeOutSec;
+      }
     }
     const duration = Math.min(full, limit - c.start);
     if (!(duration > MIN_AUDIO_SEC)) {
@@ -220,7 +266,13 @@ function buildAudio(p: Travelogue, segments: Segment[], chapters: ChapterSpan[],
     }
     const { chapterEnd: _end, ...clip } = c;
     void _end;
-    out.push({ ...clip, duration, cutSec: full - duration, cutBy: full - duration > 1e-6 ? by : undefined });
+    const cut = Number.isFinite(full) ? full - duration : 0;
+    const reachedLimit = duration < full - 1e-6;
+    out.push({
+      ...clip, duration, cutSec: cut,
+      cutBy: reachedLimit && (cut > 1e-6 || clip.loopSec) ? (crossfadeOutSec ? 'next' : by) : undefined,
+      ...(crossfadeOutSec && reachedLimit ? { crossfadeOutSec, fadeOutSec: Math.max(clip.fadeOutSec, crossfadeOutSec) } : {}),
+    });
   }
   return out.sort((x, y) => x.start - y.start);
 }

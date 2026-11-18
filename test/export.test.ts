@@ -10,10 +10,11 @@ import { after, before, describe, it } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import {
-  buildTimeline, exportSize, parseProject, planVideo, resolveRange, settingsProblem, audioSources, exportFileName, DEFAULT_EXPORT,
+  buildTimeline, exportSize, frameAt, frameTime, parseProject, planVideo, resolveRange, settingsProblem, audioSources, exportFileName, DEFAULT_EXPORT,
   type ExportSettings, type Travelogue,
 } from '../src/core/index.js';
 import { startApp, type App } from '../src/server/app.js';
+import { geoConfigFromEnv } from '../src/server/geo.js';
 import type { ExportInfo } from '../src/server/exports.js';
 import { withExif } from '../src/server/heif.js';
 import { exifTiff } from './helpers/heic.js';
@@ -22,7 +23,7 @@ const run = promisify(execFile);
 const here = path.dirname(fileURLToPath(import.meta.url));
 const SAMPLE_DIR = path.resolve(here, '../samples/hand-written-20');
 const sample = () => parseProject(readFileSync(path.join(SAMPLE_DIR, 'trip.travelogue.json'), 'utf8')).project;
-const sizeOf = (seg: { item: { width?: number; height?: number } }) => (seg.item.width && seg.item.height ? { w: seg.item.width, h: seg.item.height } : undefined);
+const sizeOf = (item: { width?: number; height?: number }) => (item.width && item.height ? { w: item.width, h: item.height } : undefined);
 
 describe('export plan', () => {
   it('sizes every resolution and aspect (VX-1, VX-6)', () => {
@@ -34,49 +35,21 @@ describe('export plan', () => {
     assert.deepEqual(exportSize('4k', '9:16'), { w: 2160, h: 3840 });
   });
 
-  it('covers every frame exactly once, in timeline order, with the preview\'s segment at each frame (VX-2)', () => {
+  it('plans one frame per 1/30 s of the range; frame k is the travelogue at start + k/30 (VX-2)', () => {
     const tl = buildTimeline(sample());
-    const plan = planVideo(tl, DEFAULT_EXPORT, sizeOf);
+    const plan = planVideo(tl, DEFAULT_EXPORT);
     assert.equal(plan.totalFrames, Math.round(tl.duration * 30));
-    let next = 0;
-    for (const r of plan.runs) {
-      assert.equal(r.firstFrame, next, 'runs are contiguous');
-      next += r.frames;
-      // Every frame of the run is inside its segment.
-      const seg = tl.segments[r.segmentIndex];
-      const tFirst = r.firstFrame / 30, tLast = (r.firstFrame + r.frames - 1) / 30;
-      assert.ok(tFirst >= seg.start - 1e-9 && tLast < seg.start + seg.duration, `run ${r.segmentIndex} inside its segment`);
-    }
-    assert.equal(next, plan.totalFrames);
-    assert.equal(plan.runs.length, tl.segments.length);
-    const title = plan.runs[0];
-    assert.equal(title.kind, 'title');
-    assert.equal(title.fadeIn, 0.5);
-  });
-
-  it('places pictures as the preview does: fitted and centred, in output pixels', () => {
-    const tl = buildTimeline(sample());
-    const plan = planVideo(tl, { ...DEFAULT_EXPORT, aspect: '9:16' }, sizeOf);
-    const r = plan.runs.find((x) => x.kind === 'image')!;
-    assert.ok(r.kind === 'image');
-    // A landscape photo fitted into a 1080×1920 portrait frame: full width, centred vertically.
-    assert.equal(Math.round(r.dst.w), 1080);
-    assert.ok(Math.abs(r.dst.y + r.dst.h / 2 - 960) < 1);
-  });
-
-  it('exports one chapter or a span (VX-5)', () => {
-    const tl = buildTimeline(sample());
+    assert.equal(frameTime(plan, 90), 3);
     const ch = tl.chapters[1];
-    const plan = planVideo(tl, { ...DEFAULT_EXPORT, range: { kind: 'chapter', chapterId: ch.chapterId } }, sizeOf);
-    assert.equal(plan.start, ch.start);
-    assert.equal(plan.totalFrames, Math.round((ch.end - ch.start) * 30));
-    assert.ok(plan.runs.every((r) => r.chapterId === ch.chapterId));
-    // A span that starts inside a picture: the first run starts part-way through it, so the fade is already under way.
-    const span = planVideo(tl, { ...DEFAULT_EXPORT, range: { kind: 'span', from: 3.25, to: 10 } }, sizeOf);
+    const one = planVideo(tl, { ...DEFAULT_EXPORT, range: { kind: 'chapter', chapterId: ch.chapterId } });
+    assert.equal(one.start, ch.start);
+    assert.equal(one.totalFrames, Math.round((ch.end - ch.start) * 30));
+    assert.equal(frameTime(one, 0), ch.start);
+    const span = planVideo(tl, { ...DEFAULT_EXPORT, range: { kind: 'span', from: 3.25, to: 10 } });
     assert.equal(span.totalFrames, Math.round(6.75 * 30));
-    assert.ok(Math.abs(span.runs[0].localStart - 0.25) < 1 / 30);
     assert.deepEqual(resolveRange(tl, { kind: 'span', from: 0, to: 1e6 }), { start: 0, end: tl.duration });
     assert.throws(() => resolveRange(tl, { kind: 'chapter', chapterId: 'nope' }));
+    assert.deepEqual(planVideo(tl, { ...DEFAULT_EXPORT, aspect: '9:16' }).size, { w: 1080, h: 1920 });
   });
 
   it('checks settings and names files', () => {
@@ -140,7 +113,13 @@ const chapterExport = (chapterId: string, extra: Partial<ExportSettings> = {}): 
 
 describe('MP4 export from the originals', { timeout: 900_000 }, () => {
   before(async () => {
-    app = await startApp({ dataDir: tmp, port: 0, log: () => {}, webDir: path.join(tmp, 'web') });
+    // The export page the render worker opens (normally built by npm run build).
+    const web = path.join(tmp, 'web');
+    await fs.mkdir(web, { recursive: true });
+    const esbuild = await import('esbuild');
+    await esbuild.build({ entryPoints: [path.resolve(here, '../src/web/render-page.ts')], outfile: path.join(web, 'render.js'), bundle: true, format: 'iife', logLevel: 'error' });
+    await fs.copyFile(path.resolve(here, '../src/web/render.html'), path.join(web, 'render.html'));
+    app = await startApp({ dataDir: tmp, port: 0, log: () => {}, webDir: web, geo: geoConfigFromEnv(tmp, { tileUrl: '', geocoderUrl: '' }) });
     const imported = await req('POST', '/api/projects/import', readFileSync(path.join(SAMPLE_DIR, 'trip.travelogue.json'), 'utf8'));
     assert.equal(imported.status, 201, imported.text);
     pid = imported.json.id;
@@ -168,7 +147,7 @@ describe('MP4 export from the originals', { timeout: 900_000 }, () => {
     const tl = buildTimeline(doc);
     const ch = tl.chapters[0];
     const settings = chapterExport(ch.chapterId);
-    const plan = planVideo(tl, settings, sizeOf);
+    const plan = planVideo(tl, settings);
     const created = await req('POST', `/api/projects/${pid}/renders`, { settings });
     assert.equal(created.status, 201, created.text);
     const done = await waitFor(created.json.render.id);
@@ -198,16 +177,16 @@ describe('MP4 export from the originals', { timeout: 900_000 }, () => {
   it('draws the frames the preview draws: black where a fade starts, the picture where it is fully in', async () => {
     const doc = (await req('GET', `/api/projects/${pid}`)).json.project as Travelogue;
     const tl = buildTimeline(doc);
-    const plan = planVideo(tl, chapterExport(tl.chapters[0].chapterId), sizeOf);
     const black = await pixel(firstFile, 0, 640, 360);
     assert.ok(black.every((c) => c < 24), `first frame is black (title fading in): ${black}`);
-    const img = plan.runs.find((r) => r.kind === 'image')!;
-    assert.ok(img.kind === 'image');
-    const mid = (img.firstFrame + img.frames / 2) / 30;
+    const seg = tl.segments.find((x) => x.chapterIndex === 0 && x.kind === 'image' && x.cue.placement.mode === 'fit')!;
+    assert.ok(seg && seg.kind === 'image');
+    const mid = seg.start + seg.duration / 2 - tl.chapters[0].start;
     const got = await pixel(firstFile, mid, 640, 360);
-    // The original's centre pixel, as the preview would show it fitted and centred.
-    const m = doc.media.find((x) => x.id === img.itemId)!;
-    const { stdout } = await run('ffmpeg', ['-v', 'error', '-i', path.join(SAMPLE_DIR, 'media', m.uri), '-vf', `scale=${Math.round(img.dst.w)}:${Math.round(img.dst.h)},format=rgb24,crop=1:1:${Math.round(640 - img.dst.x)}:${Math.round(360 - img.dst.y)}`, '-f', 'rawvideo', '-pix_fmt', 'rgb24', '-'], { encoding: 'buffer' });
+    // The original's centre pixel, fitted and centred as the preview places it.
+    const layer = frameAt(tl, seg.start + seg.duration / 2, { w: 1280, h: 720 }, sizeOf).layers[0];
+    assert.ok(layer.kind === 'image');
+    const { stdout } = await run('ffmpeg', ['-v', 'error', '-i', path.join(SAMPLE_DIR, 'media', seg.item.uri), '-vf', `scale=${Math.round(layer.dst.w)}:${Math.round(layer.dst.h)},format=rgb24,crop=1:1:${Math.round(640 - layer.dst.x)}:${Math.round(360 - layer.dst.y)}`, '-f', 'rawvideo', '-pix_fmt', 'rgb24', '-'], { encoding: 'buffer' });
     const want = [stdout[0], stdout[1], stdout[2]];
     assert.ok(got.every((c, i) => Math.abs(c - want[i]) < 24), `centre ${got} vs original ${want}`);
   });

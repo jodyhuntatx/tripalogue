@@ -4,13 +4,12 @@
  * link to the item that caused them (VX-4), and the notice that a file is
  * ready, in whichever view is open, also after the tab was closed (VX-10).
  *
- * The server renders from the originals. The browser draws only the title
- * cards, with the player's own drawing code, so they look as in the preview.
+ * The server renders from the originals, drawing every frame with the
+ * player's own drawing code (in a browser of its own), as in the preview.
  */
 import {
-  buildTimeline, exportSize, planVideo, resolveRange, DEFAULT_EXPORT, type ExportRange, type ExportResolution, type ExportSettings, type AspectRatio,
+  buildTimeline, exportSize, resolveRange, DEFAULT_EXPORT, type ExportRange, type ExportResolution, type ExportSettings, type AspectRatio,
 } from '../core/index.js';
-import { drawTitleCard } from '../player/player.js';
 import { Api, type RenderInfo } from './api.js';
 import { h, fill } from './dom.js';
 import type { ProjectSession } from './session.js';
@@ -193,26 +192,6 @@ export function mountExport(s: ProjectSession, o: {
     timer = ms ? setInterval(() => void refresh(), ms) : undefined;
   }
 
-  /** Title cards at the export's size, drawn by the preview's code. */
-  function titleCards(st: ExportSettings): Record<number, string> {
-    const tl = buildTimeline(s.state);
-    const plan = planVideo(tl, st, () => undefined);
-    const size = plan.size;
-    const canvas = document.createElement('canvas');
-    canvas.width = size.w;
-    canvas.height = size.h;
-    const ctx = canvas.getContext('2d', { alpha: false })!;
-    const out: Record<number, string> = {};
-    for (const r of plan.runs) {
-      if (r.kind !== 'title' || out[r.segmentIndex]) continue;
-      ctx.fillStyle = '#000';
-      ctx.fillRect(0, 0, size.w, size.h);
-      drawTitleCard(ctx, r, size);
-      out[r.segmentIndex] = canvas.toDataURL('image/jpeg', 0.93);
-    }
-    return out;
-  }
-
   start.addEventListener('click', async () => {
     const st = settings();
     if (typeof st === 'string') return;
@@ -220,7 +199,7 @@ export function mountExport(s: ProjectSession, o: {
     problem.hidden = true;
     try {
       await s.flush(); // the server renders what it has: send the latest edits first
-      await Api.startRender(id, st, titleCards(st));
+      await Api.startRender(id, st);
       await refresh();
     } catch (e) {
       problem.textContent = (e as Error).message;
