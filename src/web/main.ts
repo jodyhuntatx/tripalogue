@@ -191,6 +191,7 @@ async function renderProject(id: string, initialView?: View) {
   const time = h('span', { id: 'time' }, '0:00 / 0:00');
   const muteBtn = h('button', { id: 'mute', 'aria-pressed': 'false' }, 'Mute');
   const chapterLabel = h('div', { id: 'chapter', class: 'muted' });
+  const soundNote = h('span', { id: 'sound-note', class: 'small muted', hidden: true }, 'Your browser held back a clip\'s sound. Pause and Play to hear it.');
   const statusChip = h('span', { id: 'save-status', class: 'chip', role: 'status', 'aria-live': 'polite' });
   const titleInput = h('input', { id: 'title', class: 'title-input', 'aria-label': 'Travelogue title', value: s.state.title });
   const undoBtn = h('button', { id: 'undo', onclick: () => s.undo() }, 'Undo');
@@ -265,7 +266,7 @@ async function renderProject(id: string, initialView?: View) {
           playBtn,
           h('button', { id: 'next', 'aria-label': 'Next chapter', onclick: () => player.seekChapter(1) }, '⏭'),
           h('div', { class: 'scrub-wrap' }, scrub, marks),
-          time, muteBtn, inset.settings),
+          time, muteBtn, inset.settings, soundNote),
         chapterLabel, meta, editorHost),
       h('aside', { class: 'side card', id: 'side-panel' }, tabBar, side));
 
@@ -317,6 +318,7 @@ async function renderProject(id: string, initialView?: View) {
     onState: (st) => {
       document.body.dataset.state = st;
       playBtn.textContent = st === 'playing' ? 'Pause' : st === 'ended' ? 'Replay' : 'Play';
+      if (st !== 'playing') soundNote.hidden = true;
     },
     onTime: (t, frame) => {
       if (document.activeElement !== scrub) scrub.value = String(t);
@@ -328,7 +330,10 @@ async function renderProject(id: string, initialView?: View) {
       editor.onTime(t);
       stage.refresh();
     },
-    onEvent: (name, props) => telemetry.track(`player_${name}`, props ?? {}),
+    onEvent: (name, props) => {
+      if (name === 'sound_blocked') soundNote.hidden = false;
+      telemetry.track(`player_${name}`, props ?? {});
+    },
   });
   document.body.dataset.state = player.state;
   const editor = mountEditor(s, {

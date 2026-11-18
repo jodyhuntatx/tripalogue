@@ -427,6 +427,45 @@ try {
     jank.playing && jank.seeks === 0 && jank.drift < 0.1 && Math.abs(jank.advanced - jank.wall) < 0.4,
     `${jank.seeks} re-seeks; playhead ${jank.advanced.toFixed(2)} s in ${jank.wall.toFixed(2)} s; drift ${jank.drift.toFixed(3)} s`);
 
+  // Safari's rule, recreated in Chromium: a media element may play with sound only once it has been played
+  // inside a click or key handler (not in a later frame). A video that starts under the song must not silence the song.
+  await page.evaluate(`(() => {
+    let inGesture = false;
+    for (const type of ['click', 'keydown']) window.addEventListener(type, () => { inGesture = true; setTimeout(() => { inGesture = false; }, 0); }, true);
+    const play = HTMLMediaElement.prototype.play;
+    HTMLMediaElement.prototype.play = function () {
+      if (!this.__unlocked) {
+        if (inGesture) this.__unlocked = true;
+        else if (!this.muted) return Promise.reject(new DOMException('Needs a user gesture', 'NotAllowedError'));
+      }
+      return play.call(this);
+    };
+    window.__blocked = 0;
+  })()`);
+  const vid = await page.evaluate(`(() => {
+    const p = window.tripalogue.player;
+    const song = p.timeline.audio.find((c) => c.item.id === ${JSON.stringify(songId)});
+    const v = p.timeline.segments.find((s) => s.kind === 'video' && s.start > song.start + 2 && s.start + 2 < song.start + song.duration);
+    return v ? { id: v.item.id, start: v.start } : null;
+  })()`) as { id: string; start: number } | null;
+  let gesture = { songPlaying: false, songMuted: true, videoPlaying: false, videoMuted: true, note: true };
+  if (vid) {
+    await page.evaluate((t) => { const p = window.tripalogue!.player!; p.setMuted(false); p.seek(t); }, vid.start - 1.2);
+    await page.click('#play');
+    await page.waitForTimeout(2500);
+    gesture = await page.evaluate(`(() => {
+      const p = window.tripalogue.player;
+      const song = p.elementFor(${JSON.stringify(songId)});
+      const video = p.elementFor(${JSON.stringify(vid.id)});
+      return { songPlaying: !song.paused, songMuted: song.muted, videoPlaying: !!video && !video.paused, videoMuted: !video || video.muted,
+        note: document.getElementById('sound-note')?.hidden === false };
+    })()`) as typeof gesture;
+    await page.click('#play');
+  }
+  check('when Play is clicked, a video that starts later under the song plays with sound, and the song keeps playing (Safari\'s autoplay rule)',
+    !!vid && gesture.songPlaying && !gesture.songMuted && gesture.videoPlaying && !gesture.videoMuted && !gesture.note,
+    vid ? JSON.stringify(gesture) : 'no video under the song');
+
   // ---- play this chapter, reset a chapter ----
   await page.click('#pe-timeline .pe-chapter[data-chapter="ch-sintra"]');
   const sintra = (await tl()).chapters.find((c) => c.id === 'ch-sintra')!;
