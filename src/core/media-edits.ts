@@ -5,7 +5,7 @@
  * keepAssigned after each, so changed times move items between chapters and
  * re-sort them in the same undoable step.
  */
-import { effectiveInstant, keepAssigned, reassign } from './assign.js';
+import { chapterWindow, effectiveInstant, keepAssigned, reassign } from './assign.js';
 import { localToUtc } from './itinerary.js';
 import type { Id, MediaItem, Travelogue } from './schema.js';
 
@@ -116,8 +116,11 @@ export function previewClockOffset(p: Travelogue, sourceId: Id, seconds: number)
 export function dropIntoChapter(p: Travelogue, ids: Id[], chapterId: Id, beforeId?: Id): Travelogue {
   const ch = p.chapters.find((c) => c.id === chapterId);
   if (!ch || !ids.length) return p;
-  const start = localToUtc(ch.start, ch.timeZone);
-  const end = localToUtc(ch.end, ch.timeZone, true) + 59_000;
+  // Land inside the window the assignment rule uses, so the item stays where it was dropped.
+  const win = chapterWindow(p, chapterId);
+  if (!win || !(win.end > win.start)) return p;
+  const { start } = win;
+  const end = win.end - 1000;
   const clamp = (t: number) => Math.max(start, Math.min(end, t));
   const moving = new Set(ids);
   let target: number;

@@ -57,17 +57,26 @@ export const hasTimestamp = (m: MediaItem) => !!(m.userTimestamp || m.capturedAt
 interface ChapterWindow { chapter: Chapter; start: number; end: number }
 
 /**
- * Each chapter's window [start, end): the end is exclusive so back-to-back chapters (one ends 08:00, the next
- * starts 08:00) never share an instant; an end at a minute's :59 (or a date-only end) covers that whole minute.
+ * Each chapter's window [start, end). The end minute is part of the chapter: a chapter that ends 08:50 holds
+ * 08:50:00–08:50:59. The one exception is back-to-back chapters (one ends 08:00, the next starts 08:00): there
+ * the minute belongs to the chapter that starts, so the two never share an instant.
  */
 function windows(chapters: Chapter[]): ChapterWindow[] {
+  const starts = new Set(chapters.map((c) => localToUtc(c.start, c.timeZone)));
   return chapters.map((chapter) => {
     const start = localToUtc(chapter.start, chapter.timeZone);
-    const dateOnly = !/T\d{2}:\d{2}/.test(chapter.end);
     const endMinute = localToUtc(chapter.end, chapter.timeZone, true);
-    const wholeMinute = dateOnly || /:59$/.test(chapter.end);
-    return { chapter, start, end: endMinute + (wholeMinute ? 60_000 : 0) };
+    const dateOnly = !/T\d{2}:\d{2}/.test(chapter.end);
+    // A date-only end is read as 23:59:59, so it already reaches the end of its day.
+    const end = dateOnly ? endMinute + 1000 : starts.has(endMinute) ? endMinute : endMinute + 60_000;
+    return { chapter, start, end };
   });
+}
+
+/** A chapter's window as the assignment rule reads it: an item belongs if start <= its time < end. */
+export function chapterWindow(p: Travelogue, chapterId: Id): { start: number; end: number } | undefined {
+  const w = windows(p.chapters).find((x) => x.chapter.id === chapterId);
+  return w && { start: w.start, end: w.end };
 }
 
 export interface ChapterPlacement {
