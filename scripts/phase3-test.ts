@@ -400,6 +400,33 @@ try {
   await page.evaluate(() => window.tripalogue!.player!.pause());
   check('in playback the song plays alongside the pictures, kept to the timeline clock', drift.playing && drift.drift < 0.25, `drift ${drift.drift.toFixed(3)} s`);
 
+  // A busy browser (long frames every half second) must not make the player re-seek the song: re-seeks are
+  // heard as gaps and seen as jumps. The playhead follows the song's own clock instead.
+  await page.evaluate((t) => { const p = window.tripalogue!.player!; p.seek(t); p.play(); }, songClip.start + 10);
+  await page.waitForTimeout(800);
+  // Passed as a string: tsx's helpers for named functions do not exist in the page.
+  const jank = await page.evaluate(`(async () => {
+    const p = window.tripalogue.player;
+    const id = ${JSON.stringify(songId)};
+    const el = p.elementFor(id);
+    let seeks = 0;
+    const count = () => { seeks += 1; };
+    el.addEventListener('seeking', count);
+    const t0 = p.time;
+    const w0 = performance.now();
+    const iv = setInterval(() => { const end = performance.now() + 180; while (performance.now() < end) {} }, 500);
+    await new Promise((r) => setTimeout(r, 6000));
+    clearInterval(iv);
+    await new Promise((r) => setTimeout(r, 300));
+    el.removeEventListener('seeking', count);
+    const v = p.mix.find((x) => x.itemId === id);
+    return { seeks, advanced: p.time - t0, wall: (performance.now() - w0) / 1000, drift: Math.abs(el.currentTime - v.mediaTimeSec), playing: !el.paused };
+  })()`) as { seeks: number; advanced: number; wall: number; drift: number; playing: boolean };
+  await page.evaluate(() => window.tripalogue!.player!.pause());
+  check('with a busy browser the song plays on without re-seeks, and the playhead keeps real time',
+    jank.playing && jank.seeks === 0 && jank.drift < 0.1 && Math.abs(jank.advanced - jank.wall) < 0.4,
+    `${jank.seeks} re-seeks; playhead ${jank.advanced.toFixed(2)} s in ${jank.wall.toFixed(2)} s; drift ${jank.drift.toFixed(3)} s`);
+
   // ---- play this chapter, reset a chapter ----
   await page.click('#pe-timeline .pe-chapter[data-chapter="ch-sintra"]');
   const sintra = (await tl()).chapters.find((c) => c.id === 'ch-sintra')!;
