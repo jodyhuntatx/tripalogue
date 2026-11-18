@@ -321,10 +321,11 @@ try {
   const porto = tl3.chapters.find((c) => c.id === 'ch-porto')!;
   const portoFirst = tl3.segs.find((s) => s.chapterId === 'ch-porto')!;
   await clip(portoFirst.id).scrollIntoViewIfNeeded();
-  const pf = await clipBox(portoFirst.id);
+  let pf = await clipBox(portoFirst.id);
   const ppsNow = pf.width / portoFirst.duration;
   const xFor = (t: number) => pf.x + (t - portoFirst.start) * ppsNow;
   const dragChip = async (id: string, toX: number, laneKind: string) => {
+    await page.locator(`[data-audio="${id}"]`).scrollIntoViewIfNeeded();
     const chip = (await page.locator(`[data-audio="${id}"]`).boundingBox())!;
     const l = await lane(laneKind);
     await page.mouse.move(chip.x + 10, chip.y + chip.height / 2);
@@ -337,10 +338,52 @@ try {
   await dragChip(songId, xFor(porto.start + 0.3), 'music');
   const songCue = (await state()).cues.find((c) => c.itemId === songId)!;
   const songClip = (await tl()).audio.find((c) => c.id === songId)!;
-  check('a song dragged onto the Music lane plays under the chapter, from its time in the chapter to the chapter\'s end (AU-1, AU-2)',
-    songCue.audio?.laneId === 'lane-music' && songCue.audio.anchor.type === 'chapterTime' && songClip.chapterId === 'ch-porto'
-      && Math.abs(songClip.start - porto.start) < 1 && Math.abs(songClip.start + songClip.duration - porto.end) < 0.01,
-    `${fmt(songClip.start)}–${fmt(songClip.start + songClip.duration)} (Porto ${fmt(porto.start)}–${fmt(porto.end)})`);
+  const tlEnd = tl3.chapters[tl3.chapters.length - 1].end;
+  check('a song dragged onto the Music lane plays from its time in the chapter on into the next chapters, to the travelogue\'s end (AU-1, AU-2)',
+    songCue.audio?.laneId === 'lane-music' && songCue.audio.anchor.type === 'chapterTime' && songCue.audio.spanChapters === true && songClip.chapterId === 'ch-porto'
+      && Math.abs(songClip.start - porto.start) < 1 && Math.abs(songClip.start + songClip.duration - tlEnd) < 0.01,
+    `${fmt(songClip.start)}–${fmt(songClip.start + songClip.duration)} (Porto ${fmt(porto.start)}–${fmt(porto.end)}, the travelogue ends ${fmt(tlEnd)})`);
+
+  // Trim it by dragging its edges, then keep it inside Porto with the checkbox; Undo puts it all back.
+  const songEl = page.locator(`#pe-lane-music .pe-clip.audio[data-item="${songId}"]`);
+  await songEl.scrollIntoViewIfNeeded();
+  const dragEdge = async (side: 'left' | 'right', dSec: number) => {
+    const handle = songEl.locator(`[data-edge="${side}"]`);
+    await handle.scrollIntoViewIfNeeded();
+    const b = (await handle.boundingBox())!;
+    const x0 = b.x + b.width / 2, y0 = b.y + b.height / 2;
+    await page.mouse.move(x0, y0);
+    await page.mouse.down();
+    await page.mouse.move(x0 + dSec * ppsNow, y0, { steps: 10 });
+    await page.mouse.up();
+    await saved(page);
+    await page.waitForTimeout(150); // the player's timeline follows the project within 40 ms
+  };
+  await dragEdge('right', -10);
+  const endTrim = (await tl()).audio.find((c) => c.id === songId)!;
+  await dragEdge('left', 2);
+  const startTrim = (await tl()).audio.find((c) => c.id === songId)!;
+  const startCue = (await state()).cues.find((c) => c.itemId === songId)!;
+  await shot('06b-music-across-chapters');
+  check('drag a music clip\'s edges to trim its end and its start; trimming the start keeps the rest where it was',
+    Math.abs(endTrim.start + endTrim.duration - (tlEnd - 10)) < 0.3 && Math.abs(startTrim.start - (songClip.start + 2)) < 0.3
+      && Math.abs(startTrim.start + startTrim.duration - (endTrim.start + endTrim.duration)) < 0.05 && Math.abs((startCue.inPointSec ?? 0) - 2) < 0.3,
+    `ends ${fmt(endTrim.start + endTrim.duration)} after trimming 10 s; then starts ${(startTrim.start - songClip.start).toFixed(2)} s later at ${(startCue.inPointSec ?? 0).toFixed(2)} s into the file`);
+  await page.click('#pe-span');
+  await saved(page);
+  await page.waitForTimeout(150);
+  const inside = (await tl()).audio.find((c) => c.id === songId)!;
+  check('"Play on into the next chapters" off: the song stops at the end of its chapter again',
+    Math.abs(inside.start + inside.duration - porto.end) < 0.01, `${fmt(inside.start)}–${fmt(inside.start + inside.duration)}`);
+  for (let i = 0; i < 3; i++) await page.click('#undo');
+  await saved(page);
+  await page.waitForTimeout(150);
+  const restored = (await tl()).audio.find((c) => c.id === songId)!;
+  check('Undo puts the song back as dropped', Math.abs(restored.start - songClip.start) < 0.01 && Math.abs(restored.duration - songClip.duration) < 0.01,
+    `${fmt(restored.start)}–${fmt(restored.start + restored.duration)}`);
+  // Back to the start of Porto for the memo (the edge drags scrolled the timeline).
+  await clip(portoFirst.id).scrollIntoViewIfNeeded();
+  pf = await clipBox(portoFirst.id);
 
   const host = (await tl()).segs.filter((s) => s.chapterId === 'ch-porto')[4];
   await dragChip(memoId, xFor(host.start + 0.5), 'narration');

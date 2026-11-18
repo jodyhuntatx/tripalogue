@@ -241,6 +241,7 @@ export function validate(raw: unknown): ValidationIssue[] {
         num(a, 'fadeInSec', `${path}.audio`, 0, 60);
         num(a, 'fadeOutSec', `${path}.audio`, 0, 60);
         if (typeof a.duck !== 'boolean') err(`${path}.audio.duck`, 'must be a boolean');
+        if (a.spanChapters !== undefined && typeof a.spanChapters !== 'boolean') err(`${path}.audio.spanChapters`, 'must be a boolean');
         const an = a.anchor;
         if (!isObj(an)) err(`${path}.audio.anchor`, 'must be an object');
         else {

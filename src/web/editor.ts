@@ -13,7 +13,7 @@
  */
 import {
   buildTimeline, MIN_CLIP_SEC, place, MIN_IMAGE_SEC, moveAudio, moveClips, placeAudio, resetChapter, resetCues, setAudioAnchorKind, setAudioCue,
-  setDurations, setIncludedMany, setLane, setPlacements, setTarget, setVideoTrim, setVolumes, unplaceAudio,
+  setDurations, setIncludedMany, setLane, setPlacements, setTarget, setVideoTrim, setVolumes, trimAudio, unplaceAudio, MIN_AUDIO_TRIM_SEC,
   type AudioClip, type Id, type MediaItem, type MediaSegment, type PlacementMode, type Timeline, type Travelogue,
 } from '../core/index.js';
 import { Api } from './api.js';
@@ -242,7 +242,9 @@ export function mountEditor(s: ProjectSession, ctx: EditorContext): EditorView {
         let e = cache.audio.get(c.item.id);
         if (!e || e.parentElement !== row) {
           e?.remove();
-          e = h('div', { class: 'pe-clip audio', 'data-item': c.item.id, tabindex: '0' }, h('span', { class: 'label' }));
+          e = h('div', { class: 'pe-clip audio', 'data-item': c.item.id, tabindex: '0' }, h('span', { class: 'label' }),
+            s.canEdit && h('span', { class: 'edge left', 'data-edge': 'left', title: 'Drag to trim the start' }),
+            s.canEdit && h('span', { class: 'edge', 'data-edge': 'right', title: 'Drag to trim the end' }));
           cache.audio.set(c.item.id, e);
           row.append(e);
         }
@@ -274,7 +276,8 @@ export function mountEditor(s: ProjectSession, ctx: EditorContext): EditorView {
   function updateAudioClip(e: HTMLElement, c: AudioClip) {
     const anchorName = c.anchorItemId ? nameOf(s.state.media.find((m) => m.id === c.anchorItemId) ?? c.item) : '';
     e.classList.toggle('anchored', !!c.anchorItemId);
-    e.title = `${nameOf(c.item)} · ${fmt1(c.duration)} s · ${c.anchorItemId ? `moves with ${anchorName}` : 'at a time in the chapter'}${c.cutSec > 0.05 ? ` · ${fmt1(c.cutSec)} s cut at the chapter end` : ''}`;
+    e.classList.toggle('spans', c.spans);
+    e.title = `${nameOf(c.item)} · ${fmt1(c.duration)} s · ${c.anchorItemId ? `moves with ${anchorName}` : 'at a time in the chapter'}${c.spans ? ' · plays on into the next chapters' : ''}${c.cutSec > 0.05 ? ` · ${fmt1(c.cutSec)} s ${cutWhy(c)}` : ''} · drag its edges to trim`;
     e.querySelector('.label')!.textContent = `${c.anchorItemId ? '⚓ ' : ''}${nameOf(c.item)}`;
     e.style.transform = '';
     span(e, c.start, c.duration, 4);
@@ -373,11 +376,18 @@ export function mountEditor(s: ProjectSession, ctx: EditorContext): EditorView {
     ctx.player.play();
   }
 
+  /** Why the end of an audio clip is cut, in words. */
+  function cutWhy(c: AudioClip): string {
+    if (c.cutBy === 'next') return 'cut where the next clip on the lane starts';
+    if (c.cutBy === 'end') return 'cut at the end of the travelogue';
+    return 'cut at the chapter end';
+  }
+
   // ---- pointer: select, drag to reorder, drag edges, drag audio, scrub ----
   let narrowOnUp: Id | null = null;
   let drag: null | {
-    kind: 'reorder' | 'edge' | 'audio' | 'place' | 'scrub';
-    id: Id; x0: number; moved: boolean; ghost?: HTMLElement; base?: number; startT?: number; laneId?: Id;
+    kind: 'reorder' | 'edge' | 'audio' | 'aedge' | 'place' | 'scrub';
+    id: Id; x0: number; moved: boolean; ghost?: HTMLElement; base?: number; startT?: number; laneId?: Id; side?: 'left' | 'right';
   } = null;
 
   function laneAt(clientY: number): Id | undefined {
@@ -437,7 +447,11 @@ export function mountEditor(s: ProjectSession, ctx: EditorContext): EditorView {
     }
     const isAudio = clip.classList.contains('audio');
     const edge = target.dataset.edge === 'right';
-    if (edge) {
+    if (isAudio && target.dataset.edge) {
+      // Trim an audio clip from either end.
+      const c = clipOf(id);
+      if (c) drag = { kind: 'aedge', id, x0: e.clientX, moved: false, side: target.dataset.edge as 'left' | 'right', startT: c.start, base: c.duration };
+    } else if (edge) {
       const seg = segOf(id)!;
       drag = { kind: 'edge', id, x0: e.clientX, moved: false, base: seg.duration };
     } else if (isAudio) {
@@ -459,6 +473,16 @@ export function mountEditor(s: ProjectSession, ctx: EditorContext): EditorView {
       if (clipEl) {
         clipEl.style.width = `${Math.max(3, d * pps())}px`;
         clipEl.querySelector('.label')!.textContent = `${fmt1(d)}s`;
+      }
+      return;
+    }
+    if (drag.kind === 'aedge') {
+      const clipEl = el.querySelector<HTMLElement>(`.pe-clip.audio[data-item="${drag.id}"]`);
+      const t = trimTo(drag, dx);
+      if (clipEl && t) {
+        clipEl.style.left = `${x(t.start)}px`;
+        clipEl.style.width = `${Math.max(3, t.length * pps())}px`;
+        clipEl.querySelector('.label')!.textContent = `${fmt1(t.length)}s`;
       }
       return;
     }
@@ -495,10 +519,16 @@ export function mountEditor(s: ProjectSession, ctx: EditorContext): EditorView {
     d?.ghost?.remove();
     el.querySelectorAll('.drop-on').forEach((r) => r.classList.remove('drop-on'));
     if (!d || !d.moved || e.type === 'pointercancel') {
-      if (d?.kind === 'audio') render();
+      if (d?.kind === 'audio' || d?.kind === 'aedge') render();
       return;
     }
     const dx = e.clientX - d.x0;
+    if (d.kind === 'aedge') {
+      const t = trimTo(d, dx);
+      if (!t) return render();
+      edit(d.side === 'left' ? 'Trim audio start' : 'Trim audio end', (q) => trimAudio(q, d.id, d.side === 'left' ? 'start' : 'end', t.media, tl));
+      return;
+    }
     if (d.kind === 'edge') {
       const seg = segOf(d.id);
       if (!seg) return render();
@@ -522,6 +552,23 @@ export function mountEditor(s: ProjectSession, ctx: EditorContext): EditorView {
       await moveWithQuestion(ids, at.chapterId, at.beforeId);
     }
   };
+  /** An audio edge dragged by dx pixels: where the clip would start, how long it would play, and the media time at that edge. */
+  function trimTo(d: NonNullable<typeof drag>, dx: number): { start: number; length: number; media: number } | undefined {
+    const c = clipOf(d.id);
+    const full = c?.item.durationSec;
+    if (!c || full === undefined) return undefined;
+    const outPt = c.inPointSec + c.duration + c.cutSec; // the clip's own end in the file
+    const dt = dx / pps();
+    if (d.side === 'left') {
+      const media = Math.max(0, Math.min(outPt - MIN_AUDIO_TRIM_SEC, c.inPointSec + dt));
+      const start = d.startT! + (media - c.inPointSec);
+      return { start, length: Math.max(MIN_AUDIO_TRIM_SEC, d.base! - (media - c.inPointSec)), media };
+    }
+    // Right edge: the end within the file; dragging past where the clip is cut lengthens what can play.
+    const media = Math.max(c.inPointSec + MIN_AUDIO_TRIM_SEC, Math.min(full, c.inPointSec + d.base! + dt));
+    return { start: d.startT!, length: media - c.inPointSec, media };
+  }
+
   content.addEventListener('pointerup', (e) => void endDrag(e));
   content.addEventListener('pointercancel', (e) => void endDrag(e));
 
@@ -742,7 +789,7 @@ export function mountEditor(s: ProjectSession, ctx: EditorContext): EditorView {
     fill(inspector,
       h('h3', {}, nameOf(a)),
       h('p', { class: 'muted small', id: 'pe-audio-summary' }, clip
-        ? `Plays ${fmt1(clip.duration)} s from ${fmt(clip.start)}${clip.cutSec > 0.05 ? ` (the last ${fmt1(clip.cutSec)} s fall after the chapter ends and are cut)` : ''}.`
+        ? `Plays ${fmt1(clip.duration)} s from ${fmt(clip.start)}${clip.cutSec > 0.05 ? ` (the last ${fmt1(clip.cutSec)} s are ${cutWhy(clip)})` : ''}.`
         : 'Not playing: its anchor item is not in the cut.'),
       h('div', { class: 'field' }, h('label', { for: 'pe-audio-lane' }, 'Lane'), laneSel),
       h('div', { class: 'field' }, h('label', {}, 'Anchored'),
@@ -754,6 +801,12 @@ export function mountEditor(s: ProjectSession, ctx: EditorContext): EditorView {
       h('div', { class: 'field' }, h('label', { class: 'small' }, h('input', { type: 'checkbox', id: 'pe-duck', checked: au.duck, disabled: !editable,
         onchange: (e: Event) => edit('Audio ducking', (q) => setAudioCue(q, a.id, { duck: (e.target as HTMLInputElement).checked })) }),
         ' Lower music and clip sound while this plays')),
+      h('div', { class: 'field' }, h('label', { class: 'small' }, h('input', { type: 'checkbox', id: 'pe-span', checked: !!au.spanChapters, disabled: !editable,
+        onchange: (e: Event) => edit('Audio across chapters', (q) => setAudioCue(q, a.id, { spanChapters: (e.target as HTMLInputElement).checked })) }),
+        ' Play on into the next chapters'),
+        h('p', { class: 'muted small' }, au.spanChapters
+          ? 'It plays to its end (trim it by dragging its edges, or above), or until the next clip on this lane starts.'
+          : 'It stops when its chapter ends.')),
       h('div', { class: 'row' },
         h('button', { id: 'pe-unplace', class: 'danger-outline', disabled: !editable, onclick: () => { edit('Take audio off its lane', (q) => unplaceAudio(q, a.id)); select([], false); } }, 'Take off the lane'),
         h('button', { onclick: () => playFromSelection() }, '▶ Play from here')));

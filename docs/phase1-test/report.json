@@ -1,7 +1,7 @@
 {
-  "date": "2026-11-18T16:52:10.145Z",
+  "date": "2026-11-18T18:53:13.211Z",
   "browser": "153.0.8010.12",
-  "enterTripSec": 2.29,
+  "enterTripSec": 2.198,
   "checks": [
     {
       "name": "a new travelogue opens in the Itinerary view",

@@ -3,7 +3,8 @@
  * each opened by its title card, followed by its included visual cues in cue
  * order. Unassigned and excluded items do not play. Audio items play when
  * placed on a lane (AU-1): each clip is timed from its anchor, a visual item's
- * start or a time in a chapter, and stops at the end of its chapter.
+ * start or a time in a chapter, and stops at the end of its chapter, unless it is set to play on into the next
+ * chapters (then it stops at its own end, the next clip on its lane, or the end of the travelogue).
  */
 import { defaultCue } from './project.js';
 import type { Chapter, Cue, MediaItem, Transition, Travelogue } from './schema.js';
@@ -53,8 +54,11 @@ export interface AudioClip {
   fadeInSec: number;
   fadeOutSec: number;
   duck: boolean;
-  /** Seconds cut off the end because the chapter ends first. */
+  /** Seconds cut off the clip's end, and what cut them: its chapter's end, the next clip on its lane, or the travelogue's end. */
   cutSec: number;
+  cutBy?: 'chapter' | 'next' | 'end';
+  /** Plays on past its chapter (AudioCue.spanChapters). */
+  spans: boolean;
 }
 
 export interface ChapterSpan {
@@ -150,6 +154,7 @@ function buildAudio(p: Travelogue, segments: Segment[], chapters: ChapterSpan[],
   const segOf = new Map(segments.flatMap((s) => (s.kind === 'title' ? [] : [[s.item.id, s] as const])));
   const spanOf = new Map(chapters.map((c) => [c.chapterId, c]));
   const out: AudioClip[] = [];
+  const placed: (AudioClip & { chapterEnd: number })[] = [];
   for (const cue of p.cues) {
     const a = cue.audio;
     const item = media.get(cue.itemId);
@@ -185,17 +190,37 @@ function buildAudio(p: Travelogue, segments: Segment[], chapters: ChapterSpan[],
     }
     // An item anchor may lead in before its item (negative offset), but never before the chapter starts.
     const start = Math.max(span.start, anchorStart + (a.anchor.type === 'item' ? a.anchor.offsetSec : Math.max(0, a.anchor.offsetSec)));
-    const full = Math.max(0, outPt - inPt);
-    const duration = Math.min(full, span.end - start);
-    if (!(duration > MIN_AUDIO_SEC)) {
+    if (!(span.end - start > MIN_AUDIO_SEC)) {
       skipped.push({ itemId: item.id, reason: 'starts after its chapter ends' });
       continue;
     }
-    out.push({
-      item, cue, laneId: a.laneId, chapterId: span.chapterId, chapterIndex: span.index, start, duration, inPointSec: inPt,
+    const full = Math.max(0, outPt - inPt);
+    placed.push({
+      item, cue, laneId: a.laneId, chapterId: span.chapterId, chapterIndex: span.index, start, duration: full, inPointSec: inPt,
       anchorItemId: a.anchor.type === 'item' ? a.anchor.itemId : undefined,
-      fadeInSec: a.fadeInSec, fadeOutSec: a.fadeOutSec, duck: a.duck, cutSec: full - duration,
+      fadeInSec: a.fadeInSec, fadeOutSec: a.fadeOutSec, duck: a.duck, cutSec: 0, spans: !!a.spanChapters, chapterEnd: span.end,
     });
+  }
+  // Where each clip stops: its chapter's end; or, spanning chapters, the next clip on its lane or the travelogue's end.
+  const end = chapters.length ? chapters[chapters.length - 1].end : 0;
+  placed.sort((x, y) => x.start - y.start);
+  for (const c of placed) {
+    const full = c.duration;
+    let limit = c.chapterEnd;
+    let by: AudioClip['cutBy'] = 'chapter';
+    if (c.spans) {
+      const next = placed.find((o) => o !== c && o.laneId === c.laneId && o.start > c.start + MIN_AUDIO_SEC);
+      limit = next ? Math.min(next.start, end) : end;
+      by = next && next.start < end ? 'next' : 'end';
+    }
+    const duration = Math.min(full, limit - c.start);
+    if (!(duration > MIN_AUDIO_SEC)) {
+      skipped.push({ itemId: c.item.id, reason: 'starts after its chapter ends' });
+      continue;
+    }
+    const { chapterEnd: _end, ...clip } = c;
+    void _end;
+    out.push({ ...clip, duration, cutSec: full - duration, cutBy: full - duration > 1e-6 ? by : undefined });
   }
   return out.sort((x, y) => x.start - y.start);
 }

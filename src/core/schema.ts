@@ -177,6 +177,11 @@ export interface AudioCue {
   fadeInSec: number;
   fadeOutSec: number;
   duck: boolean;
+  /**
+   * Keep playing past the end of its chapter, into the next ones, until the clip's own end (its out-point), the next
+   * clip on the same lane, or the end of the travelogue. Absent or false: the clip stops when its chapter ends.
+   */
+  spanChapters?: boolean;
 }
 
 export interface Cue extends Attribution {
