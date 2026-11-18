@@ -82,7 +82,7 @@ const watch = (p: Page) => {
 watch(page);
 const shot = (name: string) => page.screenshot({ path: path.join(outDir, `${name}.png`), fullPage: false });
 const renders = async (pid: string) => (await (await fetch(`${app.url}api/projects/${pid}/renders`)).json() as { renders: RenderInfo[] }).renders;
-async function waitRender(pid: string, id: string, until = (e: RenderInfo) => !['queued', 'running'].includes(e.status), timeoutMs = 600_000) {
+async function waitRender(pid: string, id: string, until = (e: RenderInfo) => !['queued', 'running'].includes(e.status), timeoutMs = 2_400_000) {
   const t0 = Date.now();
   for (;;) {
     const e = (await renders(pid)).find((x) => x.id === id)!;

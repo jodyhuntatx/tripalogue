@@ -58,7 +58,10 @@ export class Player {
   private lastTick = 0;
   private lastSegment = -1;
   private rate: number;
-  private muted = false;
+  private _muted = false;
+  get muted(): boolean {
+    return this._muted;
+  }
   /** Elements the browser would not let play with sound (no click yet); they play muted until the next Play. */
   private blocked = new Set<HTMLMediaElement>();
   private needsDraw = true;
@@ -111,7 +114,7 @@ export class Player {
     if (this.stateValue === 'ended' || this.t >= this.duration) this.seek(0);
     // Play is pressed in a click or key handler: the moment the browser lets media start with sound.
     this.pool.unlock();
-    for (const el of this.blocked) el.muted = this.muted;
+    for (const el of this.blocked) el.muted = this._muted;
     this.blocked.clear();
     this.lastTick = performance.now();
     this.setState('playing');
@@ -147,7 +150,7 @@ export class Player {
   }
 
   setMuted(m: boolean): void {
-    this.muted = m;
+    this._muted = m;
     this.pool.setMuted(m);
     for (const el of this.blocked) el.muted = true;
   }
@@ -376,7 +379,7 @@ export class Player {
   }
 
   private mutedFor(el: HTMLMediaElement): boolean {
-    return this.muted || this.blocked.has(el);
+    return this._muted || this.blocked.has(el);
   }
 
   private syncMedia(v: HTMLMediaElement, mediaTime: number, speed: number, playingTolerance: number) {

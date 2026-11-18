@@ -28,7 +28,7 @@ const MIME: Record<string, string> = {
   '.json': 'application/json; charset=utf-8', '.map': 'application/json', '.svg': 'image/svg+xml',
   '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png', '.webp': 'image/webp', '.gif': 'image/gif', '.heic': 'image/heic',
   '.mp4': 'video/mp4', '.mov': 'video/quicktime', '.m4v': 'video/mp4', '.webm': 'video/webm',
-  '.mp3': 'audio/mpeg', '.m4a': 'audio/mp4', '.aac': 'audio/aac', '.wav': 'audio/wav',
+  '.mp3': 'audio/mpeg', '.m4a': 'audio/mp4', '.aac': 'audio/aac', '.wav': 'audio/wav', '.weba': 'audio/webm', '.ogg': 'audio/ogg', '.opus': 'audio/ogg',
 };
 
 export interface App {

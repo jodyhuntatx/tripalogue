@@ -1,0 +1,76 @@
+{
+  "date": "2026-11-18T21:46:01.983Z",
+  "browser": "153.0.8010.12",
+  "checks": [
+    {
+      "name": "every cue type is set in three interactions or fewer (acceptance)",
+      "pass": true,
+      "detail": "entrance: slide in: 2; exit: fade out over 1 s: 3; crossfade from the picture before: 2; motion: auto pan and zoom: 2; speed: half: 2; mute a clip: 2; a caption: 3; a place label: 2; a date stamp: 2; hide the map for one item: 2; title card layout: 2"
+    },
+    {
+      "name": "G5: a photo gets a Ken Burns from a close start to a moved end, set by dragging frames on the stage (PE-11)",
+      "pass": true,
+      "detail": "{\"type\":\"kenBurns\",\"from\":{\"x\":0,\"y\":0,\"w\":0.6017,\"h\":0.6017},\"to\":{\"x\":0.1776,\"y\":0.1172,\"w\":0.8,\"h\":0.8}}"
+    },
+    {
+      "name": "G5: three captions on a photo (caption, place, date), one moved and restyled on the stage (PE-14)",
+      "pass": true,
+      "detail": "on screen: Morning light over Alfama | Lisbon, Portugal | Fri, 1 May 2026; moved from y 0.82 to 0.61"
+    },
+    {
+      "name": "G5: the clip plays at half speed and lasts twice as long on the timeline (PE-13)",
+      "pass": true,
+      "detail": "6.0 s → 12.0 s"
+    },
+    {
+      "name": "G5: the inset map set to the top right, round, terrain, with full-frame chapter transitions (MV-3, MV-6, MV-8)",
+      "pass": true,
+      "detail": "{\"label\":\"Chapter 1 of 4\",\"circle\":true,\"right\":true,\"top\":true,\"style\":\"terrain\"}"
+    },
+    {
+      "name": "the map says which chapter this is: \"Chapter 1 of 4\" (MV-5)",
+      "pass": true,
+      "detail": "Chapter 1 of 4"
+    },
+    {
+      "name": "between chapters the map fills the frame and travels to the next place (MV-6)",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "G5: two narration takes recorded; the first one used lands on the Narration lane where recording began (AU-5)",
+      "pass": true,
+      "detail": "2.2 s at 7.0 s (recording began at 7.0 s)"
+    },
+    {
+      "name": "cues copy to other photos, and a saved preset applies with one pick (PE-17)",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "narration lowers music by an amount set on the lane; the song fits its chapter by looping (AU-6, AU-8)",
+      "pass": true,
+      "detail": "ducks [{\"laneId\":\"lane-clip\",\"db\":-12},{\"laneId\":\"lane-music\",\"db\":-18}]; song {\"laneId\":\"lane-music\",\"anchor\":{\"type\":\"chapterTime\",\"chapterId\":\"ch-lisbon\",\"offsetSec\":0},\"fadeInSec\":1,\"fadeOutSec\":2,\"duck\":false,\"loop\":true}"
+    },
+    {
+      "name": "a chapter without a place hides the map there and is flagged in the editor (MV-7)",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "the chapter exports",
+      "pass": true,
+      "detail": "done"
+    },
+    {
+      "name": "exported motion, captions and map match the preview at the same frame (acceptance, VX-7, VX-8)",
+      "pass": true,
+      "detail": "mean difference per colour value (0–255): Ken Burns start: 2.0; Ken Burns end, three captions: 2.4; slide entrance mid-way: 2.5; crossfade: 1.8; title card with the map: 2.5"
+    },
+    {
+      "name": "no errors in the browser console",
+      "pass": true,
+      "detail": ""
+    }
+  ]
+}

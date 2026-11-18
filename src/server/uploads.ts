@@ -28,7 +28,7 @@ import type { Projects } from './projects.js';
 const KIND_BY_EXT: Record<string, MediaItem['kind']> = {
   jpg: 'image', jpeg: 'image', png: 'image', heic: 'image', heif: 'image', webp: 'image', gif: 'image',
   mp4: 'video', mov: 'video', m4v: 'video', webm: 'video',
-  mp3: 'audio', m4a: 'audio', aac: 'audio', wav: 'audio',
+  mp3: 'audio', m4a: 'audio', aac: 'audio', wav: 'audio', weba: 'audio', ogg: 'audio', opus: 'audio',
 };
 
 export function kindForFile(name: string): MediaItem['kind'] | undefined {

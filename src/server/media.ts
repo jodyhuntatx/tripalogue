@@ -251,6 +251,8 @@ export class Jobs {
         assets.thumb = `${base}/thumb.jpg`;
         const proxy = path.join(tmp, 'proxy.m4a');
         await ff(['-i', src, '-vn', '-c:a', 'aac', '-b:a', '128k', '-movflags', '+faststart', proxy]);
+        // AU-5: a recording made in the browser often states no length; the AAC copy does.
+        if (pr.durationSec === undefined) pr = { ...pr, durationSec: (await probe(proxy, this.cfg.ffprobe)).durationSec };
         await this.blobs.putFile(`${base}/proxy.m4a`, proxy);
         assets.proxy = `${base}/proxy.m4a`;
       }

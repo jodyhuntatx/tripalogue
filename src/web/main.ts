@@ -15,6 +15,9 @@ import { mountMedia, type MediaView } from './media.js';
 import { mountEditor, type EditorView } from './editor.js';
 import { mountExport, type ExportView } from './export.js';
 import { mountStageEditor } from './stage-edit.js';
+import { mountStageCues } from './stage-cues.js';
+import { mountRecorder } from './recorder.js';
+import type { StageFocus } from './cue-panel.js';
 import { ProjectSession } from './session.js';
 import { filesFromDrop, mediaFiles, uploadAll, type UploadProgress } from './uploader.js';
 import { fill, h, type Child } from './dom.js';
@@ -323,6 +326,7 @@ async function renderProject(id: string, initialView?: View) {
     stageWrap.style.maxWidth = `calc((100vh - ${editing ? 470 : 190}px) * ${s.state.output.width / s.state.output.height})`;
     editor.setActive(editing);
     stage.setActive(editing);
+    stageCues.setActive(editing);
     renderSide();
     viewTabs.querySelectorAll<HTMLElement>('a').forEach((a) => (a.dataset.view === v ? a.setAttribute('aria-current', 'page') : a.removeAttribute('aria-current')));
     if (v !== 'preview' && v !== 'mix') player.pause();
@@ -352,6 +356,7 @@ async function renderProject(id: string, initialView?: View) {
       marks.querySelectorAll<HTMLElement>('.chapter-mark').forEach((el) => el.classList.toggle('current', Number(el.dataset.index) === frame.chapterIndex));
       editor.onTime(t);
       stage.refresh();
+      stageCues.refresh();
     },
     onEvent: (name, props) => {
       if (name === 'sound_blocked') soundNote.hidden = false;
@@ -359,15 +364,21 @@ async function renderProject(id: string, initialView?: View) {
     },
   });
   document.body.dataset.state = player.state;
+  const focus: StageFocus = { motionItem: null, annotation: null };
   const editor = mountEditor(s, {
-    projectId: id, player,
+    projectId: id, player, focus,
+    onFocus: () => stageCues.focusChanged(),
+    onRecord: () => recorder.open(),
     onSelect: (ids) => {
       stage.setSelection(ids);
+      stageCues.setSelection(ids);
       // Picking a clip shows its details, whichever side tab was open.
       if (tab !== 'Clip') { tab = 'Clip'; renderSide(); }
     },
   });
   const stage = mountStageEditor(s, player, stageWrap, canvas);
+  const stageCues = mountStageCues(s, player, stageWrap, canvas, focus, () => editor.refreshInspector());
+  const recorder = mountRecorder(s, id, player);
   editorHost.append(editor.el);
   stageWrap.style.aspectRatio = `${s.state.output.width} / ${s.state.output.height}`;
   // Keep the frame's shape when the window is wider than the available height allows.
@@ -436,7 +447,7 @@ async function renderProject(id: string, initialView?: View) {
   function update() {
     const p = s.state;
     if (p !== lastProject) {
-      player.setProject(p);
+      player.setProject(stageCues.present(p));
       lastProject = p;
     }
     scrub.max = String(player.duration);
@@ -465,6 +476,7 @@ async function renderProject(id: string, initialView?: View) {
     if (view === 'media') media.update();
     if (view === 'mix') editor.update();
     stage.refresh();
+    stageCues.refresh();
     inset.update(p);
   }
 

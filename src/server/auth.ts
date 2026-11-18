@@ -60,7 +60,11 @@ export class Auth {
     return createHmac('sha256', this.cfg.secret).update(v).digest('base64url');
   }
 
-  signBlobUrl(key: string, ttlSec = 600): string {
+  /**
+   * A media link. It lasts a day: a video element keeps the link it was redirected to and asks it for more of the
+   * file as it plays, so a short life broke long editing sessions (the app answers only on this computer).
+   */
+  signBlobUrl(key: string, ttlSec = 24 * 3600): string {
     const exp = Math.floor(Date.now() / 1000) + ttlSec;
     return `/blob/${key}?exp=${exp}&sig=${this.sign(`${key}:${exp}`)}`;
   }

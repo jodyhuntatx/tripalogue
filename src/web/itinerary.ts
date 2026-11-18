@@ -365,7 +365,8 @@ export function mountItinerary(s: ProjectSession, ctx: ItineraryContext): Itiner
         tcOn.checked = c.titleCard.enabled;
         setVal(tcSec, c.titleCard.durationSec === undefined ? '' : String(c.titleCard.durationSec));
         tcSec.placeholder = String(p.cueProfile.titleCardSec);
-        coords.textContent = c.coordinates ? `📍 ${c.coordinates.lat.toFixed(4)}, ${c.coordinates.lng.toFixed(4)}` : 'No pin on the map yet';
+        coords.textContent = c.coordinates ? `📍 ${c.coordinates.lat.toFixed(4)}, ${c.coordinates.lng.toFixed(4)}` : 'No pin on the map yet: the map inset is hidden in this chapter';
+        coords.classList.toggle('warn', !c.coordinates);
         clearPin.hidden = !c.coordinates || !editable;
         const sp = chapterSpan(c);
         const n = Number.isNaN(sp.start) || Number.isNaN(sp.end) ? 0 : Math.max(1, Math.round((sp.end - sp.start) / 86_400_000));

@@ -1,12 +1,13 @@
-# TripAlogue — Phase 4: Video export
+# TripAlogue — Phase 5: Cues, map and sound
 
 TripAlogue builds travelogues from a trip's itinerary, photos and videos. It is a standalone app for one person:
 installed on your computer, run from your browser, with no account and no sign-in. Nothing leaves your computer
 except place searches and map tiles. This is Phase 0 of the PRD:
 the foundations every later phase plugs into, plus Phase 1: the itinerary editor
 (see [Phase 1](#phase-1-itinerary-editor)), Phase 2: the media manager (see [Phase 2](#phase-2-media-manager)),
-Phase 3: the presentation editor, with narration and music lanes (see [Phase 3](#phase-3-presentation-editor)), and
-Phase 4: export to MP4 (see [Phase 4](#phase-4-video-export)).
+Phase 3: the presentation editor, with narration and music lanes (see [Phase 3](#phase-3-presentation-editor)),
+Phase 4: export to MP4 (see [Phase 4](#phase-4-video-export)), and Phase 5: transitions, Ken Burns, captions, the
+animated map and more sound tools, all in the export too (see [Phase 5](#phase-5-cues-map-and-sound)).
 
 **Exit criterion met:** a hand-written project with 20 media items is imported, its originals are added through
 the browser, and it plays end to end from the app's media store (see [Exit test](#exit-test)).
@@ -26,10 +27,12 @@ the browser, and it plays end to end from the app's media store (see [Exit test]
 ## Quick start
 
 Requires Node 22.13 or later (it uses the built-in `node:sqlite`) and `ffmpeg`/`ffprobe` on the PATH
-(see [Installing ffmpeg](#installing-ffmpeg)). There are no runtime npm dependencies.
+(see [Installing ffmpeg](#installing-ffmpeg)). The one runtime npm dependency is Playwright: exports draw their
+frames in a headless Chromium, which it installs.
 
 ```sh
 npm install
+npx playwright install chromium   # the browser exports draw in (or have Google Chrome or Microsoft Edge installed)
 npm run build
 npm start           # opens http://127.0.0.1:5173 in your browser; Ctrl+C stops it
 ```
@@ -134,12 +137,13 @@ with "could not be converted", check that line, and that `ffmpeg -decoders | gre
 
 ```sh
 npm run typecheck
-npm test            # 171 tests: model, order keys, operations, history, itinerary, assignment, metadata, travelers, sample hash, geo proxy, HEIC, presentation edits, audio mix, export plan and MP4 render, server API, uploads, processing, retry, local-only access
+npm test            # 186 tests: model, order keys, operations, history, itinerary, assignment, metadata, travelers, sample hash, geo proxy, HEIC, presentation edits, audio mix, export plan and MP4 render, server API, uploads, processing, retry, local-only access
 npm run test:e2e    # Phase 0 browser exit test (needs Playwright's Chromium: npx playwright install chromium)
 npm run test:phase1 # Phase 1 browser test of the G1 tasks (no internet needed: it uses a stand-in map provider)
 npm run test:phase2 # Phase 2 browser test of the G2 tasks (your photos and two travelers', a slow camera, WhatsApp copies, a folder upload)
 npm run test:phase3 # Phase 3 browser test of the G3 tasks (cut a 12-minute draft to 5, place portraits, lay music) and a 300-item playback
 npm run test:phase4 # Phase 4 browser test of the G4 tasks (export at 1080p while editing, a phone version, cancel, a failure) and the export acceptance checks
+npm run test:phase5 # Phase 5 browser test of the G5 tasks (Ken Burns, three captions, a slowed clip, the inset map, recorded narration) and preview-to-export parity
 ```
 
 ## How it works
@@ -231,8 +235,8 @@ The inset is on for new travelogues. For a travelogue made before it existed, op
 Preview and tick **Show map inset**. While a chapter plays, the inset frames that chapter's located photos and
 videos: those still to come are rings, those already shown are filled and joined by a trail in play order, and
 the marker travels to each new item and pulses as it arrives (unless **Animate between views** is off). Items
-more than 50 km from the chapter's place are drawn but don't widen the view. It is preview only: the animated travel
-transition between chapters, per-chapter settings and drawing it into exported video come with the full map view in Phase 5.
+more than 50 km from the chapter's place are drawn but don't widen the view. Since Phase 5 it is drawn into the
+frame itself, so it is in exports too, with chapter transitions and per-chapter settings (see [Phase 5](#phase-5-cues-map-and-sound)).
 
 `scripts/phase1-test.ts` scripts the G1 usability tasks in headless Chromium against a stand-in map provider:
 create a travelogue, paste six lines (one bad) and add five chapters from the preview, add three more by hand
@@ -339,7 +343,7 @@ Notes:
   (Media view) takes it out of the travelogue into the Removed bin, to be deleted for good.
 - **Preview volume.** Levels above 100% (clip or lane volume up to 200%) play at full volume in the browser
   preview; the export applies them.
-- **Cross-fades, looping music, Ken Burns and editable picture fades** are Phase 5.
+- **Cross-fades, looping music, Ken Burns and editable picture fades** came in Phase 5.
 
 `scripts/phase3-test.ts` scripts the G3 tasks in headless Chromium. It builds a 12-minute draft (the sample plus
 150 generated photos, 30 of them portrait), imports it with a 90 s song and a 6 s voice memo, then: sets a 5:00
@@ -371,11 +375,10 @@ ready, in the open view or on the travelogue list next time.
 | VX-10 | Rendered on this computer from the originals; queued and interrupted exports start again when TripAlogue does; a notice when the file is ready, also after the window was closed | `src/server/exports.ts`, `src/web/export.ts` |
 
 How it renders:
-- **Pictures.** Each run of frames (one title card, photo or video) is one ffmpeg pass: the original, turned
-  upright, cropped and scaled to the preview's placement, laid on black, faded with the preview's fade times.
-  Runs encode in parallel (half the CPU cores, up to 4) and are joined without re-encoding.
-- **Title cards** are drawn in the browser by the player's own code at the export's size and sent with the
-  request, so they look exactly as in the preview.
+- **Pictures** (since Phase 5). Every frame is drawn by the preview's own drawing code (`src/player/draw.ts`) in a
+  headless Chromium the server starts, from the originals at full size, and sent to ffmpeg as raw pixels. So
+  transitions, motion, captions, title cards and the map look exactly as in the preview. Stretches of frames are
+  drawn in parallel (half the CPU cores, up to 3) and joined without re-encoding.
 - **Sound.** Every source is decoded to 48 kHz PCM at its speed and mixed in JavaScript with `mixAt()` gains every
   10 ms (linear in between, so no clicks), then normalised in two loudnorm passes and encoded at 192 kbit/s.
 - **Files** go to `<data>/exports/<travelogue>/<export>/<name>.mp4`, for example
@@ -394,8 +397,57 @@ compares 5 random frames and a video frame with the preview drawing the same mom
 255, against 78 for a frame 4 s off), checks the narration starts on its picture (2 ms off), exports Lisbon as a
 9:16 phone video with the window closed and finds the notice on the travelogue list, cancels an export, and makes
 one fail on a missing original and follows **Show the item** to it. On this 2-core test machine the 1:56
-travelogue renders in about 97 s (0.83× its length; the target is at most 2×). Report and screenshots:
+travelogue rendered in about 97 s (0.83× its length; the target is at most 2×) with the Phase 4 renderer. The
+Phase 5 renderer, which draws every frame in a browser so cues and the map match the preview, takes about 6× its
+length on the same machine: see [Phase 5](#phase-5-cues-map-and-sound). Report and screenshots:
 `docs/phase4-test/`. Result: 16 of 16 checks, with no browser console errors.
+
+## Phase 5: Cues, map and sound
+
+Everything here is set in the **Mix** view's side panel (or on the stage), is undoable, autosaves, and plays the
+same in the preview and the export.
+
+| PRD | Requirement | Where |
+| --- | --- | --- |
+| PE-10, PE-12 | Entrances (cut, fade, slide from a side, zoom) and exits (cut, fade, slide), each with its length | `src/core/cues.ts`, `src/core/render-model.ts`, `src/web/cue-panel.ts` |
+| PE-11 | Ken Burns: **Auto pan & zoom**, or **Custom** with green (start) and red (end) frames dragged on the whole photo on the stage | `src/web/stage-cues.ts` |
+| PE-13 | Video speed 0.25× to 4× (the clip's length follows; its sound keeps its pitch), volume, mute | same |
+| PE-14 | Captions, place labels (the chapter's place) and date stamps (the day it was taken); five style presets; dragged on the stage; shown from / for seconds after the item starts | same |
+| PE-15 | Title cards: own title, subtitle and line, layout (centred, left, lower third), a background picture, length | Chapter panel (click a chapter band) |
+| PE-16 | Crossfade: an entrance that dissolves over the picture before | same |
+| PE-17 | **Copy cues** / **Paste cues** onto any selection; named presets | same |
+| PE-18 | Photo credits ("Photo: Ana") from the traveler who took it, per travelogue or chapter | Map settings, Chapter panel |
+| MV-3 | Map inset on or off for the travelogue, a chapter or an item; corner, size, rectangle or circle | Map settings (under the player), Chapter and Clip panels |
+| MV-4, MV-5 | The inset shows the chapter (photo dots, the trail so far, the marker hopping between items) and "Chapter 3 of 8" | `src/core/map-model.ts` |
+| MV-6 | Chapter transitions: in the inset over the title card, or the map filling the frame before it, with a length | Map settings |
+| MV-7 | A chapter without a place hides the inset and is flagged (⚠ on its band, a note in the Itinerary and Chapter panel) | |
+| MV-8 | Map styles light, dark and terrain; label language; the tiles' attribution | `src/server/geo.ts` |
+| VX-7, VX-8 | The export draws every cue and the map with the preview's code; map tiles are fetched into the tile cache before drawing starts | `src/server/render.ts`, `src/web/render-page.ts` |
+| AU-5 | **● Record** under the timeline: record takes over the silently playing picture, listen, **Use this take** (it lands on Narration where recording began) | `src/web/recorder.ts` |
+| AU-6 | Ducking by lane (how many dB narration lowers music and clip sound) with each clip's own switch | Clip panel with nothing selected |
+| AU-7 | Fades on any audio clip; crossfade a music clip with the one before it | Audio clip panel |
+| AU-8 | Loop music, or **Fit to the chapter** (trims to end with the chapter, or loops when shorter) | same |
+| AU-9 | **Fit pictures to it**: the photos a narration plays over stretch to its length | same |
+
+Notes:
+- Exports need a Chromium: Playwright's (`npx playwright install chromium`), or an installed Google Chrome or
+  Microsoft Edge. Without one the export stops at once with that advice.
+- Map tiles come from OpenStreetMap; terrain from OpenTopoMap (`TRIPALOGUE_TERRAIN_TILE_URL` changes it). Dark is
+  the standard map drawn dark. A tile that cannot be fetched is drawn as plain map background, in the preview and
+  the export alike.
+- Recorded narration is saved as an audio file in your travelogue like any other (`.weba` in Chrome and Edge,
+  `.m4a` in Safari).
+- **Speed is behind target.** On this 2-core test machine a 1080p export takes about 6× the travelogue's length
+  (the Phase 4 renderer took 0.83×; the target is at most 2×). Drawing and handing over each frame from the
+  browser is the slow part; stretches are drawn in parallel on machines with more cores, so a recent Mac is
+  faster, but this needs work.
+
+`scripts/phase5-test.ts` scripts the G5 tasks in headless Chromium (with a fake microphone) on the sample trip:
+every cue type is set and counted (three interactions at most), a Ken Burns is set by dragging its frames, three
+captions are added and one moved on the stage, a clip is slowed, the inset map is set up, two narration takes are
+recorded and one used, cues are copied and a preset applied, ducking and fit-to-chapter are set, a chapter loses its
+place, and the first chapter is exported and compared with the preview at moments with motion, captions, a
+crossfade, a slide and the map. Report and screenshots: `docs/phase5-test/`.
 
 ## Layout
 
@@ -407,13 +459,12 @@ src/player/   canvas player (pictures, video and the audio mix) and media pool
 src/node/     command line (serve, worker, import, validate, info, new) and file helpers
 samples/      hand-written 20-item project (schema v1) and its synthetic media generator
 test/         unit and API tests (node:test)
-scripts/      build, sample media, exit test, Phase 1, 2, 3 and 4 tests
+scripts/      build, sample media, exit test, Phase 1 to 5 tests
 ```
 
 ## Not built yet
 
-- Editable transitions and Ken Burns, cross-fading and looping music, captions, the inset map in exports and Google
-  Photos import are later phases; their data already has a place in the schema.
+- Google Photos import is a later phase.
 - HDR video (for example from recent iPhones) is converted to standard range without tone mapping, so its colours
   may look flat in an export.
 - A packaged desktop app (its own window and icon). For now it runs as a local server opened in your browser.

@@ -193,26 +193,25 @@ try {
   await page.locator('#stage').screenshot({ path: path.join(outDir, '04-title-card.png') });
 
   // Playback map inset: on by default, follows the chapter, settings are saved and undoable.
+  // The inset is drawn into the frame by the shared render model (Phase 5); read it from the player's frame.
   const inset = () => page.evaluate(() => {
-    const el = document.getElementById('map-inset')!;
-    const m = window.tripalogue!.inset!.map;
-    const f = m.focused;
-    return { hidden: el.hidden, w: el.getBoundingClientRect().width, stageW: document.getElementById('stage-wrap')!.getBoundingClientRect().width, corner: el.dataset.corner, focus: f.kind === 'chapter' ? f.id : 'trip', zoom: m.view.zoom };
+    const pl = window.tripalogue!.player!;
+    const c = document.getElementById('stage') as HTMLCanvasElement;
+    const m = pl.frame?.layers.find((l) => l.kind === 'map') as { layout: { rect: { x: number; y: number; w: number; h: number } }; state: { view: string; camera: { zoom: number }; pins: { id: string; state: string }[] } } | undefined;
+    if (!m) return { hidden: true, w: 0, h: 0, stageW: c.width, corner: '', focus: '', view: '', zoom: 0 };
+    const r = m.layout.rect;
+    const corner = `${r.y < c.height / 2 ? 'top' : 'bottom'}${r.x < c.width / 2 ? 'Left' : 'Right'}`;
+    const cur = m.state.pins.find((p) => p.state === 'current');
+    return { hidden: false, w: r.w, h: r.h, stageW: c.width, corner, focus: m.state.view === 'trip' || !cur ? 'trip' : cur.id, view: m.state.view, zoom: m.state.camera.zoom };
   });
-  await page.evaluate(() => window.tripalogue!.player!.seek(10.5));
-  await page.waitForTimeout(1800);
+  // MV-6: a title card opens on the whole trip, then travels and zooms into its chapter; look at its start.
+  const titleAt = await page.evaluate(() => window.tripalogue!.player!.timeline.segments.find((x) => x.kind === 'title' && 10.5 >= x.start && 10.5 < x.start + x.duration)!.start + 0.05);
+  await page.evaluate((t) => window.tripalogue!.player!.seek(t), titleAt);
+  await page.waitForTimeout(400);
   let ins = await inset();
   check('a map inset shows in Play, about a fifth of the frame wide', !ins.hidden && Math.abs(ins.w / ins.stageW - 0.2) < 0.03, `${Math.round((ins.w / ins.stageW) * 100)}% wide, ${ins.corner}`);
-  check('on a title card the inset shows the whole trip', ins.focus === 'trip');
-  // Regression: in browsers that let content stretch an aspect-ratio box (Safari), the inset used to grow taller
-  // on every resize until it ran off the top of the screen. Turn that stretching on and check the size holds.
-  await page.addStyleTag({ content: '.route-map.inset { overflow: visible !important; }' });
-  const box1 = (await page.locator('#map-inset').boundingBox())!;
-  await page.waitForTimeout(1200);
-  const box2 = (await page.locator('#map-inset').boundingBox())!;
-  const canvasFits = await page.evaluate(() => { const el = document.getElementById('map-inset')!; const c = el.querySelector('canvas')!; return c.getBoundingClientRect().height <= el.clientHeight + 0.5; });
-  check('the inset keeps a steady 4:3 size and its map stays inside it', Math.abs(box2.height - box1.height) < 1 && Math.abs(box2.height / box2.width - 0.75) < 0.03 && canvasFits,
-    `${Math.round(box2.width)}×${Math.round(box2.height)}`);
+  check('a title card opens on the whole trip in the inset, then travels to the chapter (MV-6)', ins.view === 'trip' || ins.view === 'travel', `${ins.view} at zoom ${ins.zoom.toFixed(1)}`);
+  check('the inset keeps a 4:3 shape', Math.abs(ins.h / ins.w - 0.75) < 0.03, `${Math.round(ins.w)}×${Math.round(ins.h)}`);
   await page.locator('#stage-wrap').screenshot({ path: path.join(outDir, '05-inset-trip.png') });
   const tripZoom = ins.zoom;
   await page.click('#inset-settings > summary');
@@ -221,7 +220,7 @@ try {
   await saved(page);
   const ch4 = serverDoc(pid).chapters[3];
   await page.evaluate(() => window.tripalogue!.player!.seek(10.5));
-  await page.waitForTimeout(1800);
+  await page.waitForTimeout(400);
   ins = await inset();
   check('with trip overview off, the inset flies in to the current chapter and keeps its neighbours in view', ins.focus === ch4.id && ins.zoom > tripZoom && ins.corner === 'topLeft',
     `chapter 4 (${ch4.title}) at zoom ${ins.zoom.toFixed(1)} vs trip ${tripZoom.toFixed(1)}`);

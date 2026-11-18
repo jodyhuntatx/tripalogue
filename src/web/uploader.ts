@@ -157,7 +157,7 @@ export async function uploadAll(
 
 // ---------------------------------------------------------------- picking files and folders (MM-1)
 
-const SUPPORTED = /\.(jpe?g|png|heic|heif|webp|gif|mp4|mov|m4v|webm|mp3|m4a|aac|wav)$/i;
+const SUPPORTED = /\.(jpe?g|png|heic|heif|webp|gif|mp4|mov|m4v|webm|mp3|m4a|aac|wav|weba|ogg|opus)$/i;
 
 /** Photo, video and audio files only, skipping hidden and system files (".DS_Store", "._IMG_1.JPG", "Thumbs.db"). */
 export function mediaFiles(files: Iterable<File>): File[] {
