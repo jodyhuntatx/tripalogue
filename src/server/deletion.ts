@@ -23,7 +23,7 @@ export class Deletion {
 
   constructor(
     private readonly db: Db, private readonly blobs: BlobStore, private readonly projects: Projects,
-    private readonly uploads: Uploads, private readonly o: { purgeAfterDays: number; log?: (m: string) => void },
+    private readonly uploads: Uploads, private readonly o: { purgeAfterDays: number; log?: (m: string) => void; exports?: { deleteProject(id: string): Promise<void> } },
   ) {}
 
   /** Ids deleted for good in a project. */
@@ -96,6 +96,7 @@ export class Deletion {
       throw new HttpError(400, 'Type the travelogue’s title exactly to confirm', 'confirm');
     }
     await this.uploads.discard(projectId);
+    await this.o.exports?.deleteProject(projectId);
     this.db.tx(() => {
       this.db.run('DELETE FROM jobs WHERE project_id = ?', projectId);
       this.db.run('DELETE FROM projects WHERE id = ?', projectId); // members, invites, operations, versions, locks, uploads, purged ids cascade

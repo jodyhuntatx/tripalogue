@@ -1,8 +1,9 @@
 /**
  * The shared render model (PRD Section 4): a pure function from
  * (timeline, time, frame size) to the layers to draw. The browser player draws
- * these layers on a canvas; the Phase 4 exporter will draw the same layers into
- * video frames, which is what makes preview/export parity testable.
+ * these layers on a canvas; the exporter (export-plan.ts, server/render.ts)
+ * renders the same layers into video frames, which is what makes preview/export
+ * parity testable.
  */
 import { segmentIndexAt, type MediaSegment, type Segment, type Timeline } from './timeline.js';
 import type { AudioLane, NormRect, Placement, Transition } from './schema.js';
@@ -58,8 +59,8 @@ function coverCrop(media: Size, box: Rect): Rect {
   return { x: (media.w - w) / 2, y: (media.h - h) / 2, w, h };
 }
 
-/** Opacity from entrance and exit fades; fades are shortened proportionally if they overlap. */
-export function fadeOpacity(local: number, duration: number, entrance: Transition, exit: Transition): number {
+/** Entrance and exit fade lengths for a segment; fades are shortened proportionally if they overlap. */
+export function fadeTimes(duration: number, entrance: Transition, exit: Transition): { fin: number; fout: number } {
   let fin = entrance.type === 'fade' ? entrance.durationSec : 0;
   let fout = exit.type === 'fade' ? exit.durationSec : 0;
   if (fin + fout > duration && fin + fout > 0) {
@@ -67,6 +68,12 @@ export function fadeOpacity(local: number, duration: number, entrance: Transitio
     fin *= k;
     fout *= k;
   }
+  return { fin, fout };
+}
+
+/** Opacity from entrance and exit fades (linear ramps from and to black). */
+export function fadeOpacity(local: number, duration: number, entrance: Transition, exit: Transition): number {
+  const { fin, fout } = fadeTimes(duration, entrance, exit);
   let o = 1;
   if (fin > 0 && local < fin) o = Math.min(o, local / fin);
   if (fout > 0 && local > duration - fout) o = Math.min(o, (duration - local) / fout);

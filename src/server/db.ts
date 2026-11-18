@@ -115,6 +115,29 @@ const MIGRATIONS: string[] = [
     PRIMARY KEY (project_id, media_id)
   );
   `,
+  // 3: MP4 exports (Phase 4), rendered in the background.
+  `
+  CREATE TABLE exports (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    rev INTEGER NOT NULL,
+    name TEXT NOT NULL,
+    settings TEXT NOT NULL,
+    status TEXT NOT NULL CHECK (status IN ('queued','running','done','failed','cancelled')),
+    progress REAL NOT NULL DEFAULT 0,
+    step TEXT,
+    eta_sec REAL,
+    error TEXT,
+    bytes INTEGER,
+    duration_sec REAL,
+    created_at INTEGER NOT NULL,
+    started_at INTEGER,
+    finished_at INTEGER,
+    seen INTEGER NOT NULL DEFAULT 0
+  );
+  CREATE INDEX exports_project ON exports(project_id, created_at);
+  CREATE INDEX exports_queued ON exports(status, created_at);
+  `,
 ];
 
 export class Db {

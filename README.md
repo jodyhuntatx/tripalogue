@@ -1,11 +1,12 @@
-# TripAlogue — Phase 3: Presentation editor
+# TripAlogue — Phase 4: Video export
 
 TripAlogue builds travelogues from a trip's itinerary, photos and videos. It is a standalone app for one person:
 installed on your computer, run from your browser, with no account and no sign-in. Nothing leaves your computer
 except place searches and map tiles. This is Phase 0 of the PRD:
 the foundations every later phase plugs into, plus Phase 1: the itinerary editor
-(see [Phase 1](#phase-1-itinerary-editor)), Phase 2: the media manager (see [Phase 2](#phase-2-media-manager)) and
-Phase 3: the presentation editor, with narration and music lanes (see [Phase 3](#phase-3-presentation-editor)).
+(see [Phase 1](#phase-1-itinerary-editor)), Phase 2: the media manager (see [Phase 2](#phase-2-media-manager)),
+Phase 3: the presentation editor, with narration and music lanes (see [Phase 3](#phase-3-presentation-editor)), and
+Phase 4: export to MP4 (see [Phase 4](#phase-4-video-export)).
 
 **Exit criterion met:** a hand-written project with 20 media items is imported, its originals are added through
 the browser, and it plays end to end from the app's media store (see [Exit test](#exit-test)).
@@ -133,11 +134,12 @@ with "could not be converted", check that line, and that `ffmpeg -decoders | gre
 
 ```sh
 npm run typecheck
-npm test            # 151 tests: model, order keys, operations, history, itinerary, assignment, metadata, travelers, sample hash, geo proxy, HEIC, presentation edits, audio mix, server API, uploads, processing, retry, local-only access
+npm test            # 169 tests: model, order keys, operations, history, itinerary, assignment, metadata, travelers, sample hash, geo proxy, HEIC, presentation edits, audio mix, export plan and MP4 render, server API, uploads, processing, retry, local-only access
 npm run test:e2e    # Phase 0 browser exit test (needs Playwright's Chromium: npx playwright install chromium)
 npm run test:phase1 # Phase 1 browser test of the G1 tasks (no internet needed: it uses a stand-in map provider)
 npm run test:phase2 # Phase 2 browser test of the G2 tasks (your photos and two travelers', a slow camera, WhatsApp copies, a folder upload)
 npm run test:phase3 # Phase 3 browser test of the G3 tasks (cut a 12-minute draft to 5, place portraits, lay music) and a 300-item playback
+npm run test:phase4 # Phase 4 browser test of the G4 tasks (export at 1080p while editing, a phone version, cancel, a failure) and the export acceptance checks
 ```
 
 ## How it works
@@ -335,7 +337,7 @@ Notes:
 - **Excluded vs Removed.** Excluding (Mix view) keeps the item in the travelogue, out of the cut. Removing
   (Media view) takes it out of the travelogue into the Removed bin, to be deleted for good.
 - **Preview volume.** Levels above 100% (clip or lane volume up to 200%) play at full volume in the browser
-  preview; export will apply them.
+  preview; the export applies them.
 - **Music across chapters, cross-fades, Ken Burns and editable fades** are Phase 5.
 
 `scripts/phase3-test.ts` scripts the G3 tasks in headless Chromium. It builds a 12-minute draft (the sample plus
@@ -347,23 +349,66 @@ under Porto and the memo on a picture, then reorders and trims around it (the me
 millisecond); checks the mix (music at 70%, ducked 12 dB under the memo; mute), real playback of the song in step
 with the clock, play-this-chapter, reset-chapter, an edit reaching the preview in about 60 ms, a reload, and a
 300-item travelogue playing through at 4x with no frames waiting on media. Report and
-screenshots: `docs/phase3-test/`. Result: 25 of 25 checks, with no browser console errors.
+screenshots: `docs/phase3-test/`. Result: 27 of 27 checks (with the smooth-playback and autoplay checks), with no
+browser console errors.
+
+## Phase 4: Video export
+
+**Export MP4** (top right, in every view) saves the travelogue as a video. The local server renders it in the
+background from the originals, so you can keep editing, or close the window; TripAlogue says when the file is
+ready, in the open view or on the travelogue list next time.
+
+| PRD | Requirement | Where |
+| --- | --- | --- |
+| VX-1 | MP4, H.264 High and AAC-LC, 30 fps: 720p, 1080p (default) or 4K; plays while it downloads (faststart) | `src/server/render.ts` |
+| VX-2 | The export draws what the preview draws: the same order, durations, placement and fades, frame by frame. Both come from the shared plan: export frame *k* is the travelogue at *k* / 30 s, through the same `frameAt()` the player uses | `src/core/export-plan.ts`, `src/core/render-model.ts` |
+| VX-3 | Progress, time left and Cancel in the Export dialog; the export renders a snapshot taken when it starts, so editing goes on | `src/web/export.ts`, `src/server/exports.ts` |
+| VX-4 | A failure names the item that caused it (a missing original, a format ffmpeg cannot read) with **Show the item**, which opens it in Media | same |
+| VX-5 | Export the whole travelogue, one chapter, or a stretch of time (from–to) | `src/core/export-plan.ts` |
+| VX-6 | Shapes: landscape 16:9, portrait 9:16 for phones, square 1:1. Pictures are placed for the shape (fit, fill and custom rectangles keep their meaning) | same |
+| VX-9 | One stereo AAC track: narration, music and clip sound mixed with the same gains the preview plays (volume, fades, ducking, mute, solo; up to 200%), normalised to -16 LUFS | `src/server/render.ts` (`mixAt()` from the render model) |
+| VX-10 | Rendered on this computer from the originals; queued and interrupted exports start again when TripAlogue does; a notice when the file is ready, also after the window was closed | `src/server/exports.ts`, `src/web/export.ts` |
+
+How it renders:
+- **Pictures.** Each run of frames (one title card, photo or video) is one ffmpeg pass: the original, turned
+  upright, cropped and scaled to the preview's placement, laid on black, faded with the preview's fade times.
+  Runs encode in parallel (half the CPU cores, up to 4) and are joined without re-encoding.
+- **Title cards** are drawn in the browser by the player's own code at the export's size and sent with the
+  request, so they look exactly as in the preview.
+- **Sound.** Every source is decoded to 48 kHz PCM at its speed and mixed in JavaScript with `mixAt()` gains every
+  10 ms (linear in between, so no clicks), then normalised in two loudnorm passes and encoded at 192 kbit/s.
+- **Files** go to `<data>/exports/<travelogue>/<export>/<name>.mp4`, for example
+  `Portugal in Ten Days - Sintra - 1080p.mp4`; the dialog shows the path. Download saves a copy; **Delete**
+  removes it. Deleting a travelogue deletes its exports.
+- **Deterministic:** the same project and settings give the same frames.
+
+`scripts/phase4-test.ts` scripts the G4 tasks in headless Chromium on the sample trip, with a song under Lisbon and
+a narration beep on a photo in Porto. It exports the whole travelogue at 1080p while renaming a chapter, downloads
+it from the "ready" notice, checks the file (H.264 High level 4.0, AAC-LC, moov first, every frame, -16 LUFS),
+compares 5 random frames and a video frame with the preview drawing the same moment (mean difference 2 to 6 of
+255, against 78 for a frame 4 s off), checks the narration starts on its picture (2 ms off), exports Lisbon as a
+9:16 phone video with the window closed and finds the notice on the travelogue list, cancels an export, and makes
+one fail on a missing original and follows **Show the item** to it. On this 2-core test machine the 1:56
+travelogue renders in about 97 s (0.83× its length; the target is at most 2×). Report and screenshots:
+`docs/phase4-test/`. Result: 16 of 16 checks, with no browser console errors.
 
 ## Layout
 
 ```text
-src/core/     platform-neutral model: schema, validation, migrations, order keys, operations, history, autosave, timeline (with audio clips), render model and audio mix, telemetry, itinerary, assignment, media edits, presentation edits, contributors, sample hash
-src/server/   local server: config, database, media store, the local user, projects and operation log, uploads, media jobs (with HEIC conversion, photo orientation, capture metadata), geo proxy
-src/web/      browser app: API client, project session (sync, autosave, lock), resumable uploader, itinerary view, media view, mix view (timeline, clip inspector, stage placement), route map, playback inset, UI
+src/core/     platform-neutral model: schema, validation, migrations, order keys, operations, history, autosave, timeline (with audio clips), render model and audio mix, export plan, telemetry, itinerary, assignment, media edits, presentation edits, contributors, sample hash
+src/server/   local server: config, database, media store, the local user, projects and operation log, uploads, media jobs (with HEIC conversion, photo orientation, capture metadata), MP4 exports and the render worker, geo proxy
+src/web/      browser app: API client, project session (sync, autosave, lock), resumable uploader, itinerary view, media view, mix view (timeline, clip inspector, stage placement), export dialog, route map, playback inset, UI
 src/player/   canvas player (pictures, video and the audio mix) and media pool
 src/node/     command line (serve, worker, import, validate, info, new) and file helpers
 samples/      hand-written 20-item project (schema v1) and its synthetic media generator
 test/         unit and API tests (node:test)
-scripts/      build, sample media, exit test, Phase 1, 2 and 3 tests
+scripts/      build, sample media, exit test, Phase 1, 2, 3 and 4 tests
 ```
 
 ## Not built yet
 
-- Export to MP4, editable transitions and Ken Burns, music across chapters, the full inset map and Google Photos
+- Editable transitions and Ken Burns, music across chapters, captions, the inset map in exports and Google Photos
   import are later phases; their data already has a place in the schema.
+- HDR video (for example from recent iPhones) is converted to standard range without tone mapping, so its colours
+  may look flat in an export.
 - A packaged desktop app (its own window and icon). For now it runs as a local server opened in your browser.

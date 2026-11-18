@@ -17,3 +17,4 @@ export * from './contributors.js';
 export * from './samplehash.js';
 export * from './remove.js';
 export * from './presentation.js';
+export * from './export-plan.js';

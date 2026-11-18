@@ -389,37 +389,48 @@ export class Player {
   }
 
   private drawTitle(title: string, subtitle: string, description: string, chapterIndex: number, size: Size) {
-    const ctx = this.ctx;
-    const g = ctx.createLinearGradient(0, 0, size.w, size.h);
-    g.addColorStop(0, '#10233a');
-    g.addColorStop(1, '#1d1430');
-    ctx.fillStyle = g;
-    ctx.fillRect(0, 0, size.w, size.h);
-    const u = Math.min(size.w, size.h);
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'alphabetic';
-    // The chapter's description ("What happened here") goes under the place and dates, wrapped to at most
-    // four lines; the whole block moves up to stay centred.
-    const descFont = `italic 400 ${Math.round(u * 0.036)}px system-ui, sans-serif`;
-    ctx.font = descFont;
-    const lines = description ? wrapText(ctx, description, size.w * 0.78, 4) : [];
-    const lineH = u * 0.036 * 1.4;
-    const lift = lines.length ? (size.h * 0.05 + lines.length * lineH) / 2 : 0;
-    ctx.fillStyle = 'rgba(255,255,255,0.6)';
-    ctx.font = `600 ${Math.round(u * 0.035)}px system-ui, sans-serif`;
-    ctx.fillText(`CHAPTER ${chapterIndex + 1}`, size.w / 2, size.h * 0.42 - lift);
-    ctx.fillStyle = '#fff';
-    ctx.font = `700 ${Math.round(u * 0.085)}px system-ui, sans-serif`;
-    ctx.fillText(title, size.w / 2, size.h * 0.54 - lift, size.w * 0.9);
-    ctx.fillStyle = 'rgba(255,255,255,0.75)';
-    ctx.font = `400 ${Math.round(u * 0.04)}px system-ui, sans-serif`;
-    ctx.fillText(subtitle, size.w / 2, size.h * 0.63 - lift, size.w * 0.9);
-    if (!lines.length) return;
-    ctx.fillStyle = 'rgba(255,255,255,0.88)';
-    ctx.font = descFont;
-    const top = size.h * 0.63 - lift + size.h * 0.05 + lineH * 0.75;
-    lines.forEach((line, i) => ctx.fillText(line, size.w / 2, top + i * lineH, size.w * 0.9));
+    drawTitleCard(this.ctx, { title, subtitle, description, chapterIndex }, size);
   }
+}
+
+/**
+ * A chapter's title card, filling the frame. The preview draws it on the stage; an export draws the same card in
+ * the browser at the export's size and hands the picture to the server, so both show the same card.
+ */
+export function drawTitleCard(
+  ctx: CanvasRenderingContext2D,
+  { title, subtitle, description, chapterIndex }: { title: string; subtitle: string; description: string; chapterIndex: number },
+  size: Size,
+): void {
+  const g = ctx.createLinearGradient(0, 0, size.w, size.h);
+  g.addColorStop(0, '#10233a');
+  g.addColorStop(1, '#1d1430');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, size.w, size.h);
+  const u = Math.min(size.w, size.h);
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'alphabetic';
+  // The chapter's description ("What happened here") goes under the place and dates, wrapped to at most
+  // four lines; the whole block moves up to stay centred.
+  const descFont = `italic 400 ${Math.round(u * 0.036)}px system-ui, sans-serif`;
+  ctx.font = descFont;
+  const lines = description ? wrapText(ctx, description, size.w * 0.78, 4) : [];
+  const lineH = u * 0.036 * 1.4;
+  const lift = lines.length ? (size.h * 0.05 + lines.length * lineH) / 2 : 0;
+  ctx.fillStyle = 'rgba(255,255,255,0.6)';
+  ctx.font = `600 ${Math.round(u * 0.035)}px system-ui, sans-serif`;
+  ctx.fillText(`CHAPTER ${chapterIndex + 1}`, size.w / 2, size.h * 0.42 - lift);
+  ctx.fillStyle = '#fff';
+  ctx.font = `700 ${Math.round(u * 0.085)}px system-ui, sans-serif`;
+  ctx.fillText(title, size.w / 2, size.h * 0.54 - lift, size.w * 0.9);
+  ctx.fillStyle = 'rgba(255,255,255,0.75)';
+  ctx.font = `400 ${Math.round(u * 0.04)}px system-ui, sans-serif`;
+  ctx.fillText(subtitle, size.w / 2, size.h * 0.63 - lift, size.w * 0.9);
+  if (!lines.length) return;
+  ctx.fillStyle = 'rgba(255,255,255,0.88)';
+  ctx.font = descFont;
+  const top = size.h * 0.63 - lift + size.h * 0.05 + lineH * 0.75;
+  lines.forEach((line, i) => ctx.fillText(line, size.w / 2, top + i * lineH, size.w * 0.9));
 }
 
 /**
