@@ -48,6 +48,8 @@ export class Player {
   private lastSegment = -1;
   private rate: number;
   private muted = false;
+  /** Elements the browser would not let play with sound (no click yet); they play muted until the next Play. */
+  private blocked = new Set<HTMLMediaElement>();
   private needsDraw = true;
   private lanes: AudioLane[];
   /** The sounds of the last drawn frame, with their levels (AU-4; tests read it). */
@@ -90,6 +92,10 @@ export class Player {
   play(): void {
     if (!this.timeline.segments.length) return;
     if (this.stateValue === 'ended' || this.t >= this.duration) this.seek(0);
+    // Play is pressed in a click or key handler: the moment the browser lets media start with sound.
+    this.pool.unlock();
+    for (const el of this.blocked) el.muted = this.muted;
+    this.blocked.clear();
     this.lastTick = performance.now();
     this.setState('playing');
     this.o.onEvent?.('play', { t: this.t });
@@ -126,6 +132,7 @@ export class Player {
   setMuted(m: boolean): void {
     this.muted = m;
     this.pool.setMuted(m);
+    for (const el of this.blocked) el.muted = true;
   }
 
   setRate(r: number): void {
@@ -191,7 +198,7 @@ export class Player {
       if (s.kind !== 'title') {
         const e = this.pool.ensure(s.item.id, s.kind);
         if (e.el instanceof HTMLVideoElement) {
-          e.el.muted = this.muted;
+          e.el.muted = this.mutedFor(e.el);
           // Park upcoming clips on their in-point so the first frame is decoded before the segment starts.
           if (k !== i || this.t <= s.start) this.parkVideo(e.el, s.inPointSec);
         }
@@ -202,7 +209,7 @@ export class Player {
       if (c.start > horizon || c.start + c.duration <= t) continue;
       const e = this.pool.ensure(c.item.id, 'audio');
       if (e.el instanceof HTMLMediaElement) {
-        e.el.muted = this.muted;
+        e.el.muted = this.mutedFor(e.el);
         if (c.start > t) this.parkVideo(e.el, c.inPointSec);
       }
     }
@@ -286,7 +293,7 @@ export class Player {
       const vol = Math.max(0, Math.min(1, v.gain));
       if (Math.abs(e.el.volume - vol) > 0.004) e.el.volume = vol;
       if (v.kind === 'audio') {
-        e.el.muted = this.muted;
+        e.el.muted = this.mutedFor(e.el);
         if (e.el.readyState >= 1) this.syncMedia(e.el, v.mediaTimeSec, 1, 0.25);
         else this.needsDraw = true;
       }
@@ -341,6 +348,10 @@ export class Player {
     else v.addEventListener('loadedmetadata', go, { once: true });
   }
 
+  private mutedFor(el: HTMLMediaElement): boolean {
+    return this.muted || this.blocked.has(el);
+  }
+
   private syncMedia(v: HTMLMediaElement, mediaTime: number, speed: number, playingTolerance: number) {
     const playing = this.stateValue === 'playing';
     const targetRate = Math.min(16, speed * this.rate);
@@ -354,10 +365,12 @@ export class Player {
     }
     if (playing && v.paused) {
       v.play().catch((err: DOMException) => {
-        // Only a browser autoplay block calls for muting; an interrupted play() (a pause or seek) is routine.
+        // An interrupted play() (a pause or seek) is routine. A browser autoplay block silences only this
+        // element, so the music and the rest of the mix keep playing; the next Play lifts it.
         if (err?.name !== 'NotAllowedError' || this.stateValue !== 'playing') return;
+        this.blocked.add(v);
         v.muted = true;
-        this.muted = true;
+        this.o.onEvent?.('sound_blocked', {});
         void v.play().catch(() => {});
       });
     }

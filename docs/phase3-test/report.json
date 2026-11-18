@@ -1,5 +1,5 @@
 {
-  "date": "2026-11-17T21:24:33.838Z",
+  "date": "2026-11-18T15:13:39.408Z",
   "browser": "153.0.8010.12",
   "checks": [
     {
@@ -80,7 +80,7 @@
     {
       "name": "after a reorder and a trim, the memo still starts on its picture, within one frame (acceptance)",
       "pass": true,
-      "detail": "picture now at 230.00 s, memo at 230.32 s"
+      "detail": "picture now at 231.50 s, memo at 231.82 s"
     },
     {
       "name": "music plays at 70% and ducks 12 dB under narration; muting the narration lane silences it and lifts the music (AU-3, AU-4)",
@@ -90,22 +90,27 @@
     {
       "name": "audio clips show their waveforms on the lanes (AU-4)",
       "pass": true,
-      "detail": "url(\"http://127.0.0.1:39481/api/projects/trv_TX40J1EBAZuW/me"
+      "detail": "url(\"http://127.0.0.1:33381/api/projects/trv_HIm6TXGgV3FJ/me"
     },
     {
       "name": "in playback the song plays alongside the pictures, kept to the timeline clock",
       "pass": true,
-      "detail": "drift 0.011 s"
+      "detail": "drift 0.008 s"
     },
     {
       "name": "with a busy browser the song plays on without re-seeks, and the playhead keeps real time",
       "pass": true,
-      "detail": "0 re-seeks; playhead 6.50 s in 6.49 s; drift 0.011 s"
+      "detail": "0 re-seeks; playhead 6.48 s in 6.49 s; drift 0.013 s"
+    },
+    {
+      "name": "when Play is clicked, a video that starts later under the song plays with sound, and the song keeps playing (Safari's autoplay rule)",
+      "pass": true,
+      "detail": "{\"songPlaying\":true,\"songMuted\":false,\"videoPlaying\":true,\"videoMuted\":false,\"note\":false}"
     },
     {
       "name": "\"Play this chapter\" plays the chapter and stops at its end (PE-2)",
       "pass": true,
-      "detail": "stopped at 223.53 s; Sintra ends at 223.50 s"
+      "detail": "stopped at 223.54 s; Sintra ends at 223.50 s"
     },
     {
       "name": "\"Reset chapter to defaults\" puts its pictures back to the cue profile (PE-7)",
@@ -115,7 +120,7 @@
     {
       "name": "an edit shows in the preview in under 200 ms (acceptance)",
       "pass": true,
-      "detail": "57 ms from Delete to the player and timeline"
+      "detail": "64 ms from Delete to the player and timeline"
     },
     {
       "name": "the cut, placements and audio survive a reload",
@@ -125,7 +130,7 @@
     {
       "name": "a 300-item travelogue plays without stalls (acceptance)",
       "pass": true,
-      "detail": "300 items, 5:09 at 4x in 77 s; 0 of 4658 frames waited (0.00%); timeline drawn in 14 ms"
+      "detail": "300 items, 5:09 at 4x in 77 s; 0 of 4659 frames waited (0.00%); timeline drawn in 4 ms"
     },
     {
       "name": "no errors in the browser console",
