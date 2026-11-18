@@ -1,23 +1,23 @@
 {
-  "date": "2026-11-17T19:06:14.988Z",
+  "date": "2026-11-17T20:31:48.269Z",
   "rate": 1,
   "browser": "153.0.8010.12",
   "timelineSec": 116,
-  "wallSec": 116.186,
-  "uploadSec": 0.84,
-  "readySec": 13.852,
-  "framesDrawn": 6969,
+  "wallSec": 116.035,
+  "uploadSec": 0.439,
+  "readySec": 13.045,
+  "framesDrawn": 6970,
   "placeholderFrames": 0,
   "checks": [
     {
-      "name": "signs in with an emailed link",
+      "name": "opens straight to your travelogues, with no sign-in",
       "pass": true,
       "detail": ""
     },
     {
       "name": "imports and uploads all 20 originals through the browser",
       "pass": true,
-      "detail": "10.1 MB uploaded in 0.8 s; all processed after 13.9 s"
+      "detail": "10.1 MB uploaded in 0.4 s; all processed after 13.0 s"
     },
     {
       "name": "originals are stored byte for byte",
@@ -27,7 +27,7 @@
     {
       "name": "plays to the end",
       "pass": true,
-      "detail": "116 s of timeline in 116.2 s at 1x"
+      "detail": "116 s of timeline in 116.0 s at 1x"
     },
     {
       "name": "enters all 23 segments (4 title cards + 19 items) in order",
@@ -42,7 +42,7 @@
     {
       "name": "media ready in time (under 2% of frames waited on loading)",
       "pass": true,
-      "detail": "0 of 6969 frames"
+      "detail": "0 of 6970 frames"
     },
     {
       "name": "draws smoothly (30 fps or better)",

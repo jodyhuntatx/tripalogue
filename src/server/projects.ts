@@ -1,6 +1,6 @@
 /**
  * Projects: storage, roles, the operation log (F-9), version history (F-1),
- * the single-editor lock and invitations (F-8).
+ * and the single-editor lock (one window edits at a time).
  *
  * Every change to a project, from a browser or from the server itself (an
  * upload finishing, a media job completing), is a batch of operations with an
@@ -14,11 +14,9 @@ import { randomBytes } from 'node:crypto';
 import {
   applyOps, createProject, defaultCue, diff, isOperation, parseProject, serializeProject, spreadKeys,
   SCHEMA_VERSION, validate, keyBetween, type Id, type MediaItem, type Operation, type Travelogue, mediaIdsIn } from '../core/index.js';
-import { newId, sha256, token, type Auth, type User } from './auth.js';
-import type { ServerConfig } from './config.js';
+import { newId, type User } from './auth.js';
 import type { Db } from './db.js';
 import { HttpError } from './http.js';
-import type { Mailer } from './mailer.js';
 
 export type Role = 'owner' | 'editor' | 'contributor' | 'viewer';
 export const ROLES: Role[] = ['owner', 'editor', 'contributor', 'viewer'];
@@ -44,7 +42,7 @@ export interface LockInfo {
 }
 
 export class Projects {
-  constructor(private readonly db: Db, private readonly cfg: ServerConfig, private readonly mailer: Mailer, private readonly auth: Auth) {}
+  constructor(private readonly db: Db) {}
 
   // ---- access ----
 
@@ -87,7 +85,7 @@ export class Projects {
       id: newId('trv'),
       createdAt: now,
       updatedAt: now,
-      sources: parsed.sources.map((s) => ({ ...s, type: 'upload' as const, contributorId: s.contributorId ?? user.id })),
+      sources: parsed.sources.map((s) => ({ ...s, type: 'upload' as const })),
       media: parsed.media.map((m) => {
         const { storageKey: _k, contentHash: _h, assets: _a, error: _e, ...rest } = m;
         return { ...rest, status: 'pending' as const };
@@ -280,71 +278,23 @@ export class Projects {
     }
   }
 
-  // ---- members and invitations ----
-
-  members(projectId: string) {
-    return this.db.all<{ user_id: string; name: string; email: string; role: Role; joined_at: number }>(
-      'SELECT m.user_id, u.name, u.email, m.role, m.joined_at FROM members m JOIN users u ON u.id = m.user_id WHERE m.project_id = ? ORDER BY m.joined_at', projectId,
-    ).map((m) => ({ userId: m.user_id, name: m.name, email: m.email, role: m.role, joinedAt: m.joined_at }));
-  }
-
-  async invite(projectId: string, by: User, emailIn: unknown, role: unknown): Promise<void> {
-    const email = this.auth.normalizeEmail(emailIn);
-    if (!ROLES.includes(role as Role) || role === 'owner') throw new HttpError(400, 'role must be editor, contributor or viewer', 'invalid');
-    const t = token();
-    this.db.run('INSERT INTO invites (token_hash, project_id, email, role, invited_by, created_at, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
-      sha256(t), projectId, email, role, by.id, Date.now(), Date.now() + 14 * 86400_000);
-    const { doc } = this.load(projectId);
-    await this.mailer.send({
-      to: email,
-      subject: `${by.name} invited you to "${doc.title}" on TripAlogue`,
-      text: `${by.name} invited you to join the travelogue "${doc.title}" as ${role === 'contributor' ? 'a contributor' : `an ${role}`}.\n\nOpen the invitation:\n\n${this.cfg.baseUrl}/api/invites/accept?token=${t}\n\nThe invitation expires in 14 days.`
-        + (role === 'contributor' || role === 'editor' || role === 'owner'
-          ? `\n\nAdding your photos and videos? Please upload the originals, not copies from a chat app, so they land in the right part of the trip and on the map. A one-page guide:\n\n${this.cfg.baseUrl}/guide-contributors.html`
-          : ''),
-    });
-  }
-
-  /** Accept an invitation as the signed-in user (who may use a different email address). */
-  acceptInvite(t: string, user: User): string {
-    return this.db.tx(() => {
-      const inv = this.db.get<{ project_id: string; role: Role; invited_by: string; expires_at: number; accepted_by: string | null }>(
-        'SELECT project_id, role, invited_by, expires_at, accepted_by FROM invites WHERE token_hash = ?', sha256(t),
-      );
-      if (!inv || inv.expires_at < Date.now() || (inv.accepted_by && inv.accepted_by !== user.id)) throw new HttpError(400, 'This invitation is invalid or has expired', 'bad_invite');
-      this.db.run('UPDATE invites SET accepted_by = ? WHERE token_hash = ?', user.id, sha256(t));
-      const existing = this.roleOf(inv.project_id, user.id);
-      if (!existing) {
-        this.db.run('INSERT INTO members (project_id, user_id, role, invited_by, joined_at) VALUES (?, ?, ?, ?, ?)', inv.project_id, user.id, inv.role, inv.invited_by, Date.now());
-      } else if (RANK[inv.role] > RANK[existing]) {
-        this.db.run('UPDATE members SET role = ? WHERE project_id = ? AND user_id = ?', inv.role, inv.project_id, user.id);
-      }
-      return inv.project_id;
-    });
-  }
-
-  setRole(projectId: string, userId: string, role: unknown): void {
-    if (!ROLES.includes(role as Role) || role === 'owner') throw new HttpError(400, 'role must be editor, contributor or viewer', 'invalid');
-    if (this.roleOf(projectId, userId) === 'owner') throw new HttpError(400, 'The owner keeps the owner role', 'invalid');
-    const r = this.db.run('UPDATE members SET role = ? WHERE project_id = ? AND user_id = ?', role, projectId, userId);
-    if (!Number(r.changes)) throw new HttpError(404, 'Member not found', 'not_found');
-  }
-
-  removeMember(projectId: string, userId: string): void {
-    if (this.roleOf(projectId, userId) === 'owner') throw new HttpError(400, 'The owner cannot be removed', 'invalid');
-    this.db.run('DELETE FROM members WHERE project_id = ? AND user_id = ?', projectId, userId);
-    this.db.run('DELETE FROM edit_locks WHERE project_id = ? AND user_id = ?', projectId, userId);
-  }
-
   // ---- media items created by uploads ----
 
-  /** Add a media item (and its default cue) for a new upload; it starts in the Unassigned bin. */
-  addUploadedItem(projectId: string, user: User, fileName: string, kind: MediaItem['kind'], fileModifiedAt?: string): string {
+  /**
+   * Add a media item (and its default cue) for a new upload; it starts in the Unassigned bin. Files are filed under
+   * the traveler they came from (MM-16), when the upload names one, or under your own uploads.
+   */
+  addUploadedItem(projectId: string, user: User, fileName: string, kind: MediaItem['kind'], fileModifiedAt?: string, travelerId?: string): string {
     const id = `m_${randomBytes(6).toString('base64url')}`;
     this.serverChange(projectId, user.id, `Upload ${fileName}`, (doc) => {
-      // The person's own uploads source (not a source they imported, and not one of their per-camera sources).
-      let source = doc.sources.find((s) => s.id === `src_${user.id}`);
-      const sources = source ? doc.sources : [...doc.sources, (source = { id: `src_${user.id}`, type: 'upload' as const, displayName: `${user.name}'s uploads`, clockOffsetSec: 0, contributorId: user.id })];
+      const traveler = travelerId ? doc.travelers?.find((t) => t.id === travelerId) : undefined;
+      if (travelerId && !traveler) throw new HttpError(400, 'No such traveler in this travelogue', 'invalid');
+      // The general uploads source for that traveler (or yours); per-camera sources are split off when processed.
+      const sid = traveler ? `src_${traveler.id}` : `src_${user.id}`;
+      let source = doc.sources.find((s) => s.id === sid);
+      const sources = source ? doc.sources : [...doc.sources, (source = traveler
+        ? { id: sid, type: 'upload' as const, displayName: `${traveler.name}'s photos`, clockOffsetSec: 0, contributorId: traveler.id }
+        : { id: sid, type: 'upload' as const, displayName: 'My uploads', clockOffsetSec: 0 })];
       const item: MediaItem = { id, sourceId: source.id, uri: fileName, kind, chapterId: null, status: 'uploading', uploadedBy: user.id, ...(fileModifiedAt ? { fileModifiedAt } : {}) };
       const unassigned = doc.cues.filter((c) => doc.media.find((m) => m.id === c.itemId)?.chapterId === null).map((c) => c.order).sort();
       const order = unassigned.length ? keyBetween(unassigned[unassigned.length - 1], null) : spreadKeys(1)[0];

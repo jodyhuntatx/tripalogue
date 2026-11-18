@@ -22,7 +22,6 @@ import { chromium, type Page } from 'playwright';
 import { startApp } from '../src/server/app.js';
 import { geoConfigFromEnv } from '../src/server/geo.js';
 import { withExif } from '../src/server/heif.js';
-import type { OutboxMailer } from '../src/server/mailer.js';
 import type {} from '../src/web/main.js';
 import { exifTiff } from '../test/helpers/heic.js';
 
@@ -81,41 +80,25 @@ await run('ffmpeg', ['-v', 'error', '-y', '-f', 'lavfi', '-i', 'sine=frequency=3
 // The same traveler's phone keeps network time: its late-night Lisbon photo must not move when the Canon is fixed.
 const phone = await photo('IMG_3002.jpg', 'yellow', ['2026:05:03 23:30:00', 1, { make: 'Apple', model: 'iPhone 15 Pro', offset: '+01:00' }]);
 
-/** Another traveler, uploading through the API from their own device. */
-class Traveler {
-  cookie = '';
-  constructor(readonly email: string) {}
-  async req(method: string, p: string, body?: unknown, raw?: Buffer) {
+/** Upload a file through the API as a traveler's photo (the browser would skip a file it already has). */
+async function uploadAs(pid: string, file: string, travelerId: string) {
+  const req = async (method: string, p: string, body?: unknown, raw?: Buffer) => {
     const headers: Record<string, string> = { 'x-tripalogue-client': '1' };
-    if (this.cookie) headers.cookie = this.cookie;
     if (body !== undefined) headers['content-type'] = 'application/json';
-    const res = await fetch(new URL(p, app.url), { method, headers, body: (raw ?? (body !== undefined ? JSON.stringify(body) : undefined)) as BodyInit | undefined, redirect: 'manual' });
-    const set = res.headers.get('set-cookie');
-    if (set) this.cookie = set.split(';')[0];
-    const text = await res.text();
-    return { status: res.status, json: text.startsWith('{') ? JSON.parse(text) : {}, headers: res.headers };
-  }
-  async signInFromLink(link: string) {
-    await this.req('POST', '/api/auth/email', { email: this.email });
-    const v = new URL(/https?:\/\/\S+/.exec((await (app.mailer as OutboxMailer).latestFor(this.email))!.text)![0]);
-    await this.req('GET', v.pathname + v.search);
-    const inv = new URL(link);
-    await this.req('GET', inv.pathname + inv.search);
-  }
-  async upload(pid: string, file: string) {
-    const data = await fs.readFile(file);
-    const st = await fs.stat(file);
-    const c = await this.req('POST', `/api/projects/${pid}/uploads`, { fileName: path.basename(file), size: data.length, lastModified: st.mtimeMs });
-    let offset = c.json.offset as number;
-    while (offset < data.length) offset = (await this.req('PUT', `/api/uploads/${c.json.uploadId}?offset=${offset}`, undefined, data.subarray(offset, offset + c.json.chunkBytes))).json.offset;
-  }
+    const res = await fetch(new URL(p, app.url), { method, headers, body: (raw ?? (body !== undefined ? JSON.stringify(body) : undefined)) as BodyInit | undefined });
+    return res.json() as Promise<Record<string, any>>;
+  };
+  const data = await fs.readFile(file);
+  const c = await req('POST', `/api/projects/${pid}/uploads`, { fileName: path.basename(file), size: data.length, lastModified: (await fs.stat(file)).mtimeMs, travelerId });
+  let offset = c.offset as number;
+  while (offset < data.length) offset = (await req('PUT', `/api/uploads/${c.uploadId}?offset=${offset}`, undefined, data.subarray(offset, offset + c.chunkBytes))).offset;
 }
 
 const app = await startApp({ dataDir, port: 0, log: () => {}, geo: geoConfigFromEnv(dataDir, { tileUrl: '', geocoderUrl: '' }) });
 const browser = await chromium.launch();
 const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
 /** Upload, Members and Versions live in the Itinerary view's travelogue panel (lower right). */
-const panelTab = async (t: 'Upload' | 'Members' | 'Versions') => {
+const panelTab = async (t: 'Upload' | 'Versions') => {
   await page.click('#view-itinerary');
   await page.click(`#project-panel button[data-tab="${t}"]`);
 };
@@ -131,12 +114,8 @@ const tile = (name: string) => page.locator(`#media-grid .tile[title="${name}"]`
 const settle = () => page.waitForTimeout(250); // the views refresh shortly after an edit
 
 try {
-  // Sign in, import the sample with its originals.
+  // Open the app (no sign-in) and import the sample with its originals.
   await page.goto(app.url);
-  await page.fill('input[type=email]', 'jody@example.com');
-  await page.click('button[type=submit]');
-  await page.waitForSelector('text=Check your email');
-  await page.goto(/https?:\/\/\S+/.exec((await (app.mailer as OutboxMailer).latestFor('jody@example.com'))!.text)![0]);
   await page.waitForSelector('#import-json');
   await page.setInputFiles('#import-json', path.join(sampleDir, 'trip.travelogue.json'));
   await page.setInputFiles('#import-media', readdirSync(path.join(sampleDir, 'media')).map((f) => path.join(sampleDir, 'media', f)));
@@ -145,8 +124,7 @@ try {
   await page.waitForFunction(() => document.getElementById('meta')?.dataset.ready === '20', null, { timeout: 180_000, polling: 500 });
   const pid = page.url().split('#/p/')[1].split('/')[0];
 
-  // The traveler's phone: upload the extra files from the Upload tab (in the Mix view's side panel).
-  await page.click('#view-mix');
+  // Your own phone and camera: upload the extra files from the Upload tab (Itinerary view).
   await panelTab('Upload');
   await page.setInputFiles('#upload-input', [afterTrip, screenshot, dupe, ...slow, phone]);
   await page.click('#upload-start');
@@ -161,20 +139,33 @@ try {
   check('uploads are grouped by camera, so one camera’s clock can be fixed alone', (await byName('DSC_0101.jpg')).sourceId !== (await byName('IMG_3002.jpg')).sourceId && srcs.some((n) => /Canon EOS R6/.test(n)) && srcs.some((n) => /iPhone 15 Pro/.test(n)),
     srcs.join(' | '));
 
-  // Two more travelers join as contributors and upload from their own devices.
-  // Ana also uploads, from her own device, a copy of a photo Jody already added (she was sent it): a duplicate (MM-8).
-  for (const [who, list] of [['ana@example.com', [...ana, dupe]], ['ben@example.com', ben]] as const) {
-    await page.evaluate(async ([p, email]) => fetch(`/api/projects/${p}/invites`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-tripalogue-client': '1' }, body: JSON.stringify({ email, role: 'contributor' }) }), [pid, who]);
-    const invite = /https?:\/\/\S+accept\S+/.exec((await (app.mailer as OutboxMailer).latestFor(who))!.text)![0];
-    const t = new Traveler(who);
-    await t.signInFromLink(invite);
-    for (const f of list) await t.upload(pid, f);
+  // Two fellow travelers sent their photos: name each one as they are uploaded (MM-16).
+  for (const [who, list] of [['Ana', ana], ['Ben', ben]] as const) {
+    const before = await page.evaluate(() => window.tripalogue!.session!.state.media.length);
+    await page.selectOption('#upload-from', '__new__');
+    await page.fill('#upload-from-new', who);
+    await page.press('#upload-from-new', 'Enter');
+    await page.setInputFiles('#upload-input', [...list]);
+    await page.click('#upload-start');
+    await page.waitForFunction((n) => window.tripalogue!.session!.state.media.length === n, before + list.length, { timeout: 30_000 });
   }
+  const travelerId = (name: string) => page.evaluate((n) => window.tripalogue!.session!.state.travelers!.find((t) => t.name === n)!.id, name);
+  // Ana also sent a copy of a photo you already have (someone forwarded it to her): a duplicate (MM-8).
+  await uploadAs(pid, dupe, await travelerId('Ana'));
+  await app.jobs.idle();
+  await page.evaluate(() => window.tripalogue!.session!.poll());
+  await settle();
+  check('a fellow traveler is named while uploading, and their photos are filed under them, per camera (MM-16)',
+    (await page.evaluate(() => window.tripalogue!.session!.state.sources.map((x) => x.displayName))).some((n) => n === 'Ana · Apple iPhone 14'),
+    (await page.evaluate(() => window.tripalogue!.session!.state.sources.map((x) => x.displayName))).join(' | '));
+  await page.selectOption('#upload-from', '');
   await panelTab('Upload');
   await page.setInputFiles('#upload-input', [memo]);
   await page.click('#upload-start');
   await app.jobs.idle();
   await page.waitForFunction(() => window.tripalogue!.session!.state.media.length === 32, null, { timeout: 30_000 });
+  await app.jobs.idle();
+  await page.waitForFunction(() => window.tripalogue!.session!.state.media.every((m) => !m.status || m.status === 'ready'), null, { timeout: 30_000, polling: 250 });
 
   // Opening the project (a link with no view in it) goes to the Media view, since items are unassigned.
   await page.goto('about:blank');
@@ -188,7 +179,8 @@ try {
   check('with unassigned items, the project opens in the Media view', page.url().endsWith('/media'));
   const unassigned = await page.locator('.media-chapter.unassigned .tile').count();
   const summary = await page.textContent('#media-summary');
-  check('the Unassigned bin is listed first with its count', unassigned === 5 && /5 unassigned/.test(summary ?? ''), summary ?? '');
+  const unassignedNames = await page.evaluate(() => window.tripalogue!.session!.state.media.filter((m) => m.chapterId === null).map((m) => `${m.uri}${m.timestampConfidence === 'low' ? '?' : ''}`));
+  check('the Unassigned bin is listed first with its count', unassigned === 5 && /5 unassigned/.test(summary ?? ''), `${summary}: ${unassignedNames.join(', ')}`);
   check('a file with no camera time is badged as uncertain', (await tile('Screenshot 2026-05-20.jpg').textContent())!.includes('time?'));
   await shot('01-media-view');
 
@@ -251,15 +243,12 @@ try {
 
   // ---- slice C: contributors, the metadata check, locations, audio ----
   await page.waitForSelector('.media-contributors .contributor');
-  const reportText = async (email: string) => {
-    const uid = (await app.auth.upsertUser(email)).id;
-    return page.locator(`.media-contributors .contributor[data-contributor="${uid}"]`).textContent();
-  };
-  const anaReport = await reportText('ana@example.com');
-  const benReport = await reportText('ben@example.com');
+  const reportText = async (name: string) => page.locator(`.media-contributors .contributor[data-contributor="${await travelerId(name)}"]`).textContent();
+  const anaReport = await reportText('Ana');
+  const benReport = await reportText('Ben');
   check('the contributor check finds who sent copies stripped of time and place (G2)', !/WhatsApp/.test(anaReport ?? '') && /2 without a capture time/.test(benReport ?? '') && /2 without a location/.test(benReport ?? '') && /2 look like copies \(WhatsApp\)/.test(benReport ?? ''),
     `Ana: ${anaReport?.replace(/\s+/g, ' ').trim()} | Ben: ${benReport?.replace(/\s+/g, ' ').trim()}`);
-  const benId = (await app.auth.upsertUser('ben@example.com')).id;
+  const benId = await travelerId('Ben');
   await page.click(`.media-contributors button[data-ask="${benId}"]`);
   const note = await page.inputValue('#ask-text');
   check('a ready-to-send note asks Ben for the originals', /^Hi ben,/i.test(note) && /WhatsApp/.test(note) && /Options/.test(note), note.split('\n')[2]?.slice(0, 120));
@@ -303,7 +292,7 @@ try {
   check('a voice memo is filed by its recording time, with a waveform thumbnail (MM-15)', memoItem.kind === 'audio' && memoItem.chapterId === 'ch-porto' && !!memoItem.assets?.thumb && Math.round(memoItem.durationSec ?? 0) === 3);
 
   // MM-16: name the traveler behind the imported sample source.
-  const anaId = (await app.auth.upsertUser('ana@example.com')).id;
+  const anaId = await travelerId('Ana');
   await page.selectOption('.media-sources .source[data-source="src-camera"] select.traveler', anaId);
   await saved(page);
   await settle();
@@ -437,13 +426,10 @@ try {
   const binLeft = await page.locator('#removed-bin').count();
   check('Delete for good erases the original once nothing refers to it', !blobLeft && !binLeft, `${shotKey}: file ${blobLeft ? 'still there' : 'erased'}, bin ${binLeft ? 'still shown' : 'gone'}`);
 
-  await page.click('#view-mix');
-  await panelTab('Members');
-  await page.waitForSelector('.members li');
-  const inMembers = await page.locator('.side-body #danger-zone').count();
   await page.click('#view-itinerary');
   await page.click('#itinerary #danger-zone summary');
-  check('"Delete this travelogue" is on the Itinerary page, not in the Members tab', inMembers === 0 && await page.locator('#itinerary #danger-zone').count() === 1);
+  check('"Delete this travelogue" is on the Itinerary page; there is no Members tab and no sign-out',
+    await page.locator('#itinerary #danger-zone').count() === 1 && await page.locator('button[data-tab="Members"]').count() === 0 && await page.locator('text=Sign out').count() === 0);
   const title = await page.evaluate(() => window.tripalogue!.session!.state.title);
   const goDisabled = await page.isDisabled('#delete-project');
   await page.fill('#delete-confirm', title);

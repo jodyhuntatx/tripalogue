@@ -20,7 +20,6 @@ import { chromium, type Page } from 'playwright';
 import { analyzeItinerary } from '../src/core/index.js';
 import { startApp } from '../src/server/app.js';
 import { geoConfigFromEnv } from '../src/server/geo.js';
-import type { OutboxMailer } from '../src/server/mailer.js';
 import type {} from '../src/web/main.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -115,12 +114,8 @@ const card = (n: number) => page.locator('#chapter-cards > li').nth(n - 1);
 
 try {
   const t0 = Date.now();
-  // Sign in and create a travelogue: an empty project opens in the Itinerary view.
+  // Create a travelogue (no sign-in): an empty project opens in the Itinerary view.
   await page.goto(app.url);
-  await page.fill('input[type=email]', 'traveler@example.com');
-  await page.click('button[type=submit]');
-  await page.waitForSelector('text=Check your email');
-  await page.goto(/https?:\/\/\S+/.exec((await (app.mailer as OutboxMailer).latestFor('traveler@example.com'))!.text)![0]);
   await page.fill('input[aria-label="New travelogue name"]', 'Portugal by train');
   await page.click('text=Create');
   await page.waitForFunction(() => !!window.tripalogue?.session, null, { timeout: 10_000 }).catch(() => { throw new Error(`project did not open: ${consoleErrors.join(' | ')}`); });

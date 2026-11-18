@@ -93,7 +93,8 @@ export class Uploads {
         ...doc, media: doc.media.map((m) => (m.id === mediaId ? { ...m, status: 'uploading' as const, uploadedBy: user.id, error: undefined, ...(fileModifiedAt ? { fileModifiedAt } : {}) } : m)),
       }));
     } else {
-      mediaId = this.projects.addUploadedItem(projectId, user, fileName, kind, fileModifiedAt);
+      const travelerId = typeof body.travelerId === 'string' && body.travelerId ? body.travelerId : undefined;
+      mediaId = this.projects.addUploadedItem(projectId, user, fileName, kind, fileModifiedAt, travelerId);
     }
     const uploadId = `up_${randomBytes(12).toString('base64url')}`;
     await fs.mkdir(this.tmpDir, { recursive: true });

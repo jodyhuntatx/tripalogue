@@ -8,7 +8,6 @@ import {
   diff, expiredRemovals, parseProject, removeMedia, restoreMedia, stripMedia, validate, type Operation, type Travelogue,
 } from '../src/core/index.js';
 import { startApp, type App } from '../src/server/app.js';
-import type { OutboxMailer } from '../src/server/mailer.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const SAMPLE_DIR = path.resolve(here, '../samples/hand-written-20');
@@ -49,30 +48,18 @@ describe('the Removed bin (core)', () => {
 let app: App;
 const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'tl-del-'));
 class Client {
-  cookie = '';
   async req(method: string, p: string, body?: unknown, raw?: Buffer | string) {
     const headers: Record<string, string> = method === 'GET' ? {} : { 'x-tripalogue-client': '1' };
-    if (this.cookie) headers.cookie = this.cookie;
     if (body !== undefined) headers['content-type'] = 'application/json';
     const res = await fetch(new URL(p, app.url), { method, headers, body: (raw ?? (body !== undefined ? JSON.stringify(body) : undefined)) as BodyInit | undefined, redirect: 'manual' });
-    const set = res.headers.get('set-cookie');
-    if (set) this.cookie = set.split(';')[0];
     const text = await res.text();
     let json: Record<string, any> = {};
     try { json = text ? JSON.parse(text) : {}; } catch { /* not json */ }
     return { status: res.status, json, text };
   }
-  async signIn(email: string) {
-    await this.req('POST', '/api/auth/email', { email });
-    const link = new URL(/https?:\/\/\S+/.exec((await (app.mailer as OutboxMailer).latestFor(email))!.text)![0]);
-    await this.req('GET', link.pathname + link.search);
-    return (await this.req('GET', '/api/me')).json.user as { id: string };
-  }
 }
 
 const owner = new Client();
-const editor = new Client();
-const contributor = new Client();
 let pid = '';
 let ownerId = '';
 
@@ -99,14 +86,8 @@ before(async () => {
   app = await startApp({ dataDir: tmp, port: 0, log: () => {}, webDir: path.join(tmp, 'web'), runWorker: true, purgeAfterDays: 30 });
   await fs.mkdir(path.join(tmp, 'web'), { recursive: true });
   await fs.writeFile(path.join(tmp, 'web', 'index.html'), 'ok');
-  ownerId = (await owner.signIn('owner@example.com')).id;
+  ownerId = (await owner.req('GET', '/api/me')).json.user.id;
   pid = (await owner.req('POST', '/api/projects/import', undefined, await fs.readFile(path.join(SAMPLE_DIR, 'trip.travelogue.json'), 'utf8'))).json.id;
-  for (const [c, email, role] of [[editor, 'ed@example.com', 'editor'], [contributor, 'co@example.com', 'contributor']] as const) {
-    await owner.req('POST', `/api/projects/${pid}/invites`, { email, role });
-    const invite = new URL(/https?:\/\/\S+accept\S+/.exec((await (app.mailer as OutboxMailer).latestFor(email))!.text)![0]);
-    await c.signIn(email);
-    await c.req('GET', invite.pathname + invite.search);
-  }
   await upload(path.join(SAMPLE_DIR, 'media/ch1-01-alfama.jpg'), 'm01');
   await upload(path.join(SAMPLE_DIR, 'media/ch1-02-tram28.jpg'), 'm02');
   await upload(path.join(SAMPLE_DIR, 'media/ch1-03-belem.jpg'), 'm03');
@@ -148,8 +129,7 @@ describe('removing and deleting media for good (server)', () => {
     const v = await owner.req('POST', `/api/projects/${pid}/versions`, { label: 'With m02' });
     assert.equal((await edit('Remove item', (p) => removeMedia(p, ['m02'], new Date().toISOString(), ownerId))).status, 200);
     const stale = (await doc()).doc; // a browser that still remembers m02 in its bin
-    assert.equal((await contributor.req('POST', `/api/projects/${pid}/media/purge`, { mediaIds: ['m02'] })).status, 403, 'contributors cannot');
-    assert.deepEqual((await editor.req('POST', `/api/projects/${pid}/media/purge`, { mediaIds: ['m02', 'm03'] })).json.deleted, ['m02'], 'only items in the bin');
+    assert.deepEqual((await owner.req('POST', `/api/projects/${pid}/media/purge`, { mediaIds: ['m02', 'm03'] })).json.deleted, ['m02'], 'only items in the bin');
     const d = (await doc()).doc;
     assert.ok(!d.media.some((m) => m.id === 'm02') && !(d.removed ?? []).some((r) => r.item.id === 'm02'));
     assert.ok(!(await exists(before.storageKey!)) && !(await exists(before.assets!.thumb!)) && !(await dirExists(`derived/${pid}/m02`)), 'files erased');
@@ -176,11 +156,10 @@ describe('removing and deleting media for good (server)', () => {
 });
 
 describe('deleting a project', () => {
-  it('only the owner, only with the exact title, and then everything is gone', async () => {
+  it('only with the exact title, and then everything is gone', async () => {
     const title = (await doc()).doc.title;
     const keys = (await doc()).doc.media.filter((m) => m.storageKey).map((m) => m.storageKey!);
     assert.ok(keys.length > 0 && await exists(keys[0]));
-    assert.equal((await editor.req('DELETE', `/api/projects/${pid}`, { confirmTitle: title })).status, 403);
     assert.equal((await owner.req('DELETE', `/api/projects/${pid}`, { confirmTitle: 'Portugal' })).status, 400);
     const r = await owner.req('DELETE', `/api/projects/${pid}`, { confirmTitle: ` ${title} ` });
     assert.equal(r.status, 200, r.text);

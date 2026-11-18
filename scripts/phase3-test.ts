@@ -23,7 +23,6 @@ import { chromium, type Page } from 'playwright';
 import { parseProject, serializeProject, spreadKeys, defaultCue, createProject, type MediaItem, type Travelogue } from '../src/core/index.js';
 import { startApp } from '../src/server/app.js';
 import { geoConfigFromEnv } from '../src/server/geo.js';
-import type { OutboxMailer } from '../src/server/mailer.js';
 import type {} from '../src/web/main.js';
 
 const run = promisify(execFile);
@@ -117,7 +116,7 @@ const app = await startApp({ dataDir, port: 0, log: () => {}, geo: geoConfigFrom
 const browser = await chromium.launch();
 const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
 /** Upload, Members and Versions live in the Itinerary view's travelogue panel (lower right). */
-const panelTab = async (t: 'Upload' | 'Members' | 'Versions') => {
+const panelTab = async (t: 'Upload' | 'Versions') => {
   await page.click('#view-itinerary');
   await page.click(`#project-panel button[data-tab="${t}"]`);
 };
@@ -157,10 +156,6 @@ async function importProject(file: string, media: string[], count: number) {
 
 try {
   await page.goto(app.url);
-  await page.fill('input[type=email]', 'jody@example.com');
-  await page.click('button[type=submit]');
-  await page.waitForSelector('text=Check your email');
-  await page.goto(/https?:\/\/\S+/.exec((await (app.mailer as OutboxMailer).latestFor('jody@example.com'))!.text)![0]);
   const pid = await importProject(draftFile, draftMedia, 170);
 
   // The song and the memo, from the Upload tab.
@@ -450,26 +445,6 @@ try {
   const same = (id: string) => JSON.stringify(before.cues.find((c) => c.itemId === id)) === JSON.stringify(after.cues.find((c) => c.itemId === id));
   check('the cut, placements and audio survive a reload', after.targetSec === 300 && [songId, memoId, ...portraits, mover].every(same)
     && after.media.find((m) => m.id === mover)!.chapterLocked === true && (await tl()).duration === (await page.evaluate(() => window.tripalogue!.player!.duration)));
-
-  // A viewer can watch the cut but not change it.
-  const viewer = 'viv@example.com';
-  await page.evaluate(async ([p, email]) => fetch(`/api/projects/${p}/invites`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-tripalogue-client': '1' }, body: JSON.stringify({ email, role: 'viewer' }) }), [pid, viewer]);
-  const invite = /https?:\/\/\S+accept\S+/.exec((await (app.mailer as OutboxMailer).latestFor(viewer))!.text)![0];
-  const ctx2 = await browser.newContext({ viewport: { width: 1280, height: 900 } });
-  const tab2 = await ctx2.newPage();
-  await tab2.goto(app.url);
-  await tab2.fill('input[type=email]', viewer);
-  await tab2.click('button[type=submit]');
-  await tab2.waitForSelector('text=Check your email');
-  await tab2.goto(/https?:\/\/\S+/.exec((await (app.mailer as OutboxMailer).latestFor(viewer))!.text)![0]);
-  await tab2.goto(invite);
-  await tab2.waitForTimeout(500);
-  await tab2.goto(`${app.url}#/p/${pid}/mix`);
-  await tab2.waitForSelector('#pe-visual .pe-clip[data-item]');
-  await tab2.waitForTimeout(500);
-  const ro = await tab2.evaluate(() => ({ canEdit: window.tripalogue!.session!.canEdit, edges: document.querySelectorAll('#pe-visual .edge').length }));
-  check('a viewer sees the cut in the Edit view but cannot change it (no drag handles)', !ro.canEdit && ro.edges === 0);
-  await ctx2.close();
 
   // ---- a 300-item travelogue plays without stalls ----
   const bigPid = await importProject(bigFile, bigItems.map((m) => path.join(gen, m.uri)), 300);

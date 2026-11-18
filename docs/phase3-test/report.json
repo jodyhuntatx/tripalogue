@@ -1,5 +1,5 @@
 {
-  "date": "2026-11-17T19:26:20.543Z",
+  "date": "2026-11-17T20:35:52.645Z",
   "browser": "153.0.8010.12",
   "checks": [
     {
@@ -90,12 +90,12 @@
     {
       "name": "audio clips show their waveforms on the lanes (AU-4)",
       "pass": true,
-      "detail": "url(\"http://127.0.0.1:37537/api/projects/trv_SmNPay5gTxPn/me"
+      "detail": "url(\"http://127.0.0.1:38581/api/projects/trv_VxRRZbBo6kuY/me"
     },
     {
       "name": "in playback the song plays alongside the pictures, kept to the timeline clock",
       "pass": true,
-      "detail": "drift 0.031 s"
+      "detail": "drift 0.029 s"
     },
     {
       "name": "\"Play this chapter\" plays the chapter and stops at its end (PE-2)",
@@ -110,7 +110,7 @@
     {
       "name": "an edit shows in the preview in under 200 ms (acceptance)",
       "pass": true,
-      "detail": "53 ms from Delete to the player and timeline"
+      "detail": "58 ms from Delete to the player and timeline"
     },
     {
       "name": "the cut, placements and audio survive a reload",
@@ -118,14 +118,9 @@
       "detail": ""
     },
     {
-      "name": "a viewer sees the cut in the Edit view but cannot change it (no drag handles)",
-      "pass": true,
-      "detail": ""
-    },
-    {
       "name": "a 300-item travelogue plays without stalls (acceptance)",
       "pass": true,
-      "detail": "300 items, 5:09 at 4x in 77 s; 0 of 4659 frames waited (0.00%); timeline drawn in 3 ms"
+      "detail": "300 items, 5:09 at 4x in 77 s; 0 of 4659 frames waited (0.00%); timeline drawn in 10 ms"
     },
     {
       "name": "no errors in the browser console",

@@ -118,6 +118,25 @@ export function validate(raw: unknown): ValidationIssue[] {
     else num(c.titleCard, 'durationSec', `${path}.titleCard`, 0, 60, true);
   });
 
+  // Travelers (MM-16): names, each with a unique id.
+  if (p.travelers !== undefined) {
+    if (!Array.isArray(p.travelers)) err('$.travelers', 'must be a list');
+    else {
+      const seen = new Set<string>();
+      (p.travelers as unknown[]).forEach((t, i) => {
+        const path = `$.travelers[${i}]`;
+        if (!isObj(t)) return err(path, 'must be an object');
+        str(t, 'id', path);
+        str(t, 'name', path);
+        str(t, 'email', path, true);
+        if (typeof t.id === 'string') {
+          if (seen.has(t.id)) err(`${path}.id`, `duplicate traveler id "${t.id}"`);
+          seen.add(t.id);
+        }
+      });
+    }
+  }
+
   // Sources
   const sourceIds = new Set<string>();
   arr('sources').forEach((s, i) => {

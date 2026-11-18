@@ -8,7 +8,6 @@ import { after, before, describe, it } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import type { Operation, Travelogue } from '../src/core/index.js';
 import { startApp, type App } from '../src/server/app.js';
-import type { OutboxMailer } from '../src/server/mailer.js';
 import { withExif } from '../src/server/heif.js';
 import { exifTiff, isBlue, isRed, look, writeHeic } from './helpers/heic.js';
 
@@ -18,15 +17,12 @@ const SAMPLE_JSON = readFileSync(path.join(SAMPLE_DIR, 'trip.travelogue.json'), 
 const tmp = mkdtempSync(path.join(os.tmpdir(), 'tripalogue-server-'));
 
 let app: App;
-const outbox = () => app.mailer as OutboxMailer;
 
-/** A tiny browser: keeps cookies, sends the client header on writes. */
+/** A tiny browser: sends the client header on writes. There is no sign-in: every request is the local user. */
 class Client {
-  cookie = '';
   constructor(readonly name: string) {}
   async req(method: string, p: string, body?: unknown, opts: { raw?: Buffer | string; header?: boolean; headers?: Record<string, string> } = {}) {
     const headers: Record<string, string> = { ...(opts.headers ?? {}) };
-    if (this.cookie) headers.cookie = this.cookie;
     if (opts.header !== false && method !== 'GET') headers['x-tripalogue-client'] = '1';
     let payload: Buffer | string | undefined;
     if (opts.raw !== undefined) payload = opts.raw;
@@ -35,25 +31,10 @@ class Client {
       headers['content-type'] = 'application/json';
     }
     const res = await fetch(new URL(p, app.url), { method, headers, body: payload as BodyInit | undefined, redirect: "manual" });
-    const set = res.headers.get('set-cookie');
-    if (set) {
-      const [kv] = set.split(';');
-      this.cookie = kv.endsWith('=') ? '' : kv;
-    }
     const text = await res.text();
     let json: Record<string, any> = {};
     try { json = text ? JSON.parse(text) : {}; } catch { /* not json */ }
     return { status: res.status, json, text, headers: res.headers };
-  }
-  async signIn(email: string) {
-    const r = await this.req('POST', '/api/auth/email', { email });
-    assert.equal(r.status, 200);
-    const mail = await outbox().latestFor(email);
-    const link = new URL(/https?:\/\/\S+/.exec(mail!.text)![0]);
-    const v = await this.req('GET', link.pathname + link.search);
-    assert.equal(v.status, 302);
-    assert.ok(this.cookie.startsWith('tl_session='));
-    return (await this.req('GET', '/api/me')).json.user as { id: string; email: string };
   }
 }
 
@@ -67,90 +48,50 @@ after(async () => {
   await fs.rm(tmp, { recursive: true, force: true });
 });
 
-describe('accounts and sessions (F-6)', () => {
-  it('signs in with an emailed one-time link and keeps a session', async () => {
-    const c = new Client('ana');
-    const user = await c.signIn('Ana@Example.com');
-    assert.equal(user.email, 'ana@example.com');
-    const mail = await outbox().latestFor('ana@example.com');
-    const link = new URL(/https?:\/\/\S+/.exec(mail!.text)![0]);
-    const again = await new Client('x').req('GET', link.pathname + link.search);
-    assert.equal(again.status, 302);
-    assert.match(again.headers.get('location')!, /error=.*invalid/i, 'a link works only once');
+describe('one local user, no sign-in', () => {
+  it('acts as the local user without signing in', async () => {
+    const c = new Client('me');
+    const me = (await c.req('GET', '/api/me')).json.user;
+    assert.equal(me.email, 'me@this-computer');
+    assert.equal(me.id, app.auth.user.id);
+    assert.equal((await c.req('GET', '/api/projects')).status, 200);
   });
 
-  it('answers the same way for known and unknown addresses, and rejects bad ones', async () => {
-    const c = new Client('anon');
-    assert.deepEqual((await c.req('POST', '/api/auth/email', { email: 'nobody@example.com' })).json, { sent: true });
-    assert.equal((await c.req('POST', '/api/auth/email', { email: 'not-an-email' })).status, 400);
-    assert.deepEqual((await c.req('GET', '/api/me')).json.user, null);
-    assert.equal((await c.req('GET', '/api/projects')).status, 401);
+  it('has no sign-in, invitation or member routes', async () => {
+    const c = new Client('me');
+    for (const [m, p] of [['POST', '/api/auth/email'], ['GET', '/api/auth/verify'], ['POST', '/api/auth/logout'], ['GET', '/api/invites/accept'], ['GET', '/api/projects/x/members'], ['POST', '/api/projects/x/invites']] as const) {
+      assert.equal((await c.req(m, p, m === 'POST' ? {} : undefined)).status, 404, `${m} ${p}`);
+    }
   });
 
-  it('sets a hardened session cookie and signs out for real', async () => {
-    const c = new Client('ben');
-    await c.req('POST', '/api/auth/email', { email: 'ben@example.com' });
-    const link = new URL(/https?:\/\/\S+/.exec((await outbox().latestFor('ben@example.com'))!.text)![0]);
-    const v = await c.req('GET', link.pathname + link.search);
-    assert.match(v.headers.get('set-cookie')!, /HttpOnly; SameSite=Lax; Path=\/; Max-Age=\d+/);
-    const old = c.cookie;
-    await c.req('POST', '/api/auth/logout', {});
-    c.cookie = old;
-    assert.equal((await c.req('GET', '/api/projects')).status, 401, 'old session id no longer works');
+  it('listens on this computer only and answers only to a local Host', async () => {
+    assert.equal(app.cfg.host, '127.0.0.1');
+    const port = new URL(app.url).port;
+    const asHost = (host: string) => new Promise<number>((resolve, reject) => {
+      const req = http.request({ host: '127.0.0.1', port, path: '/api/me', headers: { host } }, (res) => { res.resume(); resolve(res.statusCode ?? 0); });
+      req.on('error', reject);
+      req.end();
+    });
+    assert.equal(await asHost('evil.example'), 403, 'a DNS-rebinding page is refused');
+    assert.equal(await asHost(`localhost:${port}`), 200);
+    assert.equal(await asHost(`127.0.0.1:${port}`), 200);
   });
 
   it('refuses writes without the client header (cross-site request forgery)', async () => {
-    const c = new Client('cara');
-    await c.signIn('cara@example.com');
+    const c = new Client('me');
     const r = await c.req('POST', '/api/projects', { title: 'x' }, { header: false });
     assert.equal(r.status, 403);
     assert.equal(r.json.code, 'csrf');
   });
 });
 
-describe('Google sign-in (OAuth code flow with PKCE)', () => {
-  it('redirects to Google and signs in from a verified ID token', async () => {
-    let tokenRequest = '';
-    const fake = http.createServer(async (req, res) => {
-      for await (const c of req) tokenRequest += c;
-      const claims = { iss: 'https://accounts.example', aud: 'cid', exp: Math.floor(Date.now() / 1000) + 300, email: 'gina@example.com', email_verified: true, name: 'Gina' };
-      res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ id_token: `x.${Buffer.from(JSON.stringify(claims)).toString('base64url')}.y` }));
-    });
-    await new Promise<void>((r) => fake.listen(0, '127.0.0.1', r));
-    const port = (fake.address() as { port: number }).port;
-    app.cfg.google = { clientId: 'cid', clientSecret: 'sec', tokenUrl: `http://127.0.0.1:${port}/token`, issuer: 'https://accounts.example' };
-    try {
-      const c = new Client('gina');
-      const start = await c.req('GET', '/api/auth/google/start?next=/%23/projects');
-      const loc = new URL(start.headers.get('location')!);
-      assert.equal(loc.searchParams.get('client_id'), 'cid');
-      assert.equal(loc.searchParams.get('code_challenge_method'), 'S256');
-      const state = loc.searchParams.get('state')!;
-      const bad = await c.req('GET', `/api/auth/google/callback?code=abc&state=wrong`);
-      assert.match(bad.headers.get('location')!, /error=/);
-      const cb = await c.req('GET', `/api/auth/google/callback?code=abc&state=${state}`);
-      assert.equal(cb.status, 302);
-      assert.match(tokenRequest, /code_verifier=/);
-      assert.equal((await c.req('GET', '/api/me')).json.user.email, 'gina@example.com');
-    } finally {
-      app.cfg.google = undefined;
-      fake.close();
-    }
-  });
-});
-
 describe('projects, operation log and edit lock (F-1, F-8, F-9)', () => {
   const owner = new Client('owner');
-  const editor = new Client('editor');
-  const viewer = new Client('viewer');
   let pid = '';
   let doc: Travelogue;
   let rev = 0;
 
   before(async () => {
-    await owner.signIn('olga@example.com');
-    await editor.signIn('eddie@example.com');
-    await viewer.signIn('vera@example.com');
     const r = await owner.req('POST', '/api/projects/import', undefined, { raw: SAMPLE_JSON });
     assert.equal(r.status, 201);
     pid = r.json.id;
@@ -167,35 +108,10 @@ describe('projects, operation log and edit lock (F-1, F-8, F-9)', () => {
     assert.ok(doc.sources.every((s) => s.type === 'upload'));
   });
 
-  it('hides projects from non-members', async () => {
-    assert.equal((await editor.req('GET', `/api/projects/${pid}`)).status, 404);
-    assert.equal((await editor.req('GET', '/api/projects')).json.projects.length, 0);
-  });
-
-  it('invites by email; accepting grants the role', async () => {
-    for (const [c, email, role] of [[editor, 'eddie@example.com', 'editor'], [viewer, 'vera@example.com', 'viewer']] as const) {
-      assert.equal((await owner.req('POST', `/api/projects/${pid}/invites`, { email, role })).status, 201);
-      const mail = await outbox().latestFor(email);
-      assert.match(mail!.subject, /invited you/);
-      // Anyone who may add media gets the one-page guide to sharing originals (MM-18); viewers do not.
-      assert.equal(/guide-contributors\.html/.test(mail!.text), role === 'editor', `${role}: guide link`);
-      const link = new URL(/https?:\/\/\S+/.exec(mail!.text)![0]);
-      const acc = await c.req('GET', link.pathname + link.search);
-      assert.equal(acc.headers.get('location'), `/#/p/${pid}`);
-    }
-    const members = (await owner.req('GET', `/api/projects/${pid}/members`)).json.members;
-    assert.deepEqual(members.map((m: { role: string }) => m.role), ['owner', 'editor', 'viewer']);
-    assert.equal((await editor.req('POST', `/api/projects/${pid}/invites`, { email: 'x@example.com', role: 'viewer' })).status, 403, 'only the owner invites');
-  });
-
-  it('requires the edit lock, and only one editor holds it at a time', async () => {
+  it('requires the edit lock before changes are accepted', async () => {
     const ops: Operation[] = [{ op: 'set', path: ['title'], value: 'Portugal, revised' }];
     assert.equal((await owner.req('POST', `/api/projects/${pid}/ops`, { baseRev: rev, label: 'Rename', ops })).status, 423);
     assert.equal((await owner.req('POST', `/api/projects/${pid}/lock`, {})).status, 200);
-    const other = await editor.req('POST', `/api/projects/${pid}/lock`, {});
-    assert.equal(other.status, 423);
-    assert.equal(other.json.lock.name, 'olga');
-    assert.equal((await viewer.req('POST', `/api/projects/${pid}/lock`, {})).status, 403, 'viewers cannot edit');
     const r = await owner.req('POST', `/api/projects/${pid}/ops`, { baseRev: rev, label: 'Rename', ops });
     assert.equal(r.status, 200);
     assert.equal(r.json.rev, rev + 1);
@@ -234,13 +150,12 @@ describe('projects, operation log and edit lock (F-1, F-8, F-9)', () => {
     assert.equal((await owner.req('GET', `/api/projects/${pid}`)).json.rev, rev, 'nothing was applied');
   });
 
-  it('serves the operation log to every member', async () => {
-    const r = await viewer.req('GET', `/api/projects/${pid}/ops?since=0`);
+  it('serves the operation log', async () => {
+    const r = await owner.req('GET', `/api/projects/${pid}/ops?since=0`);
     assert.equal(r.status, 200);
     assert.equal(r.json.rev, rev);
     assert.ok(r.json.ops.length >= 4);
     assert.ok(r.json.ops.every((o: { author: string; origin: string }) => o.author && (o.origin === 'client' || o.origin === 'server')));
-    assert.equal((await viewer.req('POST', `/api/projects/${pid}/ops`, { baseRev: rev, ops: [{ op: 'set', path: ['title'], value: 'v' }] })).status, 403);
   });
 
   it('saves and restores versions; a restore is itself a new revision', async () => {
@@ -254,15 +169,14 @@ describe('projects, operation log and edit lock (F-1, F-8, F-9)', () => {
     rev = res.json.rev;
     const g = await owner.req('GET', `/api/projects/${pid}`);
     assert.equal(g.json.project.title, 'Portugal, revised');
-    const versions = (await viewer.req('GET', `/api/projects/${pid}/versions`)).json.versions;
+    const versions = (await owner.req('GET', `/api/projects/${pid}/versions`)).json.versions;
     assert.ok(versions.some((v: { label: string }) => v.label === 'Imported'));
     assert.ok(versions.some((v: { label: string }) => v.label.startsWith('Restored')));
   });
 
-  it('releases the lock so another editor can take over', async () => {
-    await owner.req('DELETE', `/api/projects/${pid}/lock`);
-    assert.equal((await editor.req('POST', `/api/projects/${pid}/lock`, {})).status, 200);
-    await editor.req('DELETE', `/api/projects/${pid}/lock`);
+  it('releases the lock', async () => {
+    assert.equal((await owner.req('DELETE', `/api/projects/${pid}/lock`)).status, 200);
+    assert.equal(app.projects.lockInfo(pid), undefined);
   });
 
   it('exports a portable file without server internals', async () => {
@@ -270,7 +184,6 @@ describe('projects, operation log and edit lock (F-1, F-8, F-9)', () => {
     assert.match(r.headers.get('content-disposition')!, /attachment; filename=".*\.travelogue\.json"/);
     const exported = JSON.parse(r.text) as Travelogue;
     assert.ok(exported.media.every((m) => m.storageKey === undefined && m.status === undefined));
-    assert.equal((await viewer.req('GET', `/api/projects/${pid}/export`)).status, 403);
   });
 });
 
@@ -290,18 +203,10 @@ describe('odd request paths', () => {
 
 describe('uploads, processing and media links (F-4, F-7)', () => {
   const owner = new Client('uploader');
-  const contributor = new Client('contrib');
-  const outsider = new Client('outsider');
   let pid = '';
 
   before(async () => {
-    await owner.signIn('uma@example.com');
-    await contributor.signIn('carl@example.com');
-    await outsider.signIn('otto@example.com');
     pid = (await owner.req('POST', '/api/projects/import', undefined, { raw: SAMPLE_JSON })).json.id;
-    await owner.req('POST', `/api/projects/${pid}/invites`, { email: 'carl@example.com', role: 'contributor' });
-    const link = new URL(/https?:\/\/\S+/.exec((await outbox().latestFor('carl@example.com'))!.text)![0]);
-    await contributor.req('GET', link.pathname + link.search);
   });
 
   async function upload(c: Client, file: string, body: Record<string, unknown>) {
@@ -409,7 +314,6 @@ describe('uploads, processing and media links (F-4, F-7)', () => {
       let item = (await owner.req('GET', `/api/projects/${pid}`)).json.project.media.find((m: { id: string }) => m.id === mediaId);
       assert.equal(item.status, 'failed');
       assert.ok(item.storageKey, 'the original is stored even though processing failed');
-      assert.equal((await outsider.req('POST', `/api/projects/${pid}/media/retry`, {})).status, 404);
       // Still broken: the retry runs, fails again, and the answer says why.
       const stillBroken = await owner.req('POST', `/api/projects/${pid}/media/retry`, { mediaIds: [mediaId] });
       assert.deepEqual(stillBroken.json.queued, [mediaId]);
@@ -417,7 +321,7 @@ describe('uploads, processing and media links (F-4, F-7)', () => {
       await app.jobs.idle();
       // "Install" ffprobe, then retry everything that failed: no re-upload needed.
       app.cfg.ffprobe = good;
-      const fixed = await contributor.req('POST', `/api/projects/${pid}/media/retry`, {});
+      const fixed = await owner.req('POST', `/api/projects/${pid}/media/retry`, {});
       assert.equal(fixed.status, 200, fixed.text);
       assert.ok(fixed.json.queued.includes(mediaId));
       assert.equal(fixed.json.media.ok, true);
@@ -498,7 +402,7 @@ describe('uploads, processing and media links (F-4, F-7)', () => {
     const have = path.join(SAMPLE_DIR, 'media/ch1-04-pasteis.jpg'); // uploaded earlier in this suite
     const other = path.join(SAMPLE_DIR, 'media/ch4-03-river.jpg'); // not uploaded
     const files = await Promise.all([have, other].map(async (f) => ({ size: (await fs.stat(f)).size, sampleHash: await sampleHashOfFile(f) })));
-    const r = await contributor.req('POST', `/api/projects/${pid}/uploads/check`, { files });
+    const r = await owner.req('POST', `/api/projects/${pid}/uploads/check`, { files });
     assert.equal(r.status, 200, r.text);
     assert.deepEqual(r.json.known.map((k: { index: number; mediaId: string }) => [k.index, k.mediaId]), [[0, 'm04']]);
     // An original stored before sample hashes existed is fingerprinted on first comparison.
@@ -506,7 +410,6 @@ describe('uploads, processing and media links (F-4, F-7)', () => {
     app.projects.serverChange(pid, 'system', 'drop sample hash', (d) => ({ ...d, media: d.media.map((m) => (m.id === 'm04' ? { ...m, sampleHash: undefined } : m)) }));
     assert.deepEqual((await owner.req('POST', `/api/projects/${pid}/uploads/check`, { files })).json.known.map((k: { index: number }) => k.index), [0]);
     assert.ok(before.sampleHash && /^[0-9a-f]{64}$/.test(before.sampleHash), 'stored at upload');
-    assert.equal((await outsider.req('POST', `/api/projects/${pid}/uploads/check`, { files })).status, 404);
     assert.equal((await owner.req('POST', `/api/projects/${pid}/uploads/check`, { files: 'nope' })).status, 400);
   });
 
@@ -520,8 +423,17 @@ describe('uploads, processing and media links (F-4, F-7)', () => {
     assert.equal(item.chapterId, null);
   });
 
-  it('lets a contributor add new media (to Unassigned), but not edit the travelogue', async () => {
-    const { mediaId } = await upload(contributor, path.join(SAMPLE_DIR, 'media/ch2-01-pena.jpg'), {});
+  it('files a traveler’s photos under them, per camera (MM-16)', async () => {
+    // Name a traveler (an ordinary edit), then upload photos they sent.
+    assert.equal((await owner.req('POST', `/api/projects/${pid}/lock`, {})).status, 200);
+    const base = (await owner.req('GET', `/api/projects/${pid}`)).json.rev;
+    const named = await owner.req('POST', `/api/projects/${pid}/ops`, { baseRev: base, label: 'Add traveler', ops: [{ op: 'set', path: ['travelers'], value: [{ id: 'trv_carl', name: 'Carl' }] }] });
+    assert.equal(named.status, 200, named.text);
+    const { mediaId } = await upload(owner, path.join(SAMPLE_DIR, 'media/ch2-01-pena.jpg'), { travelerId: 'trv_carl' });
+    const file = path.join(tmp, 'IMG_carl.jpg');
+    await ff(['-f', 'lavfi', '-i', 'color=c=teal:s=64x48', '-frames:v', '1', path.join(tmp, 'plain-carl.jpg')]);
+    await fs.writeFile(file, withExif(await fs.readFile(path.join(tmp, 'plain-carl.jpg')), exifTiff('2026:05:04 12:00:00', 1, { make: 'Google', model: 'Pixel 8' })));
+    const phone = await upload(owner, file, { travelerId: 'trv_carl' });
     await app.jobs.idle();
     const p = (await owner.req('GET', `/api/projects/${pid}`)).json.project as Travelogue;
     const item = p.media.find((m) => m.id === mediaId)!;
@@ -529,17 +441,19 @@ describe('uploads, processing and media links (F-4, F-7)', () => {
     assert.equal(item.status, 'ready');
     assert.ok(p.cues.some((c) => c.itemId === mediaId), 'a default cue is created');
     const src = p.sources.find((s) => s.id === item.sourceId)!;
-    assert.match(src.displayName, /carl's uploads/);
-    assert.equal((await contributor.req('POST', `/api/projects/${pid}/lock`, {})).status, 403);
+    assert.deepEqual([src.displayName, src.contributorId], ["Carl's photos", 'trv_carl']);
+    const cam = p.sources.find((s) => s.id === p.media.find((m) => m.id === phone.mediaId)!.sourceId)!;
+    assert.deepEqual([cam.displayName, cam.contributorId], ['Carl · Google Pixel 8', 'trv_carl']);
+    assert.equal((await owner.req('POST', `/api/projects/${pid}/uploads`, { fileName: 'a.jpg', size: 10, travelerId: 'trv_nobody' })).status, 400);
+    await owner.req('DELETE', `/api/projects/${pid}/lock`);
   });
 
-  it('rejects unsupported, oversized and non-member uploads', async () => {
+  it('rejects unsupported and oversized uploads', async () => {
     assert.equal((await owner.req('POST', `/api/projects/${pid}/uploads`, { fileName: 'notes.txt', size: 10 })).status, 415);
     assert.equal((await owner.req('POST', `/api/projects/${pid}/uploads`, { fileName: 'big.mp4', size: 51 * 1024 * 1024 })).status, 413);
-    assert.equal((await outsider.req('POST', `/api/projects/${pid}/uploads`, { fileName: 'a.jpg', size: 10 })).status, 404);
   });
 
-  it('serves media only to members, through short-lived signed links with byte ranges', async () => {
+  it('serves media through short-lived signed links with byte ranges', async () => {
     const r = await owner.req('GET', `/api/projects/${pid}/media/m05/proxy`);
     assert.equal(r.status, 302);
     const loc = r.headers.get('location')!;
@@ -551,7 +465,6 @@ describe('uploads, processing and media links (F-4, F-7)', () => {
     assert.equal((await fetch(new URL(forged, app.url))).status, 403);
     const key = new URL(loc, app.url).pathname.slice('/blob/'.length);
     assert.equal((await fetch(new URL(app.auth.signBlobUrl(key, -5), app.url))).status, 403, 'expired');
-    assert.equal((await outsider.req('GET', `/api/projects/${pid}/media/m05/proxy`)).status, 404);
     assert.equal((await owner.req('GET', `/api/projects/${pid}/media/m10/proxy`)).status, 404, 'not uploaded yet');
   });
 

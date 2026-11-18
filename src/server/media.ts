@@ -159,20 +159,21 @@ export class Jobs {
   }
 
   /**
-   * Group a person's uploads by camera: an item uploaded into its uploader's general source moves to a source for
-   * that person and camera ("Jody · Canon EOS R6"), made on first use. Clock errors belong to a camera, so this is
+   * Group uploads by camera: an item uploaded into a general uploads source (yours, or a traveler's) moves to a
+   * source for that camera ("Canon EOS R6", or "Ana · iPhone 14" for a traveler's), made on first use. Clock errors belong to a camera, so this is
    * what lets one camera's clock be corrected (MM-4) without moving the same person's phone photos. Items from
    * imported or shared sources, and files with no camera recorded, stay where they are.
    */
   private cameraSource(doc: Travelogue, mediaId: string, camera?: string): Travelogue {
     const item = doc.media.find((m) => m.id === mediaId);
     const current = doc.sources.find((x) => x.id === item?.sourceId);
-    if (!item || !camera || !current || current.type !== 'upload' || current.camera || current.rootPath || !current.contributorId) return doc;
+    // Only the general uploads sources (yours, or a traveler's) are split by camera.
+    if (!item || !camera || !current || current.type !== 'upload' || current.camera || current.rootPath || !current.id.startsWith('src_')) return doc;
     const id = `${current.id}_${createHash('sha256').update(camera).digest('base64url').slice(0, 8)}`;
     let sources = doc.sources;
     if (!sources.some((x) => x.id === id)) {
-      const person = this.db.get<{ name: string }>('SELECT name FROM users WHERE id = ?', current.contributorId)?.name;
-      sources = [...sources, { id, type: 'upload', displayName: person ? `${person} · ${camera}` : camera, contributorId: current.contributorId, camera, clockOffsetSec: 0 }];
+      const person = current.contributorId ? doc.travelers?.find((t) => t.id === current.contributorId)?.name : undefined;
+      sources = [...sources, { id, type: 'upload', displayName: person ? `${person} · ${camera}` : camera, ...(current.contributorId ? { contributorId: current.contributorId } : {}), camera, clockOffsetSec: 0 }];
     }
     return { ...doc, sources, media: doc.media.map((m) => (m.id === mediaId ? { ...m, sourceId: id } : m)) };
   }
