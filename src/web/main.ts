@@ -8,11 +8,12 @@
  */
 import { addTraveler, effectiveInstant, moveItem, newId, parseProject, setIncluded, setTitle, Telemetry, type TelemetryEvent, type Travelogue } from '../core/index.js';
 import { Player, type PlayerState } from '../player/player.js';
-import { Api, ApiError, type MediaToolStatus, type User } from './api.js';
+import { Api, ApiError, type MediaToolStatus, type RenderInfo, type User } from './api.js';
 import { mountInset, type InsetView } from './inset.js';
 import { mountItinerary, type ItineraryView } from './itinerary.js';
 import { mountMedia, type MediaView } from './media.js';
 import { mountEditor, type EditorView } from './editor.js';
+import { mountExport, type ExportView } from './export.js';
 import { mountStageEditor } from './stage-edit.js';
 import { ProjectSession } from './session.js';
 import { filesFromDrop, mediaFiles, uploadAll, type UploadProgress } from './uploader.js';
@@ -20,7 +21,7 @@ import { fill, h, type Child } from './dom.js';
 
 declare global {
   interface Window {
-    tripalogue?: { player?: Player; session?: ProjectSession; itinerary?: ItineraryView; media?: MediaView; editor?: EditorView; inset?: InsetView; state?: () => PlayerState | undefined; telemetry: Telemetry };
+    tripalogue?: { player?: Player; session?: ProjectSession; itinerary?: ItineraryView; media?: MediaView; editor?: EditorView; exporter?: ExportView; inset?: InsetView; state?: () => PlayerState | undefined; telemetry: Telemetry };
   }
 }
 
@@ -97,7 +98,15 @@ function topbar(...extra: Child[]) {
 
 async function renderProjects() {
   document.title = 'Travelogues — TripAlogue';
-  const { projects } = await Api.projects();
+  const [{ projects }, { renders: news }] = await Promise.all([Api.projects(), Api.unseenRenders().catch(() => ({ renders: [] as RenderInfo[] }))]);
+  // VX-10: exports that finished while the travelogue was closed.
+  const ready = news.length ? h('section', { class: 'card export-news', id: 'export-news' },
+    h('h2', {}, news.length === 1 ? 'An export finished' : 'Exports finished'),
+    h('ul', { class: 'project-list' }, ...news.map((e) => h('li', {},
+      e.status === 'done'
+        ? h('span', {}, h('strong', {}, e.name), ' is ready. ', h('a', { href: Api.renderFileUrl(e.projectId, e.id), download: e.name }, 'Download'), ' · ')
+        : h('span', { class: 'error' }, h('strong', {}, e.name), ` failed: ${e.error?.message ?? 'something went wrong'}. `),
+      h('a', { href: `#/p/${encodeURIComponent(e.projectId)}`, onclick: () => void Api.seenRender(e.projectId, e.id).catch(() => {}) }, 'Open the travelogue'))))) : null;
   const title = h('input', { placeholder: 'Trip name', 'aria-label': 'New travelogue name', required: true });
   const jsonInput = h('input', { type: 'file', accept: '.json,application/json', 'aria-label': 'Project file', id: 'import-json' });
   const mediaInput = h('input', { type: 'file', multiple: true, accept: 'image/*,video/*,audio/*', 'aria-label': 'Media files', id: 'import-media' });
@@ -109,6 +118,7 @@ async function renderProjects() {
   app.replaceChildren(
     topbar(),
     h('main', { class: 'page' },
+      ready,
       h('section', { class: 'card' },
         h('h2', {}, 'Your travelogues'),
         projects.length
@@ -210,7 +220,7 @@ async function renderProject(id: string, initialView?: View) {
   const projectPanel = h('section', { class: 'project-panel card', id: 'project-panel', 'aria-label': 'Uploads and versions' }, ptabBar, projBody);
 
   titleInput.addEventListener('input', () => s.edit('Rename travelogue', (p) => setTitle(p, titleInput.value), { coalesceKey: 'title' }));
-  const exportLink = h('a', { class: 'button', href: `/api/projects/${encodeURIComponent(id)}/export`, download: '' }, 'Export file');
+  const exportLink = h('a', { class: 'button', href: `/api/projects/${encodeURIComponent(id)}/export`, download: '', title: 'Save the travelogue (chapters, cues and edits) as a .travelogue.json file' }, 'Save project file');
 
   // Start where the work is: chapters first, then sorting media (while anything is unassigned), then watching.
   let view: View = initialView ?? (s.state.chapters.length === 0 || s.state.media.length === 0 ? 'itinerary'
@@ -285,7 +295,16 @@ async function renderProject(id: string, initialView?: View) {
   try { startCollapsed = localStorage.getItem(PANEL_KEY) === '1'; } catch { /* default: shown */ }
   setPanel(startCollapsed, false);
   playMain.querySelector('.controls')!.append(panelBtn);
-  app.replaceChildren(topbar(viewTabs, titleInput, statusChip, undoBtn, redoBtn, s.mayEdit && exportLink), itinerary.el, media.el, playMain);
+  const exporter = mountExport(s, {
+    projectId: id,
+    playhead: () => player.time,
+    showItem: (itemId) => {
+      location.hash = `#/p/${encodeURIComponent(id)}/media`;
+      setView('media');
+      media.select([itemId]);
+    },
+  });
+  app.replaceChildren(topbar(viewTabs, titleInput, statusChip, undoBtn, redoBtn, s.mayEdit && exportLink, exporter.button), itinerary.el, media.el, playMain, exporter.dialog, exporter.toast);
 
   function setView(v: View) {
     const was = view;
@@ -662,7 +681,7 @@ async function renderProject(id: string, initialView?: View) {
   renderProjectPanel();
   update();
   setView(view);
-  window.tripalogue = { telemetry, player, session: s, itinerary, media, editor, inset, state: () => player.state };
+  window.tripalogue = { telemetry, player, session: s, itinerary, media, editor, exporter, inset, state: () => player.state };
   if (params.get('autoplay') === '1') {
     player.setMuted(true);
     player.play();
@@ -674,6 +693,7 @@ async function renderProject(id: string, initialView?: View) {
       itinerary.dispose();
       media.dispose();
       editor.dispose();
+      exporter.dispose();
       inset.dispose();
       ro.disconnect();
       removeEventListener('keydown', onKey);

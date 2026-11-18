@@ -19,6 +19,7 @@ import { Geo } from './geo.js';
 import { Jobs } from './media.js';
 import { MediaTools } from './toolcheck.js';
 import { Deletion } from './deletion.js';
+import { Exports, MAX_EXPORT_REQUEST_BYTES } from './exports.js';
 import { LOCK_TTL_MS, Projects, type Role } from './projects.js';
 import { Uploads } from './uploads.js';
 
@@ -37,6 +38,7 @@ export interface App {
   projects: Projects;
   uploads: Uploads;
   jobs: Jobs;
+  exports: Exports;
   blobs: BlobStore;
   deletion: Deletion;
   server: http.Server;
@@ -58,7 +60,8 @@ export async function startApp(overrides: Partial<ServerConfig> = {}, deps: { bl
   const jobs = new Jobs(db, cfg, blobs, projects);
   const tools = new MediaTools(cfg); // reads cfg.ffmpeg / cfg.ffprobe / cfg.log at each check
   const uploads = new Uploads(db, cfg, blobs, projects, jobs);
-  const deletion = new Deletion(db, blobs, projects, uploads, { purgeAfterDays: cfg.purgeAfterDays, log: cfg.log });
+  const exports = new Exports(db, cfg, blobs, projects);
+  const deletion = new Deletion(db, blobs, projects, uploads, { purgeAfterDays: cfg.purgeAfterDays, log: cfg.log, exports });
   const geo = new Geo(cfg.geo);
   const webDir = cfg.webDir ?? defaultWebDir();
   const r = new Router();
@@ -217,6 +220,53 @@ export async function startApp(overrides: Partial<ServerConfig> = {}, deps: { bl
     redirect(c.res, auth.signBlobUrl(key), 302, 'private, max-age=300');
   });
 
+  // ---- MP4 exports (Phase 4): rendered in the background from the originals ----
+  r.on('GET', '/api/renders/unseen', (c) => sendJson(c.res, 200, { renders: exports.unseen() }));
+  r.on('GET', '/api/projects/:id/renders', (c) => {
+    member(c, 'viewer');
+    sendJson(c.res, 200, { renders: exports.list(c.params.id) });
+  });
+  r.on('POST', '/api/projects/:id/renders', async (c) => {
+    member(c, 'editor');
+    const body = (await readJson(c.req, MAX_EXPORT_REQUEST_BYTES)) as { settings?: unknown; titleCards?: unknown };
+    sendJson(c.res, 201, { render: await exports.create(c.params.id, body.settings, body.titleCards) });
+  });
+  r.on('POST', '/api/projects/:id/renders/:rid/cancel', (c) => {
+    member(c, 'editor');
+    sendJson(c.res, 200, { render: exports.cancel(c.params.id, c.params.rid) });
+  });
+  r.on('POST', '/api/projects/:id/renders/:rid/seen', (c) => {
+    member(c, 'viewer');
+    sendJson(c.res, 200, { render: exports.markSeen(c.params.id, c.params.rid) });
+  });
+  r.on('DELETE', '/api/projects/:id/renders/:rid', async (c) => {
+    member(c, 'editor');
+    await exports.remove(c.params.id, c.params.rid);
+    sendJson(c.res, 200, { deleted: true });
+  });
+  r.on('GET', '/api/projects/:id/renders/:rid/file', async (c) => {
+    member(c, 'viewer');
+    const f = await exports.file(c.params.id, c.params.rid);
+    exports.markSeen(c.params.id, c.params.rid);
+    const inline = c.url.searchParams.get('inline') === '1';
+    const disposition = `${inline ? 'inline' : 'attachment'}; filename="${f.name.replace(/[^\x20-\x7e]/g, '_').replace(/"/g, "'")}"; filename*=UTF-8''${encodeURIComponent(f.name)}`;
+    const headers = { 'Content-Type': 'video/mp4', 'Accept-Ranges': 'bytes', 'Content-Disposition': disposition, 'Cache-Control': 'no-store' };
+    const m = c.req.headers.range && /^bytes=(\d*)-(\d*)$/.exec(c.req.headers.range);
+    if (m && (m[1] || m[2])) {
+      let start = m[1] ? Number(m[1]) : f.size - Number(m[2]);
+      let end = m[1] && m[2] ? Number(m[2]) : f.size - 1;
+      start = Math.max(0, start);
+      end = Math.min(end, f.size - 1);
+      if (start > end) return void c.res.writeHead(416, { 'Content-Range': `bytes */${f.size}` }).end();
+      c.res.writeHead(206, { ...headers, 'Content-Length': end - start + 1, 'Content-Range': `bytes ${start}-${end}/${f.size}` });
+      if (c.req.method === 'HEAD') return void c.res.end();
+      return void createReadStream(f.path, { start, end }).pipe(c.res);
+    }
+    c.res.writeHead(200, { ...headers, 'Content-Length': f.size });
+    if (c.req.method === 'HEAD') return void c.res.end();
+    createReadStream(f.path).pipe(c.res);
+  });
+
   // ---- telemetry (opt-in) ----
   r.on('POST', '/api/telemetry', async (c) => {
     if (!cfg.telemetryDir) throw new HttpError(404, 'Telemetry is off', 'not_found');
@@ -309,13 +359,15 @@ export async function startApp(overrides: Partial<ServerConfig> = {}, deps: { bl
   void tools.status(); // check ffmpeg now, so problems are in the log at startup
   if (cfg.runWorker) {
     jobs.start();
+    exports.start(); // queued or interrupted exports start again
     deletion.start(); // hourly: delete items whose time in the Removed bin is up
   }
 
   return {
-    cfg, db, auth, projects, uploads, jobs, blobs, server, deletion, url: `${cfg.baseUrl}/`,
+    cfg, db, auth, projects, uploads, jobs, exports, blobs, server, deletion, url: `${cfg.baseUrl}/`,
     async close() {
       deletion.stop();
+      await exports.stop();
       jobs.stop();
       await jobs.idle();
       await new Promise<void>((r2) => { server.closeAllConnections?.(); server.close(() => r2()); });

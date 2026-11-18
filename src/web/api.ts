@@ -1,5 +1,5 @@
 /** Thin client for the TripAlogue JSON API. */
-import type { Operation, Travelogue } from '../core/index.js';
+import type { ExportSettings, Operation, Travelogue } from '../core/index.js';
 
 export class ApiError extends Error {
   constructor(readonly status: number, readonly code: string, message: string, readonly data: Record<string, unknown> = {}) {
@@ -57,6 +57,27 @@ export async function api<T = unknown>(method: string, path: string, body?: unkn
   return data as T;
 }
 
+/** An MP4 export, as the server reports it (server/exports.ts). */
+export interface RenderInfo {
+  id: string;
+  projectId: string;
+  rev: number;
+  name: string;
+  settings: ExportSettings;
+  status: 'queued' | 'running' | 'done' | 'failed' | 'cancelled';
+  progress: number;
+  step: string | null;
+  etaSec: number | null;
+  error: { message: string; itemId?: string; reason?: string } | null;
+  bytes: number | null;
+  durationSec: number | null;
+  path: string | null;
+  createdAt: number;
+  startedAt: number | null;
+  finishedAt: number | null;
+  seen: boolean;
+}
+
 export const Api = {
   config: () => api<{ telemetryEndpoint: string | null; chunkBytes: number; maxUploadBytes: number; map: { tiles: boolean; search: boolean; attribution: string }; media?: MediaToolStatus; purgeAfterDays?: number }>('GET', '/api/config'),
   mediaTools: (recheck = false) => api<MediaToolStatus>('GET', `/api/media-tools${recheck ? '?recheck=1' : ''}`),
@@ -76,5 +97,13 @@ export const Api = {
   versions: (id: string) => api<{ versions: { id: string; rev: number; author: string; at: number; label: string; auto: boolean }[] }>('GET', `/api/projects/${id}/versions`),
   saveVersion: (id: string, label: string) => api<{ id: string }>('POST', `/api/projects/${id}/versions`, { label }),
   restore: (id: string, vid: string) => api<{ rev: number }>('POST', `/api/projects/${id}/versions/${vid}/restore`, {}),
+  renders: (id: string) => api<{ renders: RenderInfo[] }>('GET', `/api/projects/${encodeURIComponent(id)}/renders`),
+  unseenRenders: () => api<{ renders: RenderInfo[] }>('GET', '/api/renders/unseen'),
+  startRender: (id: string, settings: ExportSettings, titleCards: Record<number, string>) =>
+    api<{ render: RenderInfo }>('POST', `/api/projects/${encodeURIComponent(id)}/renders`, { settings, titleCards }),
+  cancelRender: (id: string, rid: string) => api<{ render: RenderInfo }>('POST', `/api/projects/${encodeURIComponent(id)}/renders/${encodeURIComponent(rid)}/cancel`, {}),
+  seenRender: (id: string, rid: string) => api<{ render: RenderInfo }>('POST', `/api/projects/${encodeURIComponent(id)}/renders/${encodeURIComponent(rid)}/seen`, {}),
+  deleteRender: (id: string, rid: string) => api('DELETE', `/api/projects/${encodeURIComponent(id)}/renders/${encodeURIComponent(rid)}`),
+  renderFileUrl: (id: string, rid: string, inline = false) => `/api/projects/${encodeURIComponent(id)}/renders/${encodeURIComponent(rid)}/file${inline ? '?inline=1' : ''}`,
   mediaUrl: (id: string, mediaId: string, variant: 'proxy' | 'thumb' | 'original' | 'jpeg') => `/api/projects/${encodeURIComponent(id)}/media/${encodeURIComponent(mediaId)}/${variant}`,
 };

@@ -340,3 +340,27 @@ button.danger-outline { background: none; border-color: #8f2a2a; color: #f19b9b;
 /* Itinerary: the travelogue panel (Upload, Versions) under the map and timeline */
 .project-panel { padding: 0; display: flex; flex-direction: column; }
 .project-panel .project-panel-body { max-height: 42vh; overflow: auto; }
+
+/* Phase 4: Export MP4 */
+.export-dialog { width: min(720px, 94vw); max-height: 88vh; overflow: auto; color: var(--text); background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 16px 20px; }
+.export-dialog::backdrop { background: rgba(0,0,0,.6); }
+.export-dialog h2 { margin: 0; }
+.export-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 8px 16px; margin: 12px 0; }
+.export-form .field { display: flex; flex-direction: column; gap: 4px; }
+.export-form .num { width: 6em; }
+.export-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 8px; }
+.export-row { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }
+.export-row.done { border-color: #2f5a43; }
+.export-row.failed { border-color: #6a3434; }
+.export-row .row { gap: 6px; align-items: center; }
+.export-name { overflow-wrap: anywhere; }
+.export-progress { width: 100%; height: 8px; accent-color: var(--accent); }
+.export-row p { margin: 4px 0 0; }
+.export-path code { overflow-wrap: anywhere; font-size: 11px; }
+.export-toast { position: fixed; right: 16px; bottom: 16px; z-index: 50; display: flex; gap: 8px; align-items: center; max-width: min(560px, 92vw);
+  background: #12261c; border: 1px solid #2f5a43; border-radius: 10px; padding: 10px 12px; box-shadow: 0 8px 24px rgba(0,0,0,.45); }
+.export-toast.failed { background: #2a1616; border-color: #6a3434; }
+.export-toast .toast-close { background: none; border: 0; font-size: 18px; color: var(--muted); }
+.export-news { border-color: #2f5a43; }
+.export-head { justify-content: space-between; }
+.export-row .spacer, .export-head .spacer { flex: 1; }
