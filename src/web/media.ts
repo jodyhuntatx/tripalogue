@@ -23,10 +23,12 @@
  */
 import {
   contributorOf, contributorReports, duplicateGroups, dropIntoChapter, farFromChapter, itemInstant, localToUtc, messagingApp,
-  originalsRequest, overlapItems, previewClockOffset, removeMedia, renameSource, restoreMedia, setClockOffset, setItemLocation, setVideoTrim, MIN_CLIP_SEC, setSourceContributor, setUserTime, shiftUserTime, addTraveler, travelerName, newId,
+  originalsRequest, overlapItems, previewClockOffset, removeMedia, renameSource, restoreMedia, setClockOffset, setItemLocation, setVideoTrim, MIN_CLIP_SEC, setSourceContributor, setUserTime, shiftUserTime, addTraveler, travelerName, newId, mediaPlaces,
   strippedSigns, type ContributorReport, type Id, type LatLng, type MediaItem, type Travelogue,
 } from '../core/index.js';
 import { Api } from './api.js';
+
+const fileName = (uri: string) => uri.split('/').pop() ?? uri;
 
 /** The traveler menu's "+ New traveler…" entry. */
 const NEW_TRAVELER = '__new__';
@@ -461,9 +463,13 @@ export function mountMedia(s: ProjectSession, ctx: { projectId: string; play: (i
     const ch = p.chapters.find((c) => c.id === (one ?? items[0]).chapterId);
     const set = (label: string, loc: LatLng | null) => s.edit(label, (q) => setItemLocation(q, ids, loc), { structural: true });
     const editable = s.canEdit;
+    const places = mediaPlaces(p);
+    const lent = one && !one.location ? places.get(one.id) : undefined;
+    const lender = lent?.from && p.media.find((m) => m.id === lent.from);
     const status = one
-      ? (one.location ? `${one.location.lat.toFixed(4)}, ${one.location.lng.toFixed(4)}` : 'No location')
-      : `${located.length} of ${items.length} have a location`;
+      ? (one.location ? `${one.location.lat.toFixed(4)}, ${one.location.lng.toFixed(4)}`
+        : lent ? `None of its own: placed where ${lender ? fileName(lender.uri) : 'an earlier item'} was taken` : 'No location')
+      : `${located.length} of ${items.length} have a location${items.some((m) => !m.location && places.has(m.id)) ? '; the rest are placed where the item before them was taken' : ''}`;
     return h('div', { class: 'field', id: 'location-field' },
       h('label', {}, 'Location ', h('span', { class: 'muted', id: 'location-status' }, status)),
       h('div', { class: 'row' },
@@ -483,13 +489,19 @@ export function mountMedia(s: ProjectSession, ctx: { projectId: string; play: (i
   function renderMap() {
     const p = s.state;
     map.setPins(p.chapters.flatMap((c, i) => (c.coordinates ? [{ id: c.id, index: i, lat: c.coordinates.lat, lng: c.coordinates.lng, title: c.title }] : [])));
-    map.setDots(p.media.filter((m) => m.location).map((m) => ({
-      id: m.id, lat: m.location!.lat, lng: m.location!.lng,
-      state: selection.has(m.id) ? 'selected' as const : derived.far.has(m.id) ? 'far' as const : m.chapterId === null ? 'unassigned' as const : undefined,
-    })));
+    // Items without a location of its own are drawn where the last earlier located item was taken (dashed).
+    const places = mediaPlaces(p);
+    map.setDots(p.media.flatMap((m) => {
+      const at = places.get(m.id);
+      return at ? [{
+        id: m.id, lat: at.lat, lng: at.lng, borrowed: !!at.from,
+        state: selection.has(m.id) ? 'selected' as const : derived.far.has(m.id) ? 'far' as const : m.chapterId === null ? 'unassigned' as const : undefined,
+      }] : [];
+    }));
     const located = p.media.filter((m) => m.location).length;
+    const borrowed = [...places.values()].filter((x) => x.from).length;
     mapHint.textContent = picking ? 'Click the map to set the location.'
-      : `${located} of ${p.media.length} items have a location${derived.far.size ? ` · ${derived.far.size} far from their chapter (amber)` : ''}. Click a dot to select its item.`;
+      : `${located} of ${p.media.length} items have a location${borrowed ? ` · ${borrowed} more placed where the item before them was taken (dashed)` : ''}${derived.far.size ? ` · ${derived.far.size} far from their chapter (amber)` : ''}. Click a dot to select its item.`;
   }
 
   // ---------------------------------------------------------------- contributors (MM-16, MM-17)
@@ -544,13 +556,16 @@ export function mountMedia(s: ProjectSession, ctx: { projectId: string; play: (i
   function itemDetail(p: Travelogue, m: MediaItem): HTMLElement {
     const src = p.sources.find((x) => x.id === m.sourceId);
     const tz = zoneFor(p, m);
+    const lent = m.location ? undefined : mediaPlaces(p).get(m.id);
+    const lender = lent?.from ? p.media.find((x) => x.id === lent.from) : undefined;
     const rows: [string, string][] = [
       ['Kind', `${m.kind}${m.width ? ` · ${m.width}×${m.height}` : ''}${m.durationSec ? ` · ${dur(m.durationSec)}` : ''}`],
       ['Camera time', m.capturedAt ? `${m.capturedAt}${m.timestampConfidence === 'low' ? ' (from the file date)' : ''}` : 'none'],
       ...(src?.clockOffsetSec ? [['Clock offset', offsetLabel(src.clockOffsetSec)] as [string, string]] : []),
       ...(m.userTimestamp ? [['Set by hand', fmt(Date.parse(m.userTimestamp), tz, true)] as [string, string]] : []),
       ['Source', src?.displayName ?? '?'],
-      ...(m.location ? [['Location', `${m.location.lat.toFixed(4)}, ${m.location.lng.toFixed(4)}`] as [string, string]] : []),
+      ...(m.location ? [['Location', `${m.location.lat.toFixed(4)}, ${m.location.lng.toFixed(4)}`] as [string, string]]
+        : lent?.from ? [['Location', `${lent.lat.toFixed(4)}, ${lent.lng.toFixed(4)}, from ${lender ? fileName(lender.uri) : 'an earlier item'}`] as [string, string]] : []),
     ];
     return h('dl', { class: 'detail' }, ...rows.flatMap(([k, v]) => [h('dt', {}, k), h('dd', {}, v)]));
   }

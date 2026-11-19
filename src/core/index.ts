@@ -7,6 +7,7 @@ export * from './autosave.js';
 export * from './edits.js';
 export * from './timeline.js';
 export * from './render-model.js';
+export * from './places.js';
 export * from './map-model.js';
 export * from './telemetry.js';
 export * from './fractional.js';

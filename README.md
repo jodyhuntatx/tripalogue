@@ -137,7 +137,7 @@ with "could not be converted", check that line, and that `ffmpeg -decoders | gre
 
 ```sh
 npm run typecheck
-npm test            # 186 tests: model, order keys, operations, history, itinerary, assignment, metadata, travelers, sample hash, geo proxy, HEIC, presentation edits, audio mix, export plan and MP4 render, server API, uploads, processing, retry, local-only access
+npm test            # 194 tests: model, order keys, operations, history, itinerary, assignment, metadata, travelers, sample hash, geo proxy, HEIC, presentation edits, audio mix, export plan and MP4 render, server API, uploads, processing, retry, local-only access
 npm run test:e2e    # Phase 0 browser exit test (needs Playwright's Chromium: npx playwright install chromium)
 npm run test:phase1 # Phase 1 browser test of the G1 tasks (no internet needed: it uses a stand-in map provider)
 npm run test:phase2 # Phase 2 browser test of the G2 tasks (your photos and two travelers', a slow camera, WhatsApp copies, a folder upload)
@@ -430,6 +430,11 @@ same in the preview and the export.
 | AU-9 | **Fit pictures to it**: the photos a narration plays over stretch to its length | same |
 
 Notes:
+- **Items without a location** (no GPS in the file, none set by hand) are placed where the most recent earlier
+  item with a location was taken, by capture time, across chapters. This is worked out, not saved: giving the item
+  a location replaces it. The Media view draws such items as dashed dots and says which item lent the place. An
+  item taken before any located item, or with no capture time, has no place (in a chapter the map then uses the
+  chapter's pin). See `src/core/places.ts`.
 - Exports need a Chromium: Playwright's (`npx playwright install chromium`), or an installed Google Chrome or
   Microsoft Edge. Without one the export stops at once with that advice.
 - Map tiles come from OpenStreetMap; terrain from OpenTopoMap (`TRIPALOGUE_TERRAIN_TILE_URL` changes it). Dark is

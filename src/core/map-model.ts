@@ -19,6 +19,7 @@
 import { segmentIndexAt, DEFAULT_MAP_TRANSITION, type Segment, type Timeline } from './timeline.js';
 import type { Chapter, InsetCorner, LatLng, MapStyle, Travelogue } from './schema.js';
 import { distanceKm } from './contributors.js';
+import { mediaPlaces } from './places.js';
 
 export interface MapCamera {
   lat: number;
@@ -217,9 +218,10 @@ function edgeFade(local: number, d: number, ramp: number): number {
 export function chapterCamera(p: Travelogue, tl: Timeline, chIndex: number, view: { w: number; h: number }): MapCamera {
   const ch = p.chapters[chIndex];
   const pts: LatLng[] = ch.coordinates ? [ch.coordinates] : [];
+  const places = mediaPlaces(p);
   for (const s of tl.segments) {
     if (s.kind === 'title' || s.chapterIndex !== chIndex) continue;
-    const loc = itemPlace(p, s.item.location, ch);
+    const loc = itemPlace(p, places.get(s.item.id), ch);
     if (loc && (!ch.coordinates || distanceKm(ch.coordinates, loc) <= FIT_KM)) pts.push(loc);
   }
   return fitCamera(pts, view, 0.15);
@@ -238,12 +240,15 @@ export function storyAt(p: Travelogue, tl: Timeline, i: number, local: number, a
   const pastDots: MapDotState[] = [];
   const shownPath: LatLng[] = [];
   let current: LatLng | undefined;
+  // An item without a location of its own is placed where the last earlier located item was taken.
+  const places = mediaPlaces(p);
   tl.segments.forEach((g, k) => {
     if (g.kind === 'title') return;
     const gch = p.chapters[g.chapterIndex];
-    const own = g.item.location ? itemPlace(p, g.item.location, gch) : undefined;
+    const loc = places.get(g.item.id);
+    const own = loc ? itemPlace(p, loc, gch) : undefined;
     if (g.chapterIndex === seg.chapterIndex) {
-      const place = itemPlace(p, g.item.location, ch); // MV-7: no place → the chapter's pin
+      const place = itemPlace(p, loc, ch); // MV-7: no place → the chapter's pin
       const state = k < i ? 'shown' : k === i ? 'current' : 'ahead';
       if (own) dots.push({ ...own, state });
       if (place && state !== 'ahead') shownPath.push(place);
