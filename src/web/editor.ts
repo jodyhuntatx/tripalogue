@@ -20,6 +20,7 @@ import { Api } from './api.js';
 import { fill, h } from './dom.js';
 import type { ProjectSession } from './session.js';
 import type { Player } from '../player/player.js';
+import { audioSections, chapterSections, clipSections, laneSection, type CuePanelContext, type StageFocus } from './cue-panel.js';
 
 export interface EditorView {
   /** The timeline panel, under the player. */
@@ -32,6 +33,8 @@ export interface EditorView {
   onTime(t: number): void;
   /** Called when the Mix view is shown or hidden. */
   setActive(on: boolean): void;
+  /** Draw the side panel again (the stage focus changed). */
+  refreshInspector(): void;
   /** Keyboard shortcuts while the Mix view is shown; true when the key was used. */
   handleKey(e: KeyboardEvent): boolean;
   dispose(): void;
@@ -42,6 +45,12 @@ export interface EditorContext {
   player: Player;
   /** Selection changed (the stage handles follow it). */
   onSelect?: (ids: Id[]) => void;
+  /** What the stage overlay edits (Ken Burns frames, a text box); shared with the stage. */
+  focus: StageFocus;
+  /** The stage focus changed. */
+  onFocus?: () => void;
+  /** Open the narration recorder (AU-5). */
+  onRecord?: () => void;
 }
 
 const ZOOMS = [4, 8, 14, 24, 40, 64, 100];
@@ -73,6 +82,14 @@ export function mountEditor(s: ProjectSession, ctx: EditorContext): EditorView {
   let stopAt: number | null = null;
   let active = false;
   const pps = () => ZOOMS[zoom];
+  const cx: CuePanelContext = {
+    session: s,
+    timeline: () => tl,
+    focus: ctx.focus,
+    onFocus: () => { inspectorKey = ''; renderInspector(true); ctx.onFocus?.(); },
+    seek: (t) => ctx.player.seek(t),
+    time: () => ctx.player.time,
+  };
 
   // ---- DOM ----
   const total = h('span', { id: 'pe-total', class: 'pe-total' });
@@ -82,7 +99,8 @@ export function mountEditor(s: ProjectSession, ctx: EditorContext): EditorView {
   const zoomIn = h('button', { class: 'icon', 'aria-label': 'Zoom in', id: 'pe-zoom-in', onclick: () => setZoom(zoom + 1) }, '+');
   const playChapterBtn = h('button', { id: 'pe-play-chapter', onclick: () => playChapter() }, '▶ Chapter');
   const playSelBtn = h('button', { id: 'pe-play-selection', onclick: () => playFromSelection() }, '▶ From selection');
-  const toolbar = h('div', { class: 'pe-toolbar row' }, playChapterBtn, playSelBtn,
+  const recordBtn = h('button', { id: 'pe-record', title: 'Record narration at the playhead', onclick: () => ctx.onRecord?.() }, '● Record');
+  const toolbar = h('div', { class: 'pe-toolbar row' }, playChapterBtn, playSelBtn, recordBtn,
     h('span', { class: 'spacer' }), total, h('label', { class: 'small muted', for: 'pe-target' }, 'Target'), targetIn, bar,
     h('span', { class: 'muted small' }, 'Zoom'), zoomOut, zoomIn);
 
@@ -168,7 +186,10 @@ export function mountEditor(s: ProjectSession, ctx: EditorContext): EditorView {
         if (span0) ctx.player.seek(span0.start);
       } }, h('strong', {}), h('span', { class: 'muted' })),
       (e) => {
-        e.title = `${c.index + 1}. ${c.title} · ${fmt(c.end - c.start)}`;
+        // MV-7: a chapter without a place has no map; say so where the chapter is edited.
+        const noPlace = !s.state.chapters.find((q) => q.id === c.chapterId)?.coordinates;
+        e.classList.toggle('no-place', noPlace);
+        e.title = `${c.index + 1}. ${c.title} · ${fmt(c.end - c.start)}${noPlace ? ' · no place: the map is hidden in this chapter' : ''}`;
         e.querySelector('strong')!.textContent = `${c.index + 1}. ${c.title || 'Untitled'}`;
         e.querySelector('span')!.textContent = ` ${fmt(c.end - c.start)}`;
         span(e, c.start, c.end - c.start, 2);
@@ -346,6 +367,14 @@ export function mountEditor(s: ProjectSession, ctx: EditorContext): EditorView {
   function select(ids: Id[], seek = true) {
     selected = ids;
     chapterSel = null;
+    // The stage stops editing what is no longer selected.
+    const f = ctx.focus;
+    const annItem = f.annotation && s.state.annotations.find((a) => a.id === f.annotation);
+    if ((f.motionItem && !(ids.length === 1 && ids[0] === f.motionItem)) || (annItem && !(annItem.target.type === 'item' && ids.length === 1 && ids[0] === annItem.target.itemId))) {
+      f.motionItem = null;
+      f.annotation = null;
+      ctx.onFocus?.();
+    }
     renderSelection();
     renderInspector();
     ctx.onSelect?.(ids);
@@ -676,7 +705,10 @@ export function mountEditor(s: ProjectSession, ctx: EditorContext): EditorView {
     const p = s.state;
     const items = selected.map((id) => p.media.find((m) => m.id === id)).filter((m): m is MediaItem => !!m);
     const key = JSON.stringify([selected, chapterSel, items.map((m) => [m.status, m.durationSec]), selected.map((id) => cueOf(id)), s.canEdit,
-      tl.audio.filter((c) => selected.includes(c.item.id)).map((c) => [c.start, c.anchorItemId]), p.audioLanes]);
+      tl.audio.filter((c) => selected.includes(c.item.id)).map((c) => [c.start, c.anchorItemId]), p.audioLanes,
+      p.annotations.filter((a) => a.target.type === 'item' ? selected.includes(a.target.itemId) : a.target.chapterId === chapterSel).map((a) => [a.id, a.kind, a.style, a.startSec, a.durationSec]),
+      p.cuePresets, chapterSel && ((c) => c && [c.coordinates, c.mapInset, c.credits, c.titleCard.enabled, c.titleCard.layout, c.titleCard.backgroundItemId, c.titleCard.durationSec])(p.chapters.find((c) => c.id === chapterSel)),
+      ctx.focus]);
     if (!force && key === inspectorKey) return;
     inspectorKey = key;
     const editable = s.canEdit;
@@ -685,7 +717,8 @@ export function mountEditor(s: ProjectSession, ctx: EditorContext): EditorView {
       fill(inspector, h('h3', {}, 'Edit the cut'),
         h('p', { class: 'muted' }, 'Click a clip in the timeline to change it; Ctrl/Cmd-click or Shift-click to select several. Drag clips to reorder them, or their right edge to change how long they play. Delete takes a clip out of the cut (it waits in Excluded).'),
         h('p', { class: 'muted' }, 'Drag a voice memo or a song from "Audio to place" onto Narration or Music. Narration moves with the picture it starts on; music stays at its time in the chapter.'),
-        h('p', { class: 'muted small' }, 'With one picture selected, drag it on the stage to move it, or its corners to resize it.'));
+        h('p', { class: 'muted small' }, 'With one picture selected, drag it on the stage to move it, or its corners to resize it.'),
+        laneSection(cx));
       return;
     }
     const audioItems = items.filter((m) => m.kind === 'audio');
@@ -741,7 +774,8 @@ export function mountEditor(s: ProjectSession, ctx: EditorContext): EditorView {
       h('div', { class: 'row' },
         h('button', { id: 'pe-reset', disabled: !editable, onclick: () => edit(ids.length === 1 ? 'Reset to defaults' : `Reset ${ids.length} items`, (q) => resetCues(q, ids)) }, 'Reset to defaults'),
         h('button', { id: 'pe-exclude', class: 'danger-outline', disabled: !editable, onclick: () => excludeSelected() }, 'Exclude'),
-        h('button', { onclick: () => playFromSelection() }, '▶ Play from here')));
+        h('button', { onclick: () => playFromSelection() }, '▶ Play from here')),
+      ...clipSections(cx, visual));
   }
 
   function renderChapterInspector(chapterId: Id) {
@@ -753,7 +787,8 @@ export function mountEditor(s: ProjectSession, ctx: EditorContext): EditorView {
       h('div', { class: 'row' },
         h('button', { id: 'pe-play-this-chapter', onclick: () => playChapter() }, '▶ Play this chapter'),
         h('button', { id: 'pe-reset-chapter', disabled: !s.canEdit, onclick: () => edit('Reset chapter to defaults', (q) => resetChapter(q, chapterId)) }, 'Reset chapter to defaults')),
-      h('p', { class: 'muted small' }, 'Resetting puts every item in the chapter back to the cue profile: durations, trims, placement and fades. Order and what is excluded are kept.'));
+      h('p', { class: 'muted small' }, 'Resetting puts every item in the chapter back to the cue profile: durations, trims, placement and fades. Order and what is excluded are kept.'),
+      ...chapterSections(cx, chapterId));
   }
 
   function renderAudioInspector(a: MediaItem) {
@@ -809,7 +844,8 @@ export function mountEditor(s: ProjectSession, ctx: EditorContext): EditorView {
           : 'It stops when its chapter ends.')),
       h('div', { class: 'row' },
         h('button', { id: 'pe-unplace', class: 'danger-outline', disabled: !editable, onclick: () => { edit('Take audio off its lane', (q) => unplaceAudio(q, a.id)); select([], false); } }, 'Take off the lane'),
-        h('button', { onclick: () => playFromSelection() }, '▶ Play from here')));
+        h('button', { onclick: () => playFromSelection() }, '▶ Play from here')),
+      ...audioSections(cx, a));
   }
 
   // ---- lifecycle ----
@@ -827,6 +863,7 @@ export function mountEditor(s: ProjectSession, ctx: EditorContext): EditorView {
   return {
     el, inspector,
     selection: () => selected.slice(),
+    refreshInspector: () => renderInspector(true),
     select: (ids, seek = true) => select(ids, seek),
     update,
     onTime,

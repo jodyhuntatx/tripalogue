@@ -1,12 +1,12 @@
 {
-  "date": "2026-11-18T18:52:56.122Z",
+  "date": "2026-11-18T22:16:56.485Z",
   "rate": 1,
   "browser": "153.0.8010.12",
   "timelineSec": 116,
   "wallSec": 116.466,
-  "uploadSec": 0.496,
-  "readySec": 16.017,
-  "framesDrawn": 6981,
+  "uploadSec": 0.539,
+  "readySec": 13.552,
+  "framesDrawn": 6984,
   "placeholderFrames": 0,
   "checks": [
     {
@@ -17,7 +17,7 @@
     {
       "name": "imports and uploads all 20 originals through the browser",
       "pass": true,
-      "detail": "10.1 MB uploaded in 0.5 s; all processed after 16.0 s"
+      "detail": "10.1 MB uploaded in 0.5 s; all processed after 13.6 s"
     },
     {
       "name": "originals are stored byte for byte",
@@ -42,7 +42,7 @@
     {
       "name": "media ready in time (under 2% of frames waited on loading)",
       "pass": true,
-      "detail": "0 of 6981 frames"
+      "detail": "0 of 6984 frames"
     },
     {
       "name": "draws smoothly (30 fps or better)",
@@ -57,12 +57,12 @@
     {
       "name": "frame at 9.0 s: portrait-fit-m02",
       "pass": true,
-      "detail": "37% of the frame lit"
+      "detail": "43% of the frame lit"
     },
     {
       "name": "frame at 19.0 s: custom-rect-m04",
       "pass": true,
-      "detail": "40% of the frame lit"
+      "detail": "45% of the frame lit"
     },
     {
       "name": "frame at 45.5 s: fill-m09",
@@ -82,12 +82,12 @@
     {
       "name": "the map inset shows the whole trip on a title card, then the chapter being played",
       "pass": true,
-      "detail": "title: trip; m02: ch-lisbon; m09: ch-sintra"
+      "detail": "title opens at zoom 5.7 (zoom); m02: ch-lisbon at zoom 11.5; m09: ch-sintra"
     },
     {
       "name": "the inset shows where each photo was taken and moves through the chapter as it plays",
       "pass": true,
-      "detail": "at m03: trail m01→m02→m03; next item animated: true"
+      "detail": "at m03: 2 shown, 2 ahead, trail 3; hop animates: true"
     },
     {
       "name": "an edit autosaves and survives a reload",

@@ -29,6 +29,8 @@ export interface MapDot {
    * ahead (still to come in this chapter).
    */
   state?: 'selected' | 'far' | 'unassigned' | 'past' | 'shown' | 'current' | 'ahead';
+  /** Media map: the item has no location of its own and is placed where an earlier item was taken. */
+  borrowed?: boolean;
   /** Inset: keep this dot in view when the chapter is focused. */
   fit?: boolean;
 }
@@ -465,7 +467,14 @@ export class RouteMap {
       ctx.fill();
       ctx.lineWidth = sel ? 2 : 1.5;
       ctx.strokeStyle = sel ? '#4f9cf7' : d.state === 'unassigned' ? '#f2c46d' : '#0d0f13';
+      if (d.borrowed && !sel) {
+        // A borrowed place: a dashed ring over a faint fill, so real locations stand out.
+        ctx.globalAlpha = 0.7;
+        ctx.setLineDash([2, 2]);
+      }
       ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.globalAlpha = 1;
     }
     const pts = this.pins.map((p) => ({ p, s: this.screenPos(p.id)! }));
     const inset = !!this.o.inset;

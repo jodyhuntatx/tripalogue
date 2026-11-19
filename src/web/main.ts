@@ -15,6 +15,9 @@ import { mountMedia, type MediaView } from './media.js';
 import { mountEditor, type EditorView } from './editor.js';
 import { mountExport, type ExportView } from './export.js';
 import { mountStageEditor } from './stage-edit.js';
+import { mountStageCues } from './stage-cues.js';
+import { mountRecorder } from './recorder.js';
+import type { StageFocus } from './cue-panel.js';
 import { ProjectSession } from './session.js';
 import { filesFromDrop, mediaFiles, uploadAll, type UploadProgress } from './uploader.js';
 import { fill, h, type Child } from './dom.js';
@@ -255,7 +258,7 @@ async function renderProject(id: string, initialView?: View) {
   });
   itinerary.el.querySelector('.itinerary-side')?.append(projectPanel);
   itinerary.el.querySelector('.itinerary-side')?.append(deleteProjectBox());
-  const inset = mountInset(s, stageWrap, cfg.map);
+  const inset = mountInset(s, cfg.map);
   const media = mountMedia(s, {
     projectId: id,
     map: cfg.map,
@@ -323,6 +326,7 @@ async function renderProject(id: string, initialView?: View) {
     stageWrap.style.maxWidth = `calc((100vh - ${editing ? 470 : 190}px) * ${s.state.output.width / s.state.output.height})`;
     editor.setActive(editing);
     stage.setActive(editing);
+    stageCues.setActive(editing);
     renderSide();
     viewTabs.querySelectorAll<HTMLElement>('a').forEach((a) => (a.dataset.view === v ? a.setAttribute('aria-current', 'page') : a.removeAttribute('aria-current')));
     if (v !== 'preview' && v !== 'mix') player.pause();
@@ -334,6 +338,11 @@ async function renderProject(id: string, initialView?: View) {
   const urlFor = (itemId: string) => Api.mediaUrl(id, itemId, 'proxy');
   const player = new Player({
     canvas, project: s.state, urlFor, rate: Number(params.get('rate') ?? 1) || 1,
+    tiles: cfg.map.tiles ? {
+      // MV-8: terrain has its own tiles; light and dark share the standard ones. A label language goes along.
+      url: (style, z, x, y) => `/api/tiles/${style === 'terrain' ? 'terrain' : 'light'}/${z}/${x}/${y}${s.state.mapView.labelLanguage ? `?lang=${encodeURIComponent(s.state.mapView.labelLanguage)}` : ''}`,
+      attribution: cfg.map.attribution,
+    } : undefined,
     onState: (st) => {
       document.body.dataset.state = st;
       playBtn.textContent = st === 'playing' ? 'Pause' : st === 'ended' ? 'Replay' : 'Play';
@@ -345,9 +354,9 @@ async function renderProject(id: string, initialView?: View) {
       const ch = player.timeline.chapters[frame.chapterIndex];
       chapterLabel.textContent = ch ? `${ch.index + 1}. ${ch.title}` : '';
       marks.querySelectorAll<HTMLElement>('.chapter-mark').forEach((el) => el.classList.toggle('current', Number(el.dataset.index) === frame.chapterIndex));
-      inset.onFrame(frame, player.timeline);
       editor.onTime(t);
       stage.refresh();
+      stageCues.refresh();
     },
     onEvent: (name, props) => {
       if (name === 'sound_blocked') soundNote.hidden = false;
@@ -355,15 +364,21 @@ async function renderProject(id: string, initialView?: View) {
     },
   });
   document.body.dataset.state = player.state;
+  const focus: StageFocus = { motionItem: null, annotation: null };
   const editor = mountEditor(s, {
-    projectId: id, player,
+    projectId: id, player, focus,
+    onFocus: () => stageCues.focusChanged(),
+    onRecord: () => recorder.open(),
     onSelect: (ids) => {
       stage.setSelection(ids);
+      stageCues.setSelection(ids);
       // Picking a clip shows its details, whichever side tab was open.
       if (tab !== 'Clip') { tab = 'Clip'; renderSide(); }
     },
   });
   const stage = mountStageEditor(s, player, stageWrap, canvas);
+  const stageCues = mountStageCues(s, player, stageWrap, canvas, focus, () => editor.refreshInspector());
+  const recorder = mountRecorder(s, id, player);
   editorHost.append(editor.el);
   stageWrap.style.aspectRatio = `${s.state.output.width} / ${s.state.output.height}`;
   // Keep the frame's shape when the window is wider than the available height allows.
@@ -432,7 +447,7 @@ async function renderProject(id: string, initialView?: View) {
   function update() {
     const p = s.state;
     if (p !== lastProject) {
-      player.setProject(p);
+      player.setProject(stageCues.present(p));
       lastProject = p;
     }
     scrub.max = String(player.duration);
@@ -461,6 +476,7 @@ async function renderProject(id: string, initialView?: View) {
     if (view === 'media') media.update();
     if (view === 'mix') editor.update();
     stage.refresh();
+    stageCues.refresh();
     inset.update(p);
   }
 

@@ -3,10 +3,19 @@
  * layers on a canvas at the project's aspect ratio. The timeline clock is the
  * master; video elements follow it and are corrected when they drift.
  */
-import { frameAt, mixAt, type Frame, type Layer, type Size, type Voice } from '../core/render-model.js';
-import { buildTimeline, type MediaSegment, type Timeline } from '../core/timeline.js';
-import type { AudioLane, Travelogue } from '../core/schema.js';
+import { frameAt, mixAt, type Frame, type PictureLayer, type Size, type Voice } from '../core/render-model.js';
+import { buildTimeline, type Timeline } from '../core/timeline.js';
+import type { AudioLane, MapStyle, MediaItem, Travelogue } from '../core/schema.js';
+import { drawFrame, type Drawable, type DrawSources } from './draw.js';
 import { MediaPool, type MediaKindToLoad } from './media-pool.js';
+
+export { drawTitleCard, wrapText } from './draw.js';
+
+/** Map tiles for the map layer: where to load them, and the provider's attribution. */
+export interface TileSource {
+  url: (style: MapStyle, z: number, x: number, y: number) => string;
+  attribution: string;
+}
 
 export type PlayerState = 'loading' | 'ready' | 'playing' | 'paused' | 'ended' | 'error';
 
@@ -31,6 +40,8 @@ export interface PlayerOptions {
   onState?: (s: PlayerState) => void;
   onTime?: (t: number, frame: Frame) => void;
   onEvent?: (name: string, props?: Record<string, unknown>) => void;
+  /** Map tiles (absent: the map draws on a plain background). */
+  tiles?: TileSource;
 }
 
 const PRELOAD_AHEAD = 3;
@@ -47,7 +58,10 @@ export class Player {
   private lastTick = 0;
   private lastSegment = -1;
   private rate: number;
-  private muted = false;
+  private _muted = false;
+  get muted(): boolean {
+    return this._muted;
+  }
   /** Elements the browser would not let play with sound (no click yet); they play muted until the next Play. */
   private blocked = new Set<HTMLMediaElement>();
   private needsDraw = true;
@@ -56,15 +70,21 @@ export class Player {
   mix: Voice[] = [];
   /** The playhead time the mix above was computed for. */
   private mixT = 0;
+  private project: Travelogue;
+  /** The last frame drawn (tests and the stage editor read it). */
+  frame: Frame | undefined;
+  private tileImages = new Map<string, { img: HTMLImageElement; ok: boolean; failed: boolean }>();
 
   constructor(private readonly o: PlayerOptions) {
     this.timeline = buildTimeline(o.project);
+    this.project = o.project;
     this.lanes = o.project.audioLanes;
     this.rate = o.rate ?? 1;
     const ctx = o.canvas.getContext('2d', { alpha: false });
     if (!ctx) throw new Error('Canvas 2D is not available');
     this.ctx = ctx;
     this.pool = new MediaPool(o.urlFor);
+    this.sources.attribution = o.tiles?.attribution ?? '';
     this.pool.onError = (id, kind) => {
       this.stats.mediaErrors.push(id);
       o.onEvent?.('media_error', { itemId: id, kind });
@@ -94,7 +114,7 @@ export class Player {
     if (this.stateValue === 'ended' || this.t >= this.duration) this.seek(0);
     // Play is pressed in a click or key handler: the moment the browser lets media start with sound.
     this.pool.unlock();
-    for (const el of this.blocked) el.muted = this.muted;
+    for (const el of this.blocked) el.muted = this._muted;
     this.blocked.clear();
     this.lastTick = performance.now();
     this.setState('playing');
@@ -130,7 +150,7 @@ export class Player {
   }
 
   setMuted(m: boolean): void {
-    this.muted = m;
+    this._muted = m;
     this.pool.setMuted(m);
     for (const el of this.blocked) el.muted = true;
   }
@@ -146,6 +166,7 @@ export class Player {
   setProject(project: Travelogue): void {
     const before = new Map(this.timeline.segments.flatMap((s) => (s.kind === 'title' ? [] : [[s.item.id, s.item] as const])));
     this.timeline = buildTimeline(project);
+    this.project = project;
     this.lanes = project.audioLanes;
     for (const c of this.timeline.audio) {
       const old = this.pool.get(c.item.id);
@@ -260,21 +281,56 @@ export class Player {
   private render(): Frame {
     const c = this.o.canvas;
     const size: Size = { w: c.width, h: c.height };
-    const frame = frameAt(this.timeline, this.t, size, (seg: MediaSegment) => this.naturalSize(seg));
+    const frame = frameAt(this.timeline, this.t, size, (item) => this.naturalSize(item), this.project);
     if (frame.segmentIndex !== this.lastSegment && frame.segmentIndex >= 0) {
       this.lastSegment = frame.segmentIndex;
       this.stats.segmentsEntered.push(frame.segmentIndex);
       this.preload(this.t);
     }
-    const ctx = this.ctx;
-    ctx.globalAlpha = 1;
-    ctx.fillStyle = '#000';
-    ctx.fillRect(0, 0, size.w, size.h);
-    for (const layer of frame.layers) this.drawLayer(layer, size);
-    ctx.globalAlpha = 1;
+    const res = drawFrame(this.ctx, frame, size, this.sources);
+    if (res.placeholders) {
+      this.stats.placeholderFrames += 1;
+      this.stats.placeholderBySegment[this.lastSegment] = (this.stats.placeholderBySegment[this.lastSegment] ?? 0) + 1;
+      this.needsDraw = true;
+    }
+    this.frame = frame;
     this.stats.framesDrawn += 1;
     this.playMix(frame);
     return frame;
+  }
+
+  /** Pictures from the media pool (videos kept on the layer's media time), tiles from the tile cache. */
+  private readonly sources: DrawSources = {
+    picture: (layer: PictureLayer): Drawable | 'loading' | 'failed' => {
+      const e = this.pool.ensure(layer.itemId, layer.kind);
+      if (e.failed) return 'failed';
+      if (layer.kind === 'video' && e.el instanceof HTMLVideoElement) this.syncMedia(e.el, layer.mediaTimeSec, layer.speed, 0.3);
+      const drawable = e.ready && (!(e.el instanceof HTMLVideoElement) || e.el.readyState >= 2);
+      if (!drawable || e.el instanceof HTMLAudioElement) return 'loading';
+      return { image: e.el, scale: 1 };
+    },
+    tile: (style, z, x, y) => this.tile(style, z, x, y),
+    attribution: '',
+  };
+
+  private tile(style: MapStyle, z: number, x: number, y: number): HTMLImageElement | undefined {
+    const t = this.o.tiles;
+    if (!t) return undefined;
+    const key = `${style === 'terrain' ? 'terrain' : 'base'}/${z}/${x}/${y}`;
+    let e = this.tileImages.get(key);
+    if (!e) {
+      const img = new Image();
+      img.decoding = 'async';
+      const entry = { img, ok: false, failed: false };
+      img.onload = () => { entry.ok = true; this.needsDraw = true; };
+      img.onerror = () => { entry.failed = true; };
+      img.src = t.url(style, z, x, y);
+      this.tileImages.set(key, entry);
+      // Keep the cache bounded: drop the oldest tiles.
+      if (this.tileImages.size > 600) this.tileImages.delete(this.tileImages.keys().next().value!);
+      e = entry;
+    }
+    return e.ok ? e.img : undefined;
   }
 
   /** AU-4: set every sound's level from the shared mix, keep audio clips in step, and silence the rest. */
@@ -301,8 +357,8 @@ export class Player {
     this.pool.pauseAllExcept(keep);
   }
 
-  private naturalSize(seg: MediaSegment): Size | undefined {
-    const e = this.pool.get(seg.item.id);
+  private naturalSize(item: MediaItem): Size | undefined {
+    const e = this.pool.get(item.id);
     if (e?.ready) {
       const el = e.el;
       if (el instanceof HTMLAudioElement) return undefined;
@@ -310,33 +366,7 @@ export class Player {
       const h = el instanceof HTMLVideoElement ? el.videoHeight : el.naturalHeight;
       if (w && h) return { w, h };
     }
-    return seg.item.width && seg.item.height ? { w: seg.item.width, h: seg.item.height } : undefined;
-  }
-
-  private drawLayer(layer: Layer, size: Size) {
-    const ctx = this.ctx;
-    ctx.globalAlpha = layer.opacity;
-    if (layer.kind === 'title') {
-      this.drawTitle(layer.title, layer.subtitle, layer.description, layer.chapterIndex, size);
-      return;
-    }
-    const e = this.pool.ensure(layer.itemId, layer.kind);
-    if (e.failed) {
-      this.drawPlaceholder(layer.dst, 'Media not found');
-      return;
-    }
-    if (layer.kind === 'video' && e.el instanceof HTMLVideoElement) this.syncMedia(e.el, layer.mediaTimeSec, layer.speed, 0.3);
-    const drawable = e.ready && (!(e.el instanceof HTMLVideoElement) || e.el.readyState >= 2);
-    if (!drawable) {
-      this.stats.placeholderFrames += 1;
-      this.stats.placeholderBySegment[this.lastSegment] = (this.stats.placeholderBySegment[this.lastSegment] ?? 0) + 1;
-      this.drawPlaceholder(layer.dst, 'Loading…');
-      this.needsDraw = true;
-      return;
-    }
-    const { src, dst } = layer;
-    if (e.el instanceof HTMLAudioElement) return;
-    ctx.drawImage(e.el, src.x, src.y, src.w, src.h, dst.x, dst.y, dst.w, dst.h);
+    return item.width && item.height ? { w: item.width, h: item.height } : undefined;
   }
 
   private parkVideo(v: HTMLMediaElement, at: number) {
@@ -349,7 +379,7 @@ export class Player {
   }
 
   private mutedFor(el: HTMLMediaElement): boolean {
-    return this.muted || this.blocked.has(el);
+    return this._muted || this.blocked.has(el);
   }
 
   private syncMedia(v: HTMLMediaElement, mediaTime: number, speed: number, playingTolerance: number) {
@@ -376,86 +406,4 @@ export class Player {
     }
     if (!playing && !v.paused) v.pause();
   }
-
-  private drawPlaceholder(r: { x: number; y: number; w: number; h: number }, label: string) {
-    const ctx = this.ctx;
-    ctx.fillStyle = '#16181d';
-    ctx.fillRect(r.x, r.y, r.w, r.h);
-    ctx.fillStyle = '#8a8f98';
-    ctx.font = `${Math.round(Math.max(12, r.h * 0.04))}px system-ui, sans-serif`;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(label, r.x + r.w / 2, r.y + r.h / 2);
-  }
-
-  private drawTitle(title: string, subtitle: string, description: string, chapterIndex: number, size: Size) {
-    drawTitleCard(this.ctx, { title, subtitle, description, chapterIndex }, size);
-  }
-}
-
-/**
- * A chapter's title card, filling the frame. The preview draws it on the stage; an export draws the same card in
- * the browser at the export's size and hands the picture to the server, so both show the same card.
- */
-export function drawTitleCard(
-  ctx: CanvasRenderingContext2D,
-  { title, subtitle, description, chapterIndex }: { title: string; subtitle: string; description: string; chapterIndex: number },
-  size: Size,
-): void {
-  const g = ctx.createLinearGradient(0, 0, size.w, size.h);
-  g.addColorStop(0, '#10233a');
-  g.addColorStop(1, '#1d1430');
-  ctx.fillStyle = g;
-  ctx.fillRect(0, 0, size.w, size.h);
-  const u = Math.min(size.w, size.h);
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'alphabetic';
-  // The chapter's description ("What happened here") goes under the place and dates, wrapped to at most
-  // four lines; the whole block moves up to stay centred.
-  const descFont = `italic 400 ${Math.round(u * 0.036)}px system-ui, sans-serif`;
-  ctx.font = descFont;
-  const lines = description ? wrapText(ctx, description, size.w * 0.78, 4) : [];
-  const lineH = u * 0.036 * 1.4;
-  const lift = lines.length ? (size.h * 0.05 + lines.length * lineH) / 2 : 0;
-  ctx.fillStyle = 'rgba(255,255,255,0.6)';
-  ctx.font = `600 ${Math.round(u * 0.035)}px system-ui, sans-serif`;
-  ctx.fillText(`CHAPTER ${chapterIndex + 1}`, size.w / 2, size.h * 0.42 - lift);
-  ctx.fillStyle = '#fff';
-  ctx.font = `700 ${Math.round(u * 0.085)}px system-ui, sans-serif`;
-  ctx.fillText(title, size.w / 2, size.h * 0.54 - lift, size.w * 0.9);
-  ctx.fillStyle = 'rgba(255,255,255,0.75)';
-  ctx.font = `400 ${Math.round(u * 0.04)}px system-ui, sans-serif`;
-  ctx.fillText(subtitle, size.w / 2, size.h * 0.63 - lift, size.w * 0.9);
-  if (!lines.length) return;
-  ctx.fillStyle = 'rgba(255,255,255,0.88)';
-  ctx.font = descFont;
-  const top = size.h * 0.63 - lift + size.h * 0.05 + lineH * 0.75;
-  lines.forEach((line, i) => ctx.fillText(line, size.w / 2, top + i * lineH, size.w * 0.9));
-}
-
-/**
- * Break text into lines no wider than maxWidth (in the context's current font), keeping the author's own line
- * breaks; past maxLines the last line ends with an ellipsis.
- */
-export function wrapText(ctx: Pick<CanvasRenderingContext2D, 'measureText'>, text: string, maxWidth: number, maxLines: number): string[] {
-  const fits = (s: string) => ctx.measureText(s).width <= maxWidth;
-  const out: string[] = [];
-  for (const para of text.split(/\r?\n/).map((p) => p.trim()).filter(Boolean)) {
-    let line = '';
-    for (const word of para.split(/\s+/)) {
-      const next = line ? `${line} ${word}` : word;
-      if (fits(next) || !line) line = next;
-      else {
-        out.push(line);
-        line = word;
-      }
-    }
-    if (line) out.push(line);
-  }
-  if (out.length <= maxLines) return out;
-  const kept = out.slice(0, maxLines);
-  let last = kept[maxLines - 1];
-  while (last && !fits(`${last}…`)) last = last.replace(/\s*\S+$/, '');
-  kept[maxLines - 1] = `${last}…`;
-  return kept;
 }

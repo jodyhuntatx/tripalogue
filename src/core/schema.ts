@@ -52,10 +52,22 @@ export interface CueProfile {
   defaultPlacement: PlacementMode;
 }
 
+export type TitleLayout = 'center' | 'left' | 'lower';
+
+/** A chapter's title card (IT-5; PE-15 edits it). Absent text fields fall back to the chapter's own. */
 export interface TitleCard {
   enabled: boolean;
   /** Overrides the cue profile's titleCardSec when set. */
   durationSec?: number;
+  /** Text on the card instead of the chapter title. */
+  title?: string;
+  /** Instead of "place · dates". */
+  subtitle?: string;
+  /** Instead of the chapter's "What happened here"; an empty string hides it. */
+  description?: string;
+  layout?: TitleLayout;
+  /** A photo (or a video's first frame) behind the text, dimmed. */
+  backgroundItemId?: Id;
 }
 
 /** Who last changed an entity, set by the server when it applies an operation. */
@@ -75,6 +87,10 @@ export interface Chapter extends Attribution {
   timeZone: string;
   description: string;
   titleCard: TitleCard;
+  /** MV-3: the map inset in this chapter (absent = as the travelogue). */
+  mapInset?: 'on' | 'off';
+  /** PE-18: photo credits in this chapter (absent = as the travelogue). */
+  credits?: 'on' | 'off';
 }
 
 /** upload = files uploaded through the browser (or the import tool). */
@@ -152,14 +168,25 @@ export interface Placement {
   rect?: NormRect;
 }
 
-export type TransitionType = 'cut' | 'fade';
+/**
+ * PE-10, PE-12, PE-16. Entrances: cut, fade (from black), slide (in from a side), zoom (grows in), crossfade (over
+ * the item before, which it overlaps by durationSec). Exits: cut, fade (to black), slide (out to a side).
+ */
+export type TransitionType = 'cut' | 'fade' | 'slide' | 'zoom' | 'crossfade';
+export type Direction = 'left' | 'right' | 'up' | 'down';
 
 export interface Transition {
   type: TransitionType;
   durationSec: number;
+  /** Slide: the side it comes in from (entrance; default right) or leaves towards (exit; default left). */
+  direction?: Direction;
 }
 
-export type Animation = { type: 'none' } | { type: 'kenBurns'; from: NormRect; to: NormRect };
+/**
+ * PE-11 Ken Burns: the part of the picture in view at the start and at the end (fractions of the picture), moving
+ * smoothly between them. `auto` marks a motion TripAlogue chose.
+ */
+export type Animation = { type: 'none' } | { type: 'kenBurns'; from: NormRect; to: NormRect; auto?: boolean };
 
 /** offsetSec: seconds after the anchor; an item anchor may be negative (the clip leads in before its item). */
 export type AudioAnchor =
@@ -182,6 +209,10 @@ export interface AudioCue {
    * clip on the same lane, or the end of the travelogue. Absent or false: the clip stops when its chapter ends.
    */
   spanChapters?: boolean;
+  /** AU-8: repeat the trimmed part until the clip stops (its chapter's end, the next clip, or the travelogue's end). */
+  loop?: boolean;
+  /** AU-7: overlap the clip before it on the lane by this clip's fade-in, so one fades out as this fades in. */
+  crossfade?: boolean;
 }
 
 export interface Cue extends Attribution {
@@ -199,18 +230,42 @@ export interface Cue extends Attribution {
   exit: Transition;
   speed: number;
   volume: number;
+  /** PE-13: the video's own sound is silent. */
+  mute?: boolean;
+  /** MV-3: the map inset while this item is on screen (absent = as its chapter). */
+  mapInset?: 'on' | 'off';
   audio?: AudioCue;
 }
+
+/** PE-14: what an annotation says. Place and date fill themselves in from the item unless text is typed. */
+export type AnnotationKind = 'caption' | 'place' | 'date';
+/** Style presets (see render-model ANNOTATION_STYLES). */
+export type AnnotationStyle = 'subtitle' | 'lowerThird' | 'headline' | 'stamp' | 'tag';
 
 export interface Annotation {
   id: Id;
   target: { type: 'item'; itemId: Id } | { type: 'chapter'; chapterId: Id };
+  /** Absent = caption. */
+  kind?: AnnotationKind;
   text: string;
-  style: string;
+  style: AnnotationStyle | string;
+  /** Where the text sits on the stage (fractions of the frame). */
   position: NormRect;
+  /** Seconds after the item starts. */
   startSec: number;
+  /** How long it shows; 0 = until the item ends. */
   durationSec: number;
 }
+
+/** PE-17: a saved set of cues to apply to other items. */
+export interface CuePreset {
+  id: Id;
+  name: string;
+  cue: CueStyle;
+}
+
+/** The parts of a cue that copy, paste and presets carry (not order, inclusion, trims or the item itself). */
+export type CueStyle = Partial<Pick<Cue, 'durationSec' | 'placement' | 'entrance' | 'exit' | 'animation' | 'speed' | 'volume' | 'mute'>>;
 
 export type AudioLaneKind = 'narration' | 'music' | 'clipSound';
 
@@ -227,16 +282,28 @@ export interface AudioLane {
 
 export type InsetCorner = 'topLeft' | 'topRight' | 'bottomLeft' | 'bottomRight';
 
+export type MapStyle = 'light' | 'dark' | 'terrain';
+
 export interface MapViewSettings {
   enabled: boolean;
   corner: InsetCorner;
   /** Fraction of frame width, 0.1..0.3 (MV-3). */
   size: number;
   shape: 'rect' | 'circle';
-  style: 'light' | 'dark' | 'terrain';
+  style: MapStyle;
   tripOverview: boolean;
   transitionAnimation: boolean;
+  /** Item dots are drawn at their chapter's place, not where they were taken. */
   hidePreciseLocations: boolean;
+  /**
+   * MV-6: chapter transitions. inset: the inset travels along the route and zooms in while the title card shows;
+   * fullFrame: the map fills the frame for durationSec before each chapter. Absent = inset, 3 s.
+   */
+  transition?: { mode: 'inset' | 'fullFrame'; durationSec: number };
+  /** MV-8: language for place labels, where the tile provider offers it (BCP-47, e.g. "en"); absent = local names. */
+  labelLanguage?: string;
+  /** MV-5: show "Chapter 3 of 8" on the map. Absent = on. */
+  chapterLabel?: boolean;
 }
 
 export interface Travelogue {
@@ -258,6 +325,10 @@ export interface Travelogue {
   travelers?: Traveler[];
   /** PE-9: the length the user is aiming for, in seconds; runtime is shown against it. */
   targetSec?: number;
+  /** PE-17: saved cue presets. */
+  cuePresets?: CuePreset[];
+  /** PE-18: "Photo: Ana" on items a traveler sent (absent = off); chapters can override. */
+  credits?: boolean;
   /**
    * The Removed bin: items taken out of the travelogue, with the cue they had, so they can be put back. They are
    * deleted for good (and their files erased) by hand or a set number of days after removal.

@@ -121,7 +121,7 @@ try {
       for (let y = 0; y < c.height; y += 8) for (let x = 0; x < c.width; x += 8) {
         total++;
         const i = (y * c.width + x) * 4;
-        if (d[i] + d[i + 1] + d[i + 2] > 30) { on++; if (x > c.width * 0.6) right++; if (x < c.width * 0.08) left++; }
+        if (d[i] + d[i + 1] + d[i + 2] > 30) { on++; if (x > c.width * 0.6 && y < c.height * 0.6) right++; if (x < c.width * 0.08) left++; }
       }
       return { share: on / total, right, left };
     });
@@ -136,39 +136,46 @@ try {
   // 4b. The map inset follows the story: the whole trip on a title card, the chapter while its media plays.
   const insetAt = async (t: number) => {
     await page.evaluate((x) => window.tripalogue!.player!.seek(x), t);
-    await page.waitForTimeout(1800); // let the inset finish its flight
+    await page.waitForTimeout(400); // the player draws the seeked frame
+    // The inset is part of the drawn frame (Phase 5): read it from the player's render model.
     return page.evaluate(() => {
-      const el = document.getElementById('map-inset')!;
-      const f = window.tripalogue!.inset!.map.focused;
-      return { visible: !el.hidden && el.getBoundingClientRect().width > 100, focus: f.kind === 'chapter' ? f.id : 'trip' };
+      const m = window.tripalogue!.player!.frame?.layers.find((l) => l.kind === 'map') as { layout: { rect: { w: number } }; state: { view: string; camera: { zoom: number }; pins: { id: string; state: string }[] } } | undefined;
+      const cur = m?.state.pins.find((p) => p.state === 'current');
+      return { visible: !!m && m.layout.rect.w > 100, focus: !m || m.state.view === 'trip' || !cur ? 'trip' : cur.id, view: m?.state.view, zoom: m?.state.camera.zoom ?? 0 };
     });
   };
-  const onTitle = await insetAt(1.5);
+  // MV-6: a title card opens on the whole trip, then travels and zooms into its chapter.
+  const titleStart = await page.evaluate(() => window.tripalogue!.player!.timeline.segments.find((x) => x.kind === 'title')!.start);
+  const onTitle = await insetAt(titleStart + 0.05);
   const inFirst = await insetAt(find('m02').start + 2);
   const inLater = await insetAt(find('m09').start + 2.5);
   await page.locator('#stage-wrap').screenshot({ path: path.join(outDir, '08b-map-inset.png') });
   check('the map inset shows the whole trip on a title card, then the chapter being played',
-    onTitle.visible && onTitle.focus === 'trip' && inFirst.focus === find('m02').chapterId && inLater.focus === find('m09').chapterId,
-    `title: ${onTitle.focus}; m02: ${inFirst.focus}; m09: ${inLater.focus}`);
+    onTitle.visible && onTitle.zoom < inFirst.zoom - 1 && inFirst.focus === find('m02').chapterId && inLater.focus === find('m09').chapterId,
+    `title opens at zoom ${onTitle.zoom.toFixed(1)} (${onTitle.view}); m02: ${inFirst.focus} at zoom ${inFirst.zoom.toFixed(1)}; m09: ${inLater.focus}`);
 
   // 4c. Photo locations as dots in the inset: this chapter's items shown so far joined by a trail, the current one
   // marked, the rest still ahead; moving on to the next item animates the hop to it.
-  const storyAt = async (t: number, wait = 1800) => {
+  type Story = { dots: { lat: number; lng: number; state: string }[]; trail: { lat: number; lng: number }[]; marker?: { lat: number; lng: number } };
+  const story = () => page.evaluate(() => {
+    const m = window.tripalogue!.player!.frame?.layers.find((l) => l.kind === 'map') as { state: Story } | undefined;
+    return m ? { dots: m.state.dots, trail: m.state.trail, marker: m.state.marker } : { dots: [], trail: [] };
+  });
+  const storyAt = async (t: number, wait = 300) => {
     await page.evaluate((x) => window.tripalogue!.player!.seek(x), t);
     await page.waitForTimeout(wait);
-    return page.evaluate(() => window.tripalogue!.inset!.map.story);
+    return story();
   };
-  const st03 = await storyAt(find('m03').start + 1);
-  const state = (s: typeof st03, id: string) => s.dots.find((d) => d.id === id)?.state;
-  await page.locator('#map-inset').screenshot({ path: path.join(outDir, '08c-inset-dots.png') });
-  await page.evaluate((x) => { const p = window.tripalogue!.player!; p.seek(x); p.play(); }, find('m04').start - 0.3);
-  await page.waitForTimeout(500);
-  const hop = await page.evaluate(() => window.tripalogue!.inset!.map.story);
-  await page.evaluate(() => window.tripalogue!.player!.pause());
+  const st03 = await storyAt(find('m03').start + 1.5);
+  const count = (s: Story, state: string) => s.dots.filter((d) => d.state === state).length;
+  await page.locator('#stage-wrap').screenshot({ path: path.join(outDir, '08c-inset-dots.png') });
+  const ats = await storyAt(find('m04').start + 0.3);
+  const settled = await storyAt(find('m04').start + 1.5);
+  const same = (a?: { lat: number; lng: number }, b?: { lat: number; lng: number }) => !!a && !!b && Math.abs(a.lat - b.lat) < 1e-9 && Math.abs(a.lng - b.lng) < 1e-9;
   check('the inset shows where each photo was taken and moves through the chapter as it plays',
-    JSON.stringify(st03.trail) === JSON.stringify(['m01', 'm02', 'm03']) && state(st03, 'm03') === 'current' && state(st03, 'm04') === 'ahead' && state(st03, 'm01') === 'shown'
-      && state(st03, 'm06') === undefined && hop.trail.at(-1) === 'm04' && hop.animating,
-    `at m03: trail ${st03.trail.join('→')}; next item animated: ${hop.animating}`);
+    count(st03, 'current') === 1 && count(st03, 'shown') === 2 && count(st03, 'ahead') >= 1 && st03.trail.length >= 3
+      && !same(ats.marker, settled.marker) && same(settled.marker, settled.trail.at(-1)),
+    `at m03: ${count(st03, 'shown')} shown, ${count(st03, 'ahead')} ahead, trail ${st03.trail.length}; hop animates: ${!same(ats.marker, settled.marker)}`);
 
   // 5. Edit, autosave, reload, undo (in the Mix view's Items tab).
   const previewWidth = await page.evaluate(() => document.getElementById('stage-wrap')!.getBoundingClientRect().width);

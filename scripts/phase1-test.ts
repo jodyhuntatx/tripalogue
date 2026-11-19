@@ -11,15 +11,14 @@
  *   node --import tsx scripts/phase1-test.ts
  */
 import { mkdirSync, mkdtempSync, readdirSync, writeFileSync, promises as fs } from 'node:fs';
-import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { deflateSync, crc32 } from 'node:zlib';
 import { chromium, type Page } from 'playwright';
 import { analyzeItinerary } from '../src/core/index.js';
 import { startApp } from '../src/server/app.js';
 import { geoConfigFromEnv } from '../src/server/geo.js';
+import { startStandInProvider } from './lib/stand-in-provider.js';
 import type {} from '../src/web/main.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -32,63 +31,8 @@ const check = (name: string, pass: boolean, detail = '') => {
   console.log(`${pass ? 'PASS' : 'FAIL'}  ${name}${detail ? ` — ${detail}` : ''}`);
 };
 
-// ---- stand-in map provider ----
-const PLACES: Record<string, [string, string, number, number]> = {
-  lisbon: ['Lisboa', 'Lisboa, Lisbon, Portugal', 38.7077, -9.1365],
-  sintra: ['Sintra', 'Sintra, Lisbon, Portugal', 38.8029, -9.3817],
-  porto: ['Porto', 'Porto, Portugal', 41.1579, -8.6291],
-  pinhao: ['Pinhão', 'Pinhão, Alijó, Vila Real, Portugal', 41.1906, -7.5458],
-  coimbra: ['Coimbra', 'Coimbra, Portugal', 40.2111, -8.4291],
-  evora: ['Évora', 'Évora, Portugal', 38.5714, -7.9135],
-  lagos: ['Lagos', 'Lagos, Faro, Portugal', 37.1028, -8.6730],
-  nazare: ['Nazaré', 'Nazaré, Leiria, Portugal', 39.6012, -9.0700],
-};
-function png(z: number, x: number, y: number): Buffer {
-  const w = 256;
-  const raw = Buffer.alloc((w * 3 + 1) * w);
-  const base = [[52, 72, 92], [58, 84, 66], [70, 80, 60]][(x + y + z) % 3];
-  for (let r = 0; r < w; r++) {
-    raw[r * (w * 3 + 1)] = 0;
-    for (let c = 0; c < w; c++) {
-      const line = r % 64 === 0 || c % 64 === 0;
-      const o = r * (w * 3 + 1) + 1 + c * 3;
-      raw[o] = line ? base[0] + 30 : base[0];
-      raw[o + 1] = line ? base[1] + 30 : base[1];
-      raw[o + 2] = line ? base[2] + 30 : base[2];
-    }
-  }
-  const chunk = (type: string, data: Buffer) => {
-    const len = Buffer.alloc(4);
-    len.writeUInt32BE(data.length);
-    const td = Buffer.concat([Buffer.from(type), data]);
-    const crc = Buffer.alloc(4);
-    crc.writeUInt32BE(crc32(td) >>> 0);
-    return Buffer.concat([len, td, crc]);
-  };
-  const ihdr = Buffer.alloc(13);
-  ihdr.writeUInt32BE(w, 0);
-  ihdr.writeUInt32BE(w, 4);
-  ihdr[8] = 8;
-  ihdr[9] = 2;
-  return Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), chunk('IHDR', ihdr), chunk('IDAT', deflateSync(raw)), chunk('IEND', Buffer.alloc(0))]);
-}
-const provider = http.createServer((req, res) => {
-  const u = new URL(req.url ?? '/', 'http://x');
-  if (u.pathname === '/search') {
-    const q = (u.searchParams.get('q') ?? '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
-    const hits = Object.entries(PLACES).filter(([k]) => q.includes(k)).map(([, [name, display, lat, lon]]) => ({ name, display_name: display, lat: String(lat), lon: String(lon), type: 'city' }));
-    res.writeHead(200, { 'content-type': 'application/json' });
-    return res.end(JSON.stringify(hits));
-  }
-  const t = /^\/tiles\/(\d+)\/(\d+)\/(\d+)\.png$/.exec(u.pathname);
-  if (t) {
-    res.writeHead(200, { 'content-type': 'image/png' });
-    return res.end(png(+t[1], +t[2], +t[3]));
-  }
-  res.writeHead(404).end();
-});
-await new Promise<void>((r) => provider.listen(0, '127.0.0.1', r));
-const providerUrl = `http://127.0.0.1:${(provider.address() as { port: number }).port}`;
+// ---- stand-in map provider (place search and tiles; no internet needed) ----
+const { url: providerUrl, server: provider } = await startStandInProvider();
 
 mkdirSync(outDir, { recursive: true });
 for (const f of readdirSync(outDir)) await fs.rm(path.join(outDir, f));
@@ -249,26 +193,25 @@ try {
   await page.locator('#stage').screenshot({ path: path.join(outDir, '04-title-card.png') });
 
   // Playback map inset: on by default, follows the chapter, settings are saved and undoable.
+  // The inset is drawn into the frame by the shared render model (Phase 5); read it from the player's frame.
   const inset = () => page.evaluate(() => {
-    const el = document.getElementById('map-inset')!;
-    const m = window.tripalogue!.inset!.map;
-    const f = m.focused;
-    return { hidden: el.hidden, w: el.getBoundingClientRect().width, stageW: document.getElementById('stage-wrap')!.getBoundingClientRect().width, corner: el.dataset.corner, focus: f.kind === 'chapter' ? f.id : 'trip', zoom: m.view.zoom };
+    const pl = window.tripalogue!.player!;
+    const c = document.getElementById('stage') as HTMLCanvasElement;
+    const m = pl.frame?.layers.find((l) => l.kind === 'map') as { layout: { rect: { x: number; y: number; w: number; h: number } }; state: { view: string; camera: { zoom: number }; pins: { id: string; state: string }[] } } | undefined;
+    if (!m) return { hidden: true, w: 0, h: 0, stageW: c.width, corner: '', focus: '', view: '', zoom: 0 };
+    const r = m.layout.rect;
+    const corner = `${r.y < c.height / 2 ? 'top' : 'bottom'}${r.x < c.width / 2 ? 'Left' : 'Right'}`;
+    const cur = m.state.pins.find((p) => p.state === 'current');
+    return { hidden: false, w: r.w, h: r.h, stageW: c.width, corner, focus: m.state.view === 'trip' || !cur ? 'trip' : cur.id, view: m.state.view, zoom: m.state.camera.zoom };
   });
-  await page.evaluate(() => window.tripalogue!.player!.seek(10.5));
-  await page.waitForTimeout(1800);
+  // MV-6: a title card opens on the whole trip, then travels and zooms into its chapter; look at its start.
+  const titleAt = await page.evaluate(() => window.tripalogue!.player!.timeline.segments.find((x) => x.kind === 'title' && 10.5 >= x.start && 10.5 < x.start + x.duration)!.start + 0.05);
+  await page.evaluate((t) => window.tripalogue!.player!.seek(t), titleAt);
+  await page.waitForTimeout(400);
   let ins = await inset();
   check('a map inset shows in Play, about a fifth of the frame wide', !ins.hidden && Math.abs(ins.w / ins.stageW - 0.2) < 0.03, `${Math.round((ins.w / ins.stageW) * 100)}% wide, ${ins.corner}`);
-  check('on a title card the inset shows the whole trip', ins.focus === 'trip');
-  // Regression: in browsers that let content stretch an aspect-ratio box (Safari), the inset used to grow taller
-  // on every resize until it ran off the top of the screen. Turn that stretching on and check the size holds.
-  await page.addStyleTag({ content: '.route-map.inset { overflow: visible !important; }' });
-  const box1 = (await page.locator('#map-inset').boundingBox())!;
-  await page.waitForTimeout(1200);
-  const box2 = (await page.locator('#map-inset').boundingBox())!;
-  const canvasFits = await page.evaluate(() => { const el = document.getElementById('map-inset')!; const c = el.querySelector('canvas')!; return c.getBoundingClientRect().height <= el.clientHeight + 0.5; });
-  check('the inset keeps a steady 4:3 size and its map stays inside it', Math.abs(box2.height - box1.height) < 1 && Math.abs(box2.height / box2.width - 0.75) < 0.03 && canvasFits,
-    `${Math.round(box2.width)}×${Math.round(box2.height)}`);
+  check('a title card opens on the whole trip in the inset, then travels to the chapter (MV-6)', ins.view === 'trip' || ins.view === 'travel', `${ins.view} at zoom ${ins.zoom.toFixed(1)}`);
+  check('the inset keeps a 4:3 shape', Math.abs(ins.h / ins.w - 0.75) < 0.03, `${Math.round(ins.w)}×${Math.round(ins.h)}`);
   await page.locator('#stage-wrap').screenshot({ path: path.join(outDir, '05-inset-trip.png') });
   const tripZoom = ins.zoom;
   await page.click('#inset-settings > summary');
@@ -277,7 +220,7 @@ try {
   await saved(page);
   const ch4 = serverDoc(pid).chapters[3];
   await page.evaluate(() => window.tripalogue!.player!.seek(10.5));
-  await page.waitForTimeout(1800);
+  await page.waitForTimeout(400);
   ins = await inset();
   check('with trip overview off, the inset flies in to the current chapter and keeps its neighbours in view', ins.focus === ch4.id && ins.zoom > tripZoom && ins.corner === 'topLeft',
     `chapter 4 (${ch4.title}) at zoom ${ins.zoom.toFixed(1)} vs trip ${tripZoom.toFixed(1)}`);

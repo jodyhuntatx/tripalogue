@@ -366,3 +366,37 @@ button.danger-outline { background: none; border-color: #8f2a2a; color: #f19b9b;
 .export-row .spacer, .export-head .spacer { flex: 1; }
 .pe-clip.audio .edge.left { left: 0; right: auto; }
 .pe-clip.audio.spans { border-right-style: dashed; }
+
+/* ---- Phase 5: cue sections, stage overlays, recorder ---- */
+.warn { color: var(--warn); }
+.coords.warn { color: var(--warn); }
+.pe-chapter.no-place strong::after { content: ' ⚠'; color: var(--warn); }
+.cue-section { border-top: 1px solid #24364f; padding: 6px 0 2px; margin-top: 8px; }
+.cue-section > summary { cursor: pointer; font-weight: 600; font-size: 13px; padding: 4px 0; list-style-position: inside; }
+.cue-section .row { flex-wrap: wrap; gap: 6px; margin: 4px 0; }
+.cue-section .row.wrap { flex-wrap: wrap; }
+.cue-section select { max-width: 100%; }
+.cue-presets, .ann-list, .rec-takes { list-style: none; margin: 6px 0; padding: 0; display: grid; gap: 6px; }
+.cue-presets li { display: flex; align-items: center; justify-content: space-between; font-size: 13px; }
+.ann { border: 1px solid #24364f; border-radius: 6px; padding: 6px; }
+.ann.focused { border-color: var(--accent); }
+.ann .ann-text { flex: 1; min-width: 0; }
+.ann-kind { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted, #8aa0b8); }
+.ann .row.small { font-size: 12px; align-items: center; }
+.num-out { min-width: 44px; text-align: right; }
+.stage-cues { position: absolute; inset: 0; pointer-events: none; z-index: 4; }
+.stage-cues > * { pointer-events: auto; }
+.kb-editing .stage-box { display: none; }
+.kb-frame { position: absolute; border: 2px solid; cursor: move; touch-action: none; box-shadow: 0 0 0 1px rgba(0,0,0,.6); }
+.kb-frame.from { border-color: #3ecf8e; }
+.kb-frame.to { border-color: #ff5d5d; border-style: dashed; }
+.kb-label { position: absolute; left: 0; top: 0; font-size: 11px; font-weight: 700; padding: 1px 6px; color: #08121e; }
+.kb-frame.from .kb-label { background: #3ecf8e; }
+.kb-frame.to .kb-label { background: #ff5d5d; top: auto; bottom: 0; }
+.kb-frame .handle, .ann-box .handle { position: absolute; right: -6px; bottom: -6px; width: 12px; height: 12px; background: #fff; border: 1px solid #000; cursor: nwse-resize; }
+.ann-box { position: absolute; border: 1px dashed rgba(255,255,255,.7); cursor: move; touch-action: none; }
+.ann-box.focused { border: 2px solid var(--accent); }
+.rec-dialog { min-width: 360px; max-width: 520px; }
+.rec-takes li { border: 1px solid #24364f; border-radius: 6px; padding: 8px; display: grid; gap: 6px; }
+.rec-takes audio { width: 100%; }
+#pe-record { color: #ff6b6b; }

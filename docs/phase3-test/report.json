@@ -1,5 +1,5 @@
 {
-  "date": "2026-11-18T18:46:45.722Z",
+  "date": "2026-11-18T21:53:04.551Z",
   "browser": "153.0.8010.12",
   "checks": [
     {
@@ -105,17 +105,17 @@
     {
       "name": "audio clips show their waveforms on the lanes (AU-4)",
       "pass": true,
-      "detail": "url(\"http://127.0.0.1:33055/api/projects/trv_lv6H0zXeMoQN/me"
+      "detail": "url(\"http://127.0.0.1:34283/api/projects/trv_dRu1DTBKAgZU/me"
     },
     {
       "name": "in playback the song plays alongside the pictures, kept to the timeline clock",
       "pass": true,
-      "detail": "drift 0.010 s"
+      "detail": "drift 0.015 s"
     },
     {
       "name": "with a busy browser the song plays on without re-seeks, and the playhead keeps real time",
       "pass": true,
-      "detail": "0 re-seeks; playhead 6.48 s in 6.49 s; drift 0.016 s"
+      "detail": "0 re-seeks; playhead 6.50 s in 6.50 s; drift 0.009 s"
     },
     {
       "name": "when Play is clicked, a video that starts later under the song plays with sound, and the song keeps playing (Safari's autoplay rule)",
@@ -125,7 +125,7 @@
     {
       "name": "\"Play this chapter\" plays the chapter and stops at its end (PE-2)",
       "pass": true,
-      "detail": "stopped at 223.50 s; Sintra ends at 223.50 s"
+      "detail": "stopped at 223.52 s; Sintra ends at 223.50 s"
     },
     {
       "name": "\"Reset chapter to defaults\" puts its pictures back to the cue profile (PE-7)",
@@ -135,7 +135,7 @@
     {
       "name": "an edit shows in the preview in under 200 ms (acceptance)",
       "pass": true,
-      "detail": "60 ms from Delete to the player and timeline"
+      "detail": "57 ms from Delete to the player and timeline"
     },
     {
       "name": "the cut, placements and audio survive a reload",
@@ -145,7 +145,7 @@
     {
       "name": "a 300-item travelogue plays without stalls (acceptance)",
       "pass": true,
-      "detail": "300 items, 5:09 at 4x in 77 s; 0 of 4662 frames waited (0.00%); timeline drawn in 7 ms"
+      "detail": "300 items, 5:09 at 4x in 77 s; 0 of 4659 frames waited (0.00%); timeline drawn in 12 ms"
     },
     {
       "name": "no errors in the browser console",

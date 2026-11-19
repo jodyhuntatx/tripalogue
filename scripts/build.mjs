@@ -25,5 +25,15 @@ await esbuild.build({
   minify: false,
   logLevel: 'warning',
 });
-for (const f of ['index.html', 'app.css', 'guide-contributors.html']) copyFileSync(path.join(root, 'src/web', f), path.join(root, 'dist/web', f));
+// The export page: drawn in a headless browser by the render worker, with the player's drawing code.
+await esbuild.build({
+  entryPoints: [path.join(root, 'src/web/render-page.ts')],
+  outfile: path.join(root, 'dist/web/render.js'),
+  bundle: true,
+  format: 'iife',
+  target: ['chrome110'],
+  sourcemap: true,
+  logLevel: 'warning',
+});
+for (const f of ['index.html', 'app.css', 'guide-contributors.html', 'render.html']) copyFileSync(path.join(root, 'src/web', f), path.join(root, 'dist/web', f));
 console.log('Built dist/node, dist/server and dist/web');

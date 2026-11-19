@@ -3,12 +3,11 @@
  * the exact frames to render, using the same render model as the preview.
  *
  * Export frame k shows the travelogue at t = start + k / fps, exactly as the
- * player would at that moment: the segment playing then (frameAt), its
- * placement, its fade opacity and, for videos, the media time. Consecutive
- * frames of one segment form a run, which the server renders in one pass.
+ * player would at that moment: the export page draws frameAt() for it with the
+ * player's own drawing code (server/render.ts).
  */
-import { fadeTimes, frameAt, type Rect, type Size } from './render-model.js';
-import type { MediaSegment, Segment, Timeline } from './timeline.js';
+import type { Size } from './render-model.js';
+import type { Timeline } from './timeline.js';
 import type { AspectRatio, Id } from './schema.js';
 
 export type ExportResolution = '720p' | '1080p' | '4k';
@@ -65,86 +64,27 @@ export function resolveRange(tl: Timeline, range: ExportRange): { start: number;
   return { start: 0, end: tl.duration };
 }
 
-interface RunBase {
-  segmentIndex: number;
-  chapterId: Id;
-  chapterIndex: number;
-  /** First export frame of the run, and how many frames it has. */
-  firstFrame: number;
-  frames: number;
-  /** Segment-local time of the run's first frame (0 unless the range starts inside the segment). */
-  localStart: number;
-  /** The whole segment's length, and its fade lengths (as the preview computes them). */
-  duration: number;
-  fadeIn: number;
-  fadeOut: number;
-}
-
-export interface TitleRun extends RunBase {
-  kind: 'title';
-  title: string;
-  subtitle: string;
-  description: string;
-}
-
-export interface MediaRun extends RunBase {
-  kind: 'image' | 'video';
-  itemId: Id;
-  /** Crop of the upright picture and where it goes in the frame (pixels). */
-  src: Rect;
-  dst: Rect;
-  /** Video only: media time at the run's first frame, and media seconds per second. */
-  mediaStart: number;
-  speed: number;
-}
-
-export type Run = TitleRun | MediaRun;
-
 export interface VideoPlan {
   size: Size;
   fps: number;
+  /** Timeline seconds of the first frame, and just past the last. */
   start: number;
   end: number;
   totalFrames: number;
-  runs: Run[];
 }
 
 const EPS = 1e-6;
 const frameIndex = (t: number, fps: number) => Math.max(0, Math.ceil(t * fps - EPS));
 
-/**
- * Every run of frames in the range. `sizeOf` gives an item's upright size (the export uses the original's size;
- * the placement only depends on its shape, so it matches the preview's proxy).
- */
-export function planVideo(tl: Timeline, settings: ExportSettings, sizeOf: (seg: MediaSegment) => Size | undefined): VideoPlan {
+/** The frames to render: export frame k shows the travelogue at start + k / fps, exactly as the preview would. */
+export function planVideo(tl: Timeline, settings: ExportSettings): VideoPlan {
   const size = exportSize(settings.resolution, settings.aspect);
-  const fps = settings.fps;
   const { start, end } = resolveRange(tl, settings.range);
-  const totalFrames = frameIndex(end - start, fps);
-  const runs: Run[] = [];
-  tl.segments.forEach((seg: Segment, i) => {
-    const segEnd = seg.start + seg.duration;
-    if (segEnd <= start + EPS || seg.start >= end - EPS) return;
-    const a = frameIndex(Math.max(seg.start, start) - start, fps);
-    const b = Math.min(totalFrames, frameIndex(Math.min(segEnd, end) - start, fps));
-    if (b <= a) return;
-    const t0 = start + a / fps;
-    const localStart = t0 - seg.start;
-    const entrance = seg.kind === 'title' ? seg.entrance : seg.cue.entrance;
-    const exit = seg.kind === 'title' ? seg.exit : seg.cue.exit;
-    const { fin, fout } = fadeTimes(seg.duration, entrance, exit);
-    const base: RunBase = { segmentIndex: i, chapterId: seg.chapterId, chapterIndex: seg.chapterIndex, firstFrame: a, frames: b - a, localStart, duration: seg.duration, fadeIn: fin, fadeOut: fout };
-    if (seg.kind === 'title') {
-      runs.push({ ...base, kind: 'title', title: seg.title, subtitle: seg.subtitle, description: seg.description });
-      return;
-    }
-    // The same geometry the preview draws: ask the render model for the first frame of the run.
-    const layer = frameAt(tl, t0, size, sizeOf).layers[0];
-    if (!layer || layer.kind === 'title') return;
-    runs.push({ ...base, kind: seg.kind, itemId: seg.item.id, src: layer.src, dst: layer.dst, mediaStart: layer.mediaTimeSec, speed: seg.speed });
-  });
-  return { size, fps, start, end, totalFrames, runs };
+  return { size, fps: settings.fps, start, end, totalFrames: frameIndex(end - start, settings.fps) };
 }
+
+/** Timeline time of export frame k. */
+export const frameTime = (plan: VideoPlan, k: number) => plan.start + k / plan.fps;
 
 /** A sound file the mix needs: a video's own sound or a narration or music clip, and the media span used. */
 export interface AudioSource {
@@ -155,6 +95,8 @@ export interface AudioSource {
   end: number;
   /** Media time at `start`, and media seconds per timeline second. */
   mediaStart: number;
+  /** Audio clips: the media time just past the part to decode. */
+  mediaEnd?: number;
   speed: number;
 }
 
@@ -172,7 +114,10 @@ export function audioSources(tl: Timeline, start: number, end: number): AudioSou
     const a = Math.max(c.start, start);
     const b = Math.min(c.start + c.duration, end);
     if (b - a <= EPS) continue;
-    out.push({ itemId: c.item.id, kind: 'audio', start: a, end: b, mediaStart: c.inPointSec + (a - c.start), speed: 1 });
+    // Audio clips are decoded by media time (a looping clip only needs its trimmed part once).
+    const mediaStart = c.loopSec ? c.inPointSec : c.inPointSec + (a - c.start);
+    const mediaEnd = c.loopSec ? c.inPointSec + c.loopSec : c.inPointSec + (b - c.start);
+    out.push({ itemId: c.item.id, kind: 'audio', start: a, end: b, mediaStart, mediaEnd, speed: 1 });
   }
   return out;
 }
@@ -193,4 +138,18 @@ export function exportFileName(title: string, tl: Timeline, settings: ExportSett
   }
   parts.push(settings.aspect === '16:9' ? settings.resolution : `${settings.resolution} ${settings.aspect.replace(':', 'x')}`);
   return `${parts.join(' - ').replace(/[\\/:*?"<>|]+/g, '-')}.mp4`;
+}
+
+/** What the export page needs to draw its frames (served to it by the render worker, server/render.ts). */
+export interface RenderSetup {
+  doc: import('./schema.js').Travelogue;
+  fps: number;
+  /** Timeline seconds of export frame 0. */
+  start: number;
+  size: Size;
+  /** Upright size of each picture's original (placement uses it, as the preview uses its proxy's). */
+  sizes: Record<string, Size>;
+  /** Whether map tiles are drawn, and the provider's attribution. */
+  tiles: boolean;
+  attribution: string;
 }

@@ -1,7 +1,7 @@
 {
-  "date": "2026-11-18T18:53:13.211Z",
+  "date": "2026-11-18T22:17:09.689Z",
   "browser": "153.0.8010.12",
-  "enterTripSec": 2.198,
+  "enterTripSec": 2.235,
   "checks": [
     {
       "name": "a new travelogue opens in the Itinerary view",
@@ -84,19 +84,19 @@
       "detail": "20% wide, bottomRight"
     },
     {
-      "name": "on a title card the inset shows the whole trip",
+      "name": "a title card opens on the whole trip in the inset, then travels to the chapter (MV-6)",
       "pass": true,
-      "detail": ""
+      "detail": "travel at zoom 5.2"
     },
     {
-      "name": "the inset keeps a steady 4:3 size and its map stays inside it",
+      "name": "the inset keeps a 4:3 shape",
       "pass": true,
       "detail": "280×210"
     },
     {
       "name": "with trip overview off, the inset flies in to the current chapter and keeps its neighbours in view",
       "pass": true,
-      "detail": "chapter 4 (Porto) at zoom 7.0 vs trip 5.0"
+      "detail": "chapter 4 (Porto) at zoom 7.4 vs trip 5.2"
     },
     {
       "name": "the inset can be hidden, and undo brings it back",
