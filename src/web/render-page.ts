@@ -25,6 +25,34 @@ class LoadError extends Error {
   }
 }
 
+/**
+ * Converts frames to YUV and uploads them in a worker (render-worker.ts), one at a time and in order. `send` waits only while two
+ * frames are already queued; an upload that fails fails the next `send` or `flush`.
+ */
+function frameSender() {
+  const worker = new Worker('render-worker.js');
+  let queued = 0;
+  let failure: string | undefined;
+  let wake: (() => void) | undefined;
+  worker.onmessage = (e: MessageEvent<{ ok: boolean; error?: string }>) => {
+    queued -= 1;
+    if (!e.data.ok && !failure) failure = e.data.error ?? 'a frame was refused';
+    wake?.();
+  };
+  const until = async (ok: () => boolean) => {
+    while (!ok() && !failure) await new Promise<void>((r) => (wake = r));
+    if (failure) throw new LoadError(failure);
+  };
+  return {
+    async send(url: string, rgba: ArrayBuffer | undefined, size: Size) {
+      await until(() => queued < 2);
+      queued += 1;
+      worker.postMessage({ url: new URL(url, location.href).href, rgba, w: size.w, h: size.h, headers: HEADERS }, rgba ? [rgba] : []);
+    },
+    flush: () => until(() => queued === 0),
+  };
+}
+
 async function main() {
   const setup = (await (await fetch(`${base}/setup`)).json()) as RenderSetup;
   const { doc, fps, start, size } = setup;
@@ -80,9 +108,8 @@ async function main() {
     const u = `${base}/video/${encodeURIComponent(layer.itemId)}?chunk=${chunk}&t=${layer.mediaTimeSec.toFixed(6)}&speed=${layer.speed}`;
     const res = await fetch(u);
     if (!res.ok) throw new LoadError((await res.json().catch(() => ({}))).error ?? `could not be read (${res.status})`, layer.itemId);
-    const w = Number(res.headers.get('X-Width')), h = Number(res.headers.get('X-Height'));
-    const data = new Uint8ClampedArray(await res.arrayBuffer());
-    const bmp = await createImageBitmap(new ImageData(data, w, h));
+    const w = Number(res.headers.get('X-Width'));
+    const bmp = await createImageBitmap(await res.blob());
     const up = setup.sizes[layer.itemId];
     return { image: bmp, scale: up ? w / up.w : 1 };
   };
@@ -107,9 +134,20 @@ async function main() {
     }
   };
 
+  // Speed: a worker converts each frame to YUV and uploads it, in order, while this thread draws the next one.
+  const sender = frameSender();
+  let previous = '';
   for (let k = from; k < to; k++) {
     const t = start + k / fps;
     const frame: Frame = frameAt(tl, t, size, sizeOf, doc);
+    // Speed: a frame that would look the same as the one before (a still photo between its fades) is not drawn
+    // or sent again; the server repeats the last one. Videos always differ (their media time moves on).
+    const signature = JSON.stringify(frame.layers);
+    if (signature === previous) {
+      await sender.send(`${base}/frame?chunk=${chunk}&k=${k}&repeat=1`, undefined, size);
+      continue;
+    }
+    previous = signature;
     // Load everything this frame shows.
     const pictures = new Map<string, Drawable>();
     const videoFrames: ImageBitmap[] = [];
@@ -139,11 +177,10 @@ async function main() {
     };
     drawFrame(ctx, frame, size, sources);
     for (const b of videoFrames) b.close();
-    const pixels = ctx.getImageData(0, 0, size.w, size.h).data;
-    const res = await fetch(`${base}/frame?chunk=${chunk}&k=${k}`, { method: 'POST', headers: HEADERS, body: pixels });
-    const reply = (await res.json().catch(() => ({}))) as { error?: string };
-    if (!res.ok) throw new LoadError(reply.error ?? `frame ${k} was refused`);
+    // Sent as YUV 4:2:0, what the encoder takes: 3.1 MB per 1080p frame rather than 8.3 MB of RGBA.
+    await sender.send(`${base}/frame?chunk=${chunk}&k=${k}`, ctx.getImageData(0, 0, size.w, size.h).data.buffer, size);
   }
+  await sender.flush();
 }
 
 main().catch(async (e: unknown) => {

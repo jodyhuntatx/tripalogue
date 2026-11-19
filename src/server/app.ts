@@ -299,12 +299,12 @@ export async function startApp(overrides: Partial<ServerConfig> = {}, deps: { bl
   r.on('GET', '/api/render/:token/video/:item', (c) => renderCall(c, async () => {
     const q = c.url.searchParams;
     const f = await renderer.videoFrame(c.params.token, Number(q.get('chunk')), c.params.item, Number(q.get('t')), Number(q.get('speed') || 1));
-    c.res.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Content-Length': f.data.length, 'X-Width': String(f.w), 'X-Height': String(f.h), 'Cache-Control': 'no-store' });
+    c.res.writeHead(200, { 'Content-Type': 'image/jpeg', 'Content-Length': f.data.length, 'X-Width': String(f.w), 'X-Height': String(f.h), 'Cache-Control': 'no-store' });
     c.res.end(f.data);
   }));
   r.on('POST', '/api/render/:token/frame', (c) => renderCall(c, async () => {
     const q = c.url.searchParams;
-    await renderer.acceptFrame(c.params.token, Number(q.get('chunk')), Number(q.get('k')), c.req);
+    await renderer.acceptFrame(c.params.token, Number(q.get('chunk')), Number(q.get('k')), c.req, q.get('repeat') === '1');
     sendJson(c.res, 200, { ok: true });
   }));
   r.on('POST', '/api/render/:token/fail', (c) => renderCall(c, async () => {

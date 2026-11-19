@@ -1,5 +1,5 @@
 {
-  "date": "2026-11-18T18:50:16.706Z",
+  "date": "2026-11-19T03:07:14.195Z",
   "browser": "153.0.8010.12",
   "cores": 2,
   "checks": [
@@ -11,7 +11,7 @@
     {
       "name": "while it renders, the dialog shows progress and the time left (VX-3)",
       "pass": true,
-      "detail": "15% · Rendering pictures · about 1:29 left"
+      "detail": "15% · Drawing frames · about 2:17 left"
     },
     {
       "name": "editing goes on while the export renders; the edit is saved (VX-3)",
@@ -25,8 +25,8 @@
     },
     {
       "name": "renders in at most twice its length (acceptance; this machine has 2 cores)",
-      "pass": true,
-      "detail": "1:56 of travelogue in 99 s (0.85× its length)"
+      "pass": false,
+      "detail": "1:56 of travelogue in 249 s (2.15× its length)"
     },
     {
       "name": "Download saves the MP4 under the travelogue's name",
@@ -51,7 +51,7 @@
     {
       "name": "5 random frames (and a video frame) of the export match the preview at the same moment (acceptance, VX-2)",
       "pass": true,
-      "detail": "mean difference per colour value (0–255): frame 2843 (1:35, image): 6.4; frame 3366 (1:52, image): 4.2; frame 2773 (1:32, image): 5.7; frame 1676 (0:56, title): 2.2; frame 951 (0:32, image): 4.2; frame 720 (0:24, video): 2.4; against a frame 4 s off: 77.9 on average"
+      "detail": "mean difference per colour value (0–255): frame 2843 (1:35, image): 2.0; frame 3366 (1:52, image): 2.2; frame 2773 (1:32, image): 1.6; frame 1676 (0:56, title): 2.0; frame 951 (0:32, image): 1.6; frame 720 (0:24, video): 8.6; against a frame 4 s off: 75.7 on average"
     },
     {
       "name": "narration starts on its picture, within one frame (audio sync)",

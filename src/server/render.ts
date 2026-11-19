@@ -21,7 +21,6 @@ import { promises as fs } from 'node:fs';
 import type { IncomingMessage } from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
-import { pipeline } from 'node:stream/promises';
 import { promisify } from 'node:util';
 import {
   audioSources, buildTimeline, frameTime, mapAt, mixAt, planVideo, tilesFor, type AudioSource, type ExportSettings, type MediaItem, type Size,
@@ -68,7 +67,7 @@ export interface RenderOptions {
   /** This server's address, for the export page (http://127.0.0.1:port). */
   serverUrl: () => string;
   tiles?: TileFetcher;
-  /** Pages drawing in parallel (default: half the CPU cores, 1 to 3). */
+  /** Pages drawing in parallel (default: one per CPU core, 1 to 4; each waits on its encoder part of the time). */
   concurrency?: number;
   /** x264 preset (default "veryfast"). */
   preset?: string;
@@ -91,6 +90,8 @@ interface Chunk {
   done: () => void;
   failed: (e: Error) => void;
   finished: Promise<void>;
+  /** The last frame sent (repeated when the page says nothing changed). */
+  last?: Buffer;
   /** Called after each accepted frame (the page recycling waits on it). */
   onAdvance?: () => void;
 }
@@ -163,7 +164,7 @@ export class Renderer {
 
     // Pictures: the export page draws them, a stretch per page; ffmpeg encodes each stretch.
     const token = randomBytes(18).toString('base64url');
-    const n = Math.max(1, Math.min(plan.totalFrames, this.o.concurrency ?? Math.max(1, Math.min(3, Math.floor(os.cpus().length / 2)))));
+    const n = Math.max(1, Math.min(plan.totalFrames, this.o.concurrency ?? Math.max(1, Math.min(4, os.cpus().length))));
     const per = Math.ceil(plan.totalFrames / n);
     const active: Active = {
       token, files, decoders: new Map(), chunks: [], framesDone: 0, lastActivity: Date.now(), signal,
@@ -230,14 +231,14 @@ export class Renderer {
     return { frames: plan.totalFrames, durationSec: plan.totalFrames / plan.fps, loudnessLufs: loudness };
   }
 
-  /** An ffmpeg encoding one stretch of frames from raw RGBA on its stdin. */
+  /** An ffmpeg encoding one stretch of frames from raw YUV 4:2:0 on its stdin. */
   private startChunk(plan: VideoPlan, file: string, from: number, to: number, signal: AbortSignal): Chunk {
     const { w, h } = plan.size;
     const fps = plan.fps;
     const enc = spawn(this.o.ffmpeg, [
       '-hide_banner', '-nostdin', '-loglevel', 'error', '-y',
-      '-f', 'rawvideo', '-pix_fmt', 'rgba', '-s', `${w}x${h}`, '-r', String(fps), '-i', '-',
-      '-vf', 'scale=out_color_matrix=bt709:out_range=tv,format=yuv420p',
+      // The page sends YUV 4:2:0 (BT.709, limited range) already: nothing to convert.
+      '-f', 'rawvideo', '-pix_fmt', 'yuv420p', '-s', `${w}x${h}`, '-r', String(fps), '-i', '-',
       '-c:v', 'libx264', '-preset', this.o.preset ?? 'veryfast', '-crf', '18', '-profile:v', 'high',
       '-g', String(fps * 2), '-video_track_timescale', String(fps * 512),
       '-color_primaries', 'bt709', '-color_trc', 'bt709', '-colorspace', 'bt709', '-color_range', 'tv',
@@ -276,7 +277,7 @@ export class Renderer {
     return f;
   }
 
-  /** The video frame at media time t, as raw RGBA, decoded in order by ffmpeg for this page. */
+  /** The video frame at media time t, as a JPEG picture, decoded in order by ffmpeg for this page. */
   async videoFrame(token: string, chunk: number, itemId: string, t: number, speed: number): Promise<{ data: Buffer; w: number; h: number }> {
     const a = this.job(token);
     a.lastActivity = Date.now();
@@ -303,13 +304,42 @@ export class Renderer {
     }
   }
 
-  /** One drawn frame (raw RGBA) for a page's stretch, in order. */
-  async acceptFrame(token: string, chunk: number, k: number, body: IncomingMessage): Promise<void> {
+  /**
+   * One drawn frame (raw YUV 4:2:0) for a page's stretch, in order; or, with `repeat`, the stretch's last frame
+   * again (the page found it would draw the same picture).
+   */
+  async acceptFrame(token: string, chunk: number, k: number, body: IncomingMessage, repeat = false): Promise<void> {
     const a = this.job(token);
     const ch = a.chunks[chunk];
     if (!ch || k !== ch.next) throw new RenderError(`Frame ${k} out of order`);
     a.lastActivity = Date.now();
-    await pipeline(body, ch.encoder.stdin!, { end: false });
+    const bytes = (a.setup.size.w * a.setup.size.h * 3) / 2;
+    let frame: Buffer;
+    if (repeat) {
+      body.resume();
+      if (!ch.last) throw new RenderError(`Frame ${k} repeats a frame that was never sent`);
+      frame = ch.last;
+    } else {
+      // A fresh buffer each time: the encoder may still be reading the previous one.
+      frame = Buffer.allocUnsafe(bytes);
+      let at = 0;
+      for await (const part of body as AsyncIterable<Buffer>) {
+        if (at + part.length > bytes) throw new RenderError(`Frame ${k} is larger than a ${a.setup.size.w}×${a.setup.size.h} picture`);
+        part.copy(frame, at);
+        at += part.length;
+      }
+      if (at !== bytes) throw new RenderError(`Frame ${k} is incomplete (${at} of ${bytes} bytes)`);
+      ch.last = frame;
+    }
+    const stdin = ch.encoder.stdin!;
+    if (!stdin.write(frame)) await new Promise<void>((resolve, reject) => {
+      const off = () => { stdin.off('drain', ok); stdin.off('error', bad); ch.encoder.off('close', ok); };
+      const ok = () => { off(); resolve(); };
+      const bad = (e: Error) => { off(); reject(e); };
+      stdin.once('drain', ok);
+      stdin.once('error', bad);
+      ch.encoder.once('close', ok);
+    });
     ch.next += 1;
     a.framesDone += 1;
     a.onFrame();
@@ -570,13 +600,17 @@ class PcmReader {
   }
 }
 
-/** A video decoded by ffmpeg into raw RGBA frames, one every `step` media seconds from `start`, read in order. */
+const EOI = Buffer.from([0xff, 0xd9]);
+
+/**
+ * A video decoded by ffmpeg, one frame every `step` media seconds from `start`, read in order, as JPEG pictures:
+ * high quality, decoded natively by the browser, and a tenth of the raw pixels' size to hand over.
+ */
 class FrameDecoder {
   index = 0;
   private readonly proc: ChildProcess;
-  private readonly frameBytes: number;
-  private pending: Buffer[] = [];
-  private pendingBytes = 0;
+  private buf: Buffer = Buffer.alloc(0);
+  private scanFrom = 0;
   private frames: Buffer[] = [];
   private last: Buffer | undefined;
   private ended = false;
@@ -584,24 +618,23 @@ class FrameDecoder {
   private waiters: (() => void)[] = [];
 
   constructor(ffmpeg: string, file: string, readonly start: number, step: number, readonly w: number, readonly h: number) {
-    this.frameBytes = w * h * 4;
     this.proc = spawn(ffmpeg, [
       '-hide_banner', '-nostdin', '-loglevel', 'error', '-ss', Math.max(0, start).toFixed(6), '-i', file, '-an',
-      '-vf', `fps=${(1 / step).toFixed(6)}:round=near,scale=${w}:${h}:flags=bicubic`, '-f', 'rawvideo', '-pix_fmt', 'rgba', '-',
+      '-vf', `fps=${(1 / step).toFixed(6)}:round=near,scale=${w}:${h}:flags=bicubic`,
+      '-c:v', 'mjpeg', '-q:v', '2', '-f', 'image2pipe', '-',
     ], { stdio: ['ignore', 'pipe', 'pipe'] });
     this.proc.stdout!.on('data', (d: Buffer) => {
-      this.pending.push(d);
-      this.pendingBytes += d.length;
-      if (this.pendingBytes >= this.frameBytes) {
-        let all = Buffer.concat(this.pending);
-        while (all.length >= this.frameBytes) {
-          this.frames.push(Buffer.from(all.subarray(0, this.frameBytes)));
-          all = all.subarray(this.frameBytes);
-        }
-        this.pending = all.length ? [Buffer.from(all)] : [];
-        this.pendingBytes = all.length;
+      this.buf = this.buf.length ? Buffer.concat([this.buf, d]) : d;
+      // Each picture ends with the EOI marker FF D9, which cannot occur inside JPEG data (FF bytes there are
+      // followed by 00), and the encoder writes no embedded thumbnails.
+      for (;;) {
+        const end = this.buf.indexOf(EOI, this.scanFrom);
+        if (end < 0) { this.scanFrom = Math.max(0, this.buf.length - 1); break; }
+        this.frames.push(Buffer.from(this.buf.subarray(0, end + 2)));
+        this.buf = this.buf.subarray(end + 2);
+        this.scanFrom = 0;
       }
-      if (this.frames.length > 4) this.proc.stdout!.pause();
+      if (this.frames.length > 8) this.proc.stdout!.pause();
       this.wake();
     });
     this.proc.stderr!.on('data', (d) => { this.error = (this.error + String(d)).slice(-2000); });
@@ -619,7 +652,7 @@ class FrameDecoder {
       while (this.frames.length && this.index <= j) {
         this.last = this.frames.shift()!;
         this.index += 1;
-        if (this.frames.length <= 2) this.proc.stdout?.resume();
+        if (this.frames.length <= 4) this.proc.stdout?.resume();
       }
       if (this.index > j && this.last) return this.last;
       if (this.ended) {

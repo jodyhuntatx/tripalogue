@@ -137,7 +137,7 @@ with "could not be converted", check that line, and that `ffmpeg -decoders | gre
 
 ```sh
 npm run typecheck
-npm test            # 194 tests: model, order keys, operations, history, itinerary, assignment, metadata, travelers, sample hash, geo proxy, HEIC, presentation edits, audio mix, export plan and MP4 render, server API, uploads, processing, retry, local-only access
+npm test            # 196 tests: model, order keys, operations, history, itinerary, assignment, metadata, travelers, sample hash, geo proxy, HEIC, presentation edits, audio mix, export plan and MP4 render, server API, uploads, processing, retry, local-only access
 npm run test:e2e    # Phase 0 browser exit test (needs Playwright's Chromium: npx playwright install chromium)
 npm run test:phase1 # Phase 1 browser test of the G1 tasks (no internet needed: it uses a stand-in map provider)
 npm run test:phase2 # Phase 2 browser test of the G2 tasks (your photos and two travelers', a slow camera, WhatsApp copies, a folder upload)
@@ -378,7 +378,12 @@ How it renders:
 - **Pictures** (since Phase 5). Every frame is drawn by the preview's own drawing code (`src/player/draw.ts`) in a
   headless Chromium the server starts, from the originals at full size, and sent to ffmpeg as raw pixels. So
   transitions, motion, captions, title cards and the map look exactly as in the preview. Stretches of frames are
-  drawn in parallel (half the CPU cores, up to 3) and joined without re-encoding.
+  drawn in parallel (one per CPU core, up to 4) and joined without re-encoding. To keep this fast:
+  - a frame that would look the same as the one before (a still photo between its fades) is not drawn or sent
+    again: the encoder repeats the last one;
+  - frames go to ffmpeg as YUV 4:2:0, converted in a worker (`src/web/render-worker.ts`) while the next frame is
+    drawn, which is 3.1 MB per 1080p frame instead of 8.3 MB of RGBA;
+  - video frames come to the page as high-quality JPEG rather than raw pixels.
 - **Sound.** Every source is decoded to 48 kHz PCM at its speed and mixed in JavaScript with `mixAt()` gains every
   10 ms (linear in between, so no clicks), then normalised in two loudnorm passes and encoded at 192 kbit/s.
 - **Files** go to `<data>/exports/<travelogue>/<export>/<name>.mp4`, for example
@@ -398,8 +403,8 @@ compares 5 random frames and a video frame with the preview drawing the same mom
 9:16 phone video with the window closed and finds the notice on the travelogue list, cancels an export, and makes
 one fail on a missing original and follows **Show the item** to it. On this 2-core test machine the 1:56
 travelogue rendered in about 97 s (0.83× its length; the target is at most 2×) with the Phase 4 renderer. The
-Phase 5 renderer, which draws every frame in a browser so cues and the map match the preview, takes about 6× its
-length on the same machine: see [Phase 5](#phase-5-cues-map-and-sound). Report and screenshots:
+Phase 5 renderer, which draws every frame in a browser so cues and the map match the preview, takes about 2.1× its
+length on the same machine (249 s while the test edits the travelogue): see [Phase 5](#phase-5-cues-map-and-sound). Report and screenshots:
 `docs/phase4-test/`. Result: 16 of 16 checks, with no browser console errors.
 
 ## Phase 5: Cues, map and sound
@@ -442,10 +447,11 @@ Notes:
   the export alike.
 - Recorded narration is saved as an audio file in your travelogue like any other (`.weba` in Chrome and Edge,
   `.m4a` in Safari).
-- **Speed is behind target.** On this 2-core test machine a 1080p export takes about 6× the travelogue's length
-  (the Phase 4 renderer took 0.83×; the target is at most 2×). Drawing and handing over each frame from the
-  browser is the slow part; stretches are drawn in parallel on machines with more cores, so a recent Mac is
-  faster, but this needs work.
+- **Speed.** On this 2-core test machine a 1080p export of the 1:56 sample takes about 2.1× its length (first
+  Phase 5 version: 6.3×; Phase 4's ffmpeg-only renderer: 0.83×; the target is at most 2×). Where the time went,
+  per drawn frame: the upload from the browser (fixed by skipping repeated frames, sending YUV and uploading in a
+  worker), reading the pixels back, and the encoder. With more cores, more stretches are drawn at once, so a
+  machine with more cores should be faster; that is not measured yet.
 
 `scripts/phase5-test.ts` scripts the G5 tasks in headless Chromium (with a fake microphone) on the sample trip:
 every cue type is set and counted (three interactions at most), a Ken Burns is set by dragging its frames, three

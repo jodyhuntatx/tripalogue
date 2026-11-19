@@ -118,6 +118,7 @@ describe('MP4 export from the originals', { timeout: 900_000 }, () => {
     await fs.mkdir(web, { recursive: true });
     const esbuild = await import('esbuild');
     await esbuild.build({ entryPoints: [path.resolve(here, '../src/web/render-page.ts')], outfile: path.join(web, 'render.js'), bundle: true, format: 'iife', logLevel: 'error' });
+    await esbuild.build({ entryPoints: [path.resolve(here, '../src/web/render-worker.ts')], outfile: path.join(web, 'render-worker.js'), bundle: true, format: 'iife', logLevel: 'error' });
     await fs.copyFile(path.resolve(here, '../src/web/render.html'), path.join(web, 'render.html'));
     app = await startApp({ dataDir: tmp, port: 0, log: () => {}, webDir: web, geo: geoConfigFromEnv(tmp, { tileUrl: '', geocoderUrl: '' }) });
     const imported = await req('POST', '/api/projects/import', readFileSync(path.join(SAMPLE_DIR, 'trip.travelogue.json'), 'utf8'));
