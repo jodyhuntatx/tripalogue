@@ -35,5 +35,15 @@ await esbuild.build({
   sourcemap: true,
   logLevel: 'warning',
 });
+// Its frame sender, which converts and uploads frames while the page draws the next.
+await esbuild.build({
+  entryPoints: [path.join(root, 'src/web/render-worker.ts')],
+  outfile: path.join(root, 'dist/web/render-worker.js'),
+  bundle: true,
+  format: 'iife',
+  target: ['chrome110'],
+  sourcemap: true,
+  logLevel: 'warning',
+});
 for (const f of ['index.html', 'app.css', 'guide-contributors.html', 'render.html']) copyFileSync(path.join(root, 'src/web', f), path.join(root, 'dist/web', f));
 console.log('Built dist/node, dist/server and dist/web');

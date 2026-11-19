@@ -1,5 +1,5 @@
 {
-  "date": "2026-11-18T21:46:01.983Z",
+  "date": "2026-11-19T03:01:01.556Z",
   "browser": "153.0.8010.12",
   "checks": [
     {
@@ -65,7 +65,7 @@
     {
       "name": "exported motion, captions and map match the preview at the same frame (acceptance, VX-7, VX-8)",
       "pass": true,
-      "detail": "mean difference per colour value (0–255): Ken Burns start: 2.0; Ken Burns end, three captions: 2.4; slide entrance mid-way: 2.5; crossfade: 1.8; title card with the map: 2.5"
+      "detail": "mean difference per colour value (0–255): Ken Burns start: 2.0; Ken Burns end, three captions: 2.4; slide entrance mid-way: 2.4; crossfade: 1.8; title card with the map: 2.5"
     },
     {
       "name": "no errors in the browser console",
